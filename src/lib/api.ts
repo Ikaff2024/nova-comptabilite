@@ -79,6 +79,10 @@ export interface TiersAccount { account_code: string; label: string; open_count:
 export interface OpenItem { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface LetteredItem { id: string; code: string; entry_date: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface AgedRow { account_code: string; label: string; balance: number; b0_30: number; b31_60: number; b61_90: number; b90_plus: number; }
+export interface VatDeclaration {
+  from: string; to: string; collectee: number; deductible: number; netDue: number; creditReportable: number;
+  breakdown: { account_code: string; label: string; debit: number; credit: number }[];
+}
 export interface Invoice {
   id: string; number: string | null; client_name: string; invoice_date: string; status: string;
   total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string;
@@ -181,6 +185,10 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/lettrage/${id}`, { method: 'DELETE' }),
   agedBalance: (dossierId: string, asOf?: string) =>
     req<AgedRow[]>(`/api/dossiers/${dossierId}/aged-balance${asOf ? `?asOf=${asOf}` : ''}`),
+  vatDeclaration: (dossierId: string, from: string, to: string) =>
+    req<VatDeclaration>(`/api/dossiers/${dossierId}/vat?from=${from}&to=${to}`),
+  liquidateVat: (dossierId: string, body: { from: string; to: string; date: string }) =>
+    req<{ entryId: string } & VatDeclaration>(`/api/dossiers/${dossierId}/vat/liquidate`, { method: 'POST', body: JSON.stringify(body) }),
   invoices: (dossierId: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices${status ? `?status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
   createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; lines: InvoiceLine[] }) =>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -14,8 +14,9 @@ import Tiers from './Tiers';
 import BankReconciliation from './BankReconciliation';
 import Journaux from './Journaux';
 import Facturation from './Facturation';
+import Fiscalite from './Fiscalite';
 
-type Tab = 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'etats' | 'saisie' | 'plan' | 'regles';
+type Tab = 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'etats' | 'fiscalite' | 'saisie' | 'plan' | 'regles';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('capture');
@@ -49,6 +50,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'tiers', label: 'Tiers', icon: Users },
     { id: 'banque', label: 'Banque', icon: Landmark },
     { id: 'etats', label: 'États financiers', icon: FileText },
+    { id: 'fiscalite', label: 'Fiscalité', icon: Receipt },
     { id: 'regles', label: 'Règles', icon: ShieldCheck },
     { id: 'plan', label: 'Plan comptable', icon: BookOpen },
   ];
@@ -106,6 +108,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'tiers' && <Tiers dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'banque' && <BankReconciliation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'etats' && <FinancialStatements dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
+            {tab === 'fiscalite' && <Fiscalite dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'regles' && <RulesTab dossierId={dossier.id} />}
             {tab === 'plan' && <PlanTab dossierId={dossier.id} />}
           </motion.div>

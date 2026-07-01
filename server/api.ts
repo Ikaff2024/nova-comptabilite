@@ -10,6 +10,7 @@ import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
 import * as tiers from './domain/tiers.js';
 import * as invoicing from './domain/invoicing.js';
+import * as tax from './domain/tax.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -265,6 +266,20 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.trialBalance(c, req.params.id, fy)));
+  }));
+
+  // --- Déclaration de TVA ----------------------------------------------------
+  app.get('/api/dossiers/:id/vat', h(async (req, res) => {
+    const userId = requireUser(req);
+    const from = (req.query.from as string) || '', to = (req.query.to as string) || '';
+    if (!from || !to) { const e: any = new Error('from et to requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => tax.vatDeclaration(c, req.params.id, from, to)));
+  }));
+  app.post('/api/dossiers/:id/vat/liquidate', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { from, to, date } = req.body ?? {};
+    if (!from || !to || !date) { const e: any = new Error('from, to, date requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => tax.postVatLiquidation(c, req.params.id, from, to, date)));
   }));
 
   // --- Facturation de vente + FNE --------------------------------------------
