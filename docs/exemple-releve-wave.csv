@@ -1,0 +1,8 @@
+date;type;montant;contrepartie;id
+2024-07-02;Paiement reçu;150000;Boutique Awa;TX1001
+2024-07-03;Transfert envoyé;50000;Fournisseur Diallo;TX1002
+2024-07-03;Frais de transaction;250;Wave;TX1003
+2024-07-05;Paiement reçu;75000;Client Konan;TX1004
+2024-07-08;Retrait;100000;Agent Wave Cocody;TX1005
+2024-07-10;Paiement reçu;320000;Société TechCorp;TX1006
+2024-07-12;Transfert envoyé;45000;Loyer Boutique;TX1007

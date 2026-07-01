@@ -1,0 +1,6 @@
+{
+  "name": "Nova Comptabilité",
+  "description": "Application de comptabilité disruptive avec interface moderne et analytiques",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
