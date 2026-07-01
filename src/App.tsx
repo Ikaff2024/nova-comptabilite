@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle, BookOpen } from 'lucide-react';
 import { api, type Cabinet, type Dossier, type AuthUser } from './lib/api';
 import { getToken, clearToken, isWelcomed } from './lib/session';
 import Auth from './components/Auth';
@@ -116,6 +116,10 @@ export default function App() {
             <HelpCircle className="h-5 w-5" />
             Guide de prise en main
           </button>
+          <a href="/guide.html" target="_blank" rel="noopener" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-emerald-400">
+            <BookOpen className="h-5 w-5" />
+            Guide complet (modules)
+          </a>
           <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-rose-400">
             <LogOut className="h-5 w-5" />
             Déconnexion

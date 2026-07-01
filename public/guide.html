@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guide d'utilisation — Nova Comptabilité</title>
+  <style>
+    :root{
+      --brand:#059669; --brand-dark:#047857; --brand-soft:#ecfdf5;
+      --ink:#18181b; --ink-soft:#3f3f46; --muted:#71717a; --line:#e4e4e7;
+      --bg:#ffffff; --panel:#f8faf9; --amber:#b45309; --amber-soft:#fffbeb;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{
+      margin:0; background:var(--bg); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      line-height:1.6; font-size:16px;
+    }
+    h1,h2,h3{font-family:Georgia,"Times New Roman",serif; color:var(--brand-dark); line-height:1.25; letter-spacing:-0.01em}
+    h1{font-size:2rem; margin:0 0 .3rem}
+    h2{font-size:1.5rem; margin:2.2rem 0 .6rem; padding-bottom:.4rem; border-bottom:2px solid var(--line)}
+    h3{font-size:1.15rem; color:var(--ink); margin:1.4rem 0 .4rem}
+    a{color:var(--brand-dark)}
+    code{background:#f1f5f4; padding:.1rem .4rem; border-radius:.35rem; font-size:.9em}
+    strong{color:var(--ink)}
+
+    .wrap{display:flex; max-width:1200px; margin:0 auto; gap:2rem; padding:2rem 1.5rem}
+    /* Sidebar */
+    nav.toc{
+      position:sticky; top:1.5rem; align-self:flex-start;
+      width:270px; flex:0 0 270px; max-height:calc(100vh - 3rem); overflow:auto;
+      background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:1rem;
+    }
+    nav.toc .brand{display:flex; align-items:center; gap:.6rem; padding:.3rem .5rem .9rem; border-bottom:1px solid var(--line); margin-bottom:.6rem}
+    nav.toc .logo{width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,#34d399,#059669);
+      display:flex; align-items:center; justify-content:center; color:#052e26; font-weight:800; font-family:Georgia,serif}
+    nav.toc .brand b{font-family:Georgia,serif; font-size:1.15rem; color:var(--ink)}
+    nav.toc a{display:block; padding:.42rem .6rem; border-radius:9px; color:var(--ink-soft);
+      text-decoration:none; font-size:.9rem}
+    nav.toc a:hover{background:#eef2f1}
+    nav.toc a.pillar{margin-top:.6rem; font-weight:700; color:var(--brand-dark); font-size:.78rem;
+      text-transform:uppercase; letter-spacing:.05em; pointer-events:none; padding-bottom:.15rem}
+
+    main{flex:1; min-width:0}
+    .lead{background:var(--brand-soft); border-left:4px solid var(--brand);
+      padding:1rem 1.2rem; border-radius:0 10px 10px 0; margin:1rem 0 1.4rem; color:var(--ink-soft)}
+    .pillars{display:grid; gap:.6rem; margin:.5rem 0 1rem}
+    .pillar-row{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:.9rem 1.1rem}
+    .pillar-row b{color:var(--brand-dark)}
+    .pillar-row ol{margin:.4rem 0 0; padding-left:1.3rem}
+    .pillar-row li{margin:.15rem 0}
+
+    /* Fiche */
+    .fiche{border:1px solid var(--line); border-radius:16px; padding:1.4rem 1.6rem; margin:1rem 0 1.8rem; background:#fff}
+    .fiche h2{margin-top:.2rem; border:0; padding:0}
+    .tag{display:inline-block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+      color:var(--brand-dark); background:var(--brand-soft); padding:.2rem .55rem; border-radius:999px; vertical-align:middle; margin-left:.5rem}
+    .block{margin:.9rem 0}
+    .block .label{font-weight:700; color:var(--ink); display:flex; align-items:center; gap:.45rem; margin-bottom:.15rem}
+    .block .label .ic{width:1.15rem; text-align:center}
+    ol.steps{margin:.2rem 0 0; padding-left:1.3rem}
+    ol.steps li{margin:.3rem 0}
+    ul.tips{margin:.2rem 0 0; padding-left:1.3rem}
+    ul.tips li{margin:.25rem 0}
+    .warn{background:var(--amber-soft); border-left:4px solid #f59e0b; padding:.7rem 1rem; border-radius:0 8px 8px 0; color:#78350f}
+    .kbd{background:#eef2f1; border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; padding:.05rem .4rem; font-size:.85em; font-weight:600}
+    .backtop{display:inline-block; margin-top:.6rem; font-size:.82rem; color:var(--muted); text-decoration:none}
+    footer{border-top:1px solid var(--line); margin-top:2rem; padding-top:1rem; color:var(--muted); font-size:.85rem}
+
+    @media (max-width:860px){
+      .wrap{flex-direction:column; padding:1rem}
+      nav.toc{position:static; width:auto; flex:auto; max-height:none}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ===================== SOMMAIRE ===================== -->
+  <nav class="toc">
+    <div class="brand"><span class="logo">N</span><b>Nova</b></div>
+    <a href="#sommaire">Sommaire</a>
+    <a class="pillar">Socle</a>
+    <a href="#demarrage">1 · Démarrage</a>
+    <a class="pillar">Saisir</a>
+    <a href="#capture">2 · Capture IA</a>
+    <a href="#mobilemoney">3 · Mobile Money</a>
+    <a href="#facturation">4 · Facturation &amp; FNE</a>
+    <a href="#saisie">5 · Saisie manuelle</a>
+    <a class="pillar">Consulter</a>
+    <a href="#balance">6 · Balance 6/8 colonnes</a>
+    <a href="#grandlivre">7 · Grand livre</a>
+    <a href="#journaux">8 · Journaux &amp; clôture</a>
+    <a href="#plan">9 · Plan comptable</a>
+    <a class="pillar">Tiers &amp; trésorerie</a>
+    <a href="#tiers">10 · Tiers (clients/fournisseurs)</a>
+    <a href="#banque">11 · Rapprochement bancaire</a>
+    <a class="pillar">Restituer &amp; déclarer</a>
+    <a href="#etats">12 · États financiers</a>
+    <a href="#fiscalite">13 · Fiscalité (TVA / DSF)</a>
+    <a class="pillar">Paramétrer</a>
+    <a href="#regles">14 · Règles de l'IA</a>
+  </nav>
+
+  <!-- ===================== CONTENU ===================== -->
+  <main>
+    <h1 id="sommaire">Guide d'utilisation Nova Comptabilité — Sommaire</h1>
+    <div class="lead">
+      Ce guide explique l'application <strong>module par module</strong>, pas à pas, avec des mots simples.
+      Aucune compétence technique n'est nécessaire : si vous savez ouvrir un site web et cliquer, vous savez utiliser Nova.
+    </div>
+
+    <h2>Comment lire ce guide</h2>
+    <ul class="tips">
+      <li>Chaque fiche traite <strong>un module</strong>. Lisez d'abord le <strong>Démarrage</strong>, puis le module qui vous intéresse.</li>
+      <li>Dans chaque fiche : <strong>À quoi ça sert</strong>, <strong>Qui peut l'utiliser</strong>, <strong>Pas à pas</strong>, <strong>Astuces</strong>, <strong>En cas de problème</strong>.</li>
+      <li>Les boutons et onglets sont écrits <strong>en gras</strong> (ex. cliquez sur <strong>Générer la liquidation</strong>).</li>
+    </ul>
+
+    <h2>Les 5 piliers de Nova</h2>
+    <div class="lead" style="margin-top:.5rem">
+      📸 Saisir · 📚 Consulter · 👥 Tiers &amp; trésorerie · 📄 Restituer &amp; déclarer · ⚙️ Paramétrer —
+      plus un socle de mise en route. Les numéros renvoient aux fiches (aussi accessibles dans le menu de gauche).
+    </div>
+    <div class="pillars">
+      <div class="pillar-row"><b>📸 Saisir — faire entrer les opérations sans ressaisie</b>
+        <ol><li>Capture IA (photo de facture/reçu)</li><li>Mobile Money (relevé Wave/Orange/MTN)</li><li>Facturation &amp; FNE</li><li>Saisie manuelle</li></ol></div>
+      <div class="pillar-row"><b>📚 Consulter — vérifier la comptabilité</b>
+        <ol start="6"><li>Balance à 6 ou 8 colonnes</li><li>Grand livre</li><li>Journaux &amp; clôture</li><li>Plan comptable</li></ol></div>
+      <div class="pillar-row"><b>👥 Tiers &amp; trésorerie — suivre qui doit quoi</b>
+        <ol start="10"><li>Tiers (clients / fournisseurs, lettrage, balance âgée)</li><li>Rapprochement bancaire</li></ol></div>
+      <div class="pillar-row"><b>📄 Restituer &amp; déclarer — sortir les documents officiels</b>
+        <ol start="12"><li>États financiers (SIG, compte de résultat, bilan)</li><li>Fiscalité — TVA (DSF à venir par branchement)</li></ol></div>
+      <div class="pillar-row"><b>⚙️ Paramétrer — apprendre à Nova vos habitudes</b>
+        <ol start="14"><li>Règles de l'IA</li></ol></div>
+    </div>
+
+    <!-- ============ 1 DÉMARRAGE ============ -->
+    <section class="fiche" id="demarrage">
+      <h2>1 · Démarrage <span class="tag">Socle</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Se connecter, créer votre cabinet et votre premier dossier (une entreprise), puis préparer la comptabilité pour commencer à saisir.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Tout le monde. Le premier compte créé devient l'administrateur du cabinet.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Ouvrez Nova et <strong>créez un compte</strong> (nom, e-mail, mot de passe), ou connectez-vous.</li>
+          <li>À la première visite, renseignez le <strong>nom de votre cabinet</strong>.</li>
+          <li>Allez dans <strong>Portefeuille</strong> puis <strong>Nouveau dossier</strong> : saisissez la raison sociale, la devise (FCFA) et le système comptable.</li>
+          <li>Ouvrez le dossier et cliquez <strong>Initialiser</strong> : Nova crée l'exercice courant et les journaux standards (AC, VE, BQ, CA, OD).</li>
+          <li>Pas envie de partir de zéro pour tester ? Sur le <strong>Tableau de bord</strong>, lancez le <strong>dossier de démonstration</strong> (déjà rempli).</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Le bouton <strong>Guide de prise en main</strong> (en bas à gauche) rejoue le mini-tour à tout moment.</li>
+          <li>Un dossier = une entreprise. Un cabinet peut gérer autant de dossiers que nécessaire.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Message « Impossible de joindre l'API » : l'application n'atteint pas le serveur. Patientez quelques secondes puis cliquez <strong>Réessayer</strong>. Si cela persiste, prévenez votre administrateur.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 2 CAPTURE IA ============ -->
+    <section class="fiche" id="capture">
+      <h2>2 · Capture IA <span class="tag">Saisir</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Photographier ou déposer une facture / un reçu : l'IA lit le document et <strong>propose l'écriture comptable SYSCOHADA</strong> (comptes, TVA, tiers). Vous n'avez plus qu'à vérifier et valider.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables et assistants. Idéal pour traiter une pile de justificatifs très vite.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Capture IA</strong>.</li>
+          <li><strong>Déposez</strong> une photo/PDF de la facture (ou glissez-la dans la zone).</li>
+          <li>Nova affiche une <strong>proposition d'écriture</strong> : compte de charge/produit, TVA, tiers, montants.</li>
+          <li>Vérifiez chaque ligne. Corrigez un compte si besoin (Nova <strong>apprend</strong> de votre correction).</li>
+          <li>Cliquez <strong>Comptabiliser</strong> : l'écriture part au journal, avec un numéro de pièce automatique.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>L'IA respecte le <strong>plan SYSCOHADA</strong> (ex. télécom = 628, pas 626 du plan français).</li>
+          <li>Sur un compte collectif (40/41/42), Nova <strong>rattache automatiquement le tiers</strong> lu sur la facture.</li>
+          <li>Une correction récurrente ? Figez-la dans <a href="#regles">Règles</a> pour qu'elle s'applique toujours.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Proposition à côté de la plaque : vérifiez que le document est net et lisible. Corrigez le compte à la main — la prochaine fois sera meilleure. Pour un fournisseur récurrent, créez une <strong>règle</strong>.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 3 MOBILE MONEY ============ -->
+    <section class="fiche" id="mobilemoney">
+      <h2>3 · Mobile Money <span class="tag">Saisir</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Importer un relevé <strong>Wave, Orange Money ou MTN</strong> : chaque mouvement devient une écriture pré-catégorisée, sans double saisie.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Toute entreprise qui encaisse/paie via Mobile Money (commerces, TPE, terrain).</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Exportez le relevé depuis votre appli Mobile Money (fichier <strong>CSV</strong>).</li>
+          <li>Onglet <strong>Mobile Money</strong> → <strong>Importer</strong> le fichier.</li>
+          <li>Nova liste les mouvements avec une <strong>proposition d'écriture</strong> pour chacun (encaissement / décaissement).</li>
+          <li>Vérifiez, puis <strong>comptabilisez</strong> ceux que vous validez (les doublons déjà importés sont ignorés).</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Nova reconnaît les encaissements même quand le libellé dit « Paiement reçu ».</li>
+          <li>Un import déjà passé ne crée pas de doublon : chaque transaction a une référence unique.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Fichier refusé ou colonnes mal lues : assurez-vous d'exporter en <strong>CSV</strong> (pas une capture d'écran). Un exemple de relevé est fourni dans la documentation (<code>docs/exemple-releve-wave.csv</code>).</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 4 FACTURATION ============ -->
+    <section class="fiche" id="facturation">
+      <h2>4 · Facturation &amp; FNE <span class="tag">Saisir</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Établir vos factures de vente, les <strong>certifier en Facture Normalisée Électronique (FNE)</strong> comme l'exige la DGI en Côte d'Ivoire, et générer automatiquement l'écriture comptable.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Gérants et comptables qui émettent des factures clients.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Facturation</strong> → <strong>Nouvelle facture</strong>.</li>
+          <li>Choisissez le <strong>client</strong>, ajoutez les <strong>lignes</strong> (désignation, quantité, prix, TVA).</li>
+          <li>Enregistrez le brouillon, vérifiez le total TTC.</li>
+          <li>Cliquez <strong>Émettre</strong> : la facture reçoit un numéro <span class="kbd">FV-2026-0001</span> et l'écriture est comptabilisée (411 client / 70x ventes / 443 TVA).</li>
+          <li>Cliquez <strong>Certifier (FNE)</strong> pour obtenir le numéro normalisé et le QR code.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Le client est <strong>rattaché automatiquement</strong> à son compte auxiliaire — visible ensuite dans <a href="#tiers">Tiers</a>.</li>
+          <li>Tant que le raccordement DGI n'est pas actif, la certification fonctionne en <strong>mode démonstration</strong> (numéro et QR fictifs) pour tester le circuit.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Une facture <strong>émise</strong> ne se modifie plus (elle est comptabilisée). En cas d'erreur, établissez un avoir. Un brouillon, lui, reste modifiable ou supprimable.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 5 SAISIE ============ -->
+    <section class="fiche" id="saisie">
+      <h2>5 · Saisie manuelle <span class="tag">Saisir</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Passer une écriture à la main quand il n'y a pas de document à capturer (OD, régularisation, salaire, etc.).</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables à l'aise avec la partie double.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Saisie</strong>.</li>
+          <li>Choisissez le <strong>journal</strong> et la <strong>date</strong>.</li>
+          <li>Ajoutez les lignes : compte, libellé, <strong>débit</strong> ou <strong>crédit</strong>.</li>
+          <li>Vérifiez que <strong>total débit = total crédit</strong> (l'indicateur d'équilibre passe au vert).</li>
+          <li>Cliquez <strong>Comptabiliser</strong>.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Une écriture équilibrée est enregistrée <strong>définitivement</strong> (registre inaltérable) : c'est ce qui garantit la fiabilité et la piste d'audit.</li>
+          <li>Besoin de corriger ? Passez une écriture inverse (contre-passation).</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Le bouton reste inactif tant que l'écriture n'est pas équilibrée : ajustez un montant pour que débit = crédit.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 6 BALANCE ============ -->
+    <section class="fiche" id="balance">
+      <h2>6 · Balance à 6 ou 8 colonnes <span class="tag">Consulter</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Voir tous les comptes avec leurs mouvements et leurs soldes, au format SYSCOHADA <strong>6 colonnes</strong> (mouvements + soldes) ou <strong>8 colonnes</strong> (à-nouveaux + mouvements + soldes).</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables, chefs de mission, gérants pour un contrôle rapide.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Balance</strong>.</li>
+          <li>Basculez entre <strong>6 col.</strong> et <strong>8 col.</strong> selon le besoin.</li>
+          <li>Contrôlez la ligne <strong>Totaux</strong> : chaque bloc doit être <strong>✓ équilibré</strong>.</li>
+          <li>Exportez en <strong>Excel/CSV</strong> ou <strong>PDF</strong>.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Le CSV s'ouvre directement dans Excel en français (séparateur « ; »).</li>
+          <li>Un bloc non équilibré (en rouge) signale une anomalie à investiguer dans le <a href="#grandlivre">Grand livre</a>.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">« Aucun mouvement » : le dossier n'a pas encore d'écriture. Commencez par la <a href="#capture">Capture</a> ou la <a href="#saisie">Saisie</a>.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 7 GRAND LIVRE ============ -->
+    <section class="fiche" id="grandlivre">
+      <h2>7 · Grand livre <span class="tag">Consulter</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Voir le <strong>détail de tous les mouvements d'un compte</strong>, ligne par ligne, avec le solde progressif. C'est la loupe qui explique un solde de la balance.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables pour pointer, justifier, retrouver une opération.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Grand livre</strong>.</li>
+          <li>Choisissez le(s) compte(s) et la période.</li>
+          <li>Parcourez les écritures ; le <strong>solde cumulé</strong> se met à jour ligne à ligne.</li>
+          <li>Exportez en <strong>Excel/CSV</strong> ou <strong>PDF</strong>.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips"><li>Chaque ligne porte le <strong>numéro de pièce</strong> : facile de remonter à la facture d'origine.</li></ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Un solde vous surprend ? Comparez avec la <a href="#balance">Balance</a> : le grand livre en donne toujours le détail exact.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 8 JOURNAUX ============ -->
+    <section class="fiche" id="journaux">
+      <h2>8 · Journaux &amp; clôture <span class="tag">Consulter</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Consulter les écritures classées par <strong>journal</strong> (Achats, Ventes, Banque, Caisse, OD) et, en fin d'exercice, lancer la <strong>clôture</strong> (report des à-nouveaux + résultat).</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables et chefs de mission. La clôture est une opération de fin d'exercice, à faire en connaissance de cause.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Journaux</strong> : sélectionnez un journal pour voir ses écritures.</li>
+          <li>En fin d'exercice, vérifiez d'abord la <a href="#balance">Balance</a> et les <a href="#etats">États</a>.</li>
+          <li>Lancez la <strong>Clôture</strong> : Nova reporte les classes 1 à 5 en à-nouveaux et affecte le résultat (121 bénéfice / 129 perte).</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips"><li>Les à-nouveaux sont équilibrés par construction : la balance d'ouverture du nouvel exercice est juste automatiquement.</li></ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Ne clôturez qu'une fois l'exercice définitivement contrôlé : après clôture, l'exercice est verrouillé.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 9 PLAN ============ -->
+    <section class="fiche" id="plan">
+      <h2>9 · Plan comptable <span class="tag">Consulter</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Rechercher n'importe quel compte du plan <strong>SYSCOHADA révisé</strong> (classes 1 à 9) par code ou par libellé.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Tout le monde ; très utile pour retrouver le bon numéro de compte.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Plan comptable</strong>.</li>
+          <li>Tapez un <strong>code</strong> (ex. 628) ou un <strong>mot</strong> (ex. « télécom ») dans la recherche.</li>
+          <li>Repérez le compte, sa classe et son type.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips"><li>Sans recherche, seuls les 100 premiers comptes s'affichent : précisez votre recherche pour aller plus vite.</li></ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Compte introuvable : essayez un libellé plus court ou seulement les premiers chiffres du code.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 10 TIERS ============ -->
+    <section class="fiche" id="tiers">
+      <h2>10 · Tiers — clients &amp; fournisseurs <span class="tag">Tiers &amp; trésorerie</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Suivre chaque client et fournisseur individuellement : sa <strong>fiche</strong>, sa <strong>balance</strong>, son <strong>grand livre auxiliaire</strong>, le <strong>lettrage</strong> (rapprocher factures et règlements) et la <strong>balance âgée</strong> (retards de paiement).</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables et gérants pour le suivi des créances et des dettes (relances, trésorerie).</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Tiers</strong> — 5 sous-vues : <strong>Plan</strong>, <strong>Balance</strong>, <strong>Grand livre</strong>, <strong>Lettrage</strong>, <strong>Balance âgée</strong>.</li>
+          <li><strong>Lettrage</strong> : sélectionnez une facture et son règlement (même montant total) puis <strong>Lettrer</strong> — ils portent alors le même code (A, B…).</li>
+          <li><strong>Balance âgée</strong> : consultez les soldes non lettrés répartis par tranche d'ancienneté (0-30, 31-60, 61-90, +90 jours).</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Les tiers se remplissent <strong>tout seuls</strong> : chaque capture/facture rattache automatiquement le bon client/fournisseur.</li>
+          <li>La balance âgée est votre <strong>plan de relance</strong> : concentrez-vous sur la colonne « +90 jours ».</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Le lettrage refuse un groupe : la sélection n'est pas équilibrée. Le total des éléments lettrés ensemble doit être nul (factures = règlements).</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 11 BANQUE ============ -->
+    <section class="fiche" id="banque">
+      <h2>11 · Rapprochement bancaire <span class="tag">Tiers &amp; trésorerie</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Pointer les écritures de banque avec le relevé de la banque et vérifier que le <strong>solde comptable</strong> correspond au <strong>solde réel</strong>.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables et gérants, idéalement chaque mois.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Banque</strong>, choisissez le compte bancaire.</li>
+          <li><strong>Pointez</strong> chaque écriture présente sur le relevé de la banque.</li>
+          <li>Comparez le <strong>solde pointé</strong> au solde du relevé : l'écart doit s'expliquer par les opérations non encore pointées.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips"><li>Le pointage n'altère pas l'écriture : il est stocké à part, la comptabilité reste inaltérable.</li></ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Un écart persiste : cherchez un chèque non encore débité, un virement en cours, ou une écriture oubliée à saisir.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 12 ÉTATS ============ -->
+    <section class="fiche" id="etats">
+      <h2>12 · États financiers <span class="tag">Restituer &amp; déclarer</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Produire en temps réel les <strong>Soldes Intermédiaires de Gestion</strong> (marge, valeur ajoutée, EBE, résultat), le <strong>compte de résultat</strong> et le <strong>bilan</strong> SYSCOHADA.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Gérants pour piloter, comptables pour restituer au client.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>États financiers</strong>.</li>
+          <li>Lisez la cascade des SIG, le résultat et le bilan.</li>
+          <li>Exportez en <strong>PDF</strong> pour la remise au client.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips"><li>Le bilan est équilibré par construction (total actif = total passif) : un déséquilibre signalerait une écriture anormale.</li></ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Chiffres incomplets : assurez-vous que toutes les opérations de la période sont comptabilisées avant d'éditer.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 13 FISCALITÉ ============ -->
+    <section class="fiche" id="fiscalite">
+      <h2>13 · Fiscalité — TVA / DSF <span class="tag">Restituer &amp; déclarer</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Calculer la <strong>TVA du mois</strong> (collectée − déductible), générer l'<strong>écriture de liquidation</strong>, et éditer la déclaration en PDF. La <strong>DSF</strong> sera produite par branchement au logiciel dédié.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables en charge des déclarations.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Fiscalité</strong>, choisissez le <strong>mois</strong>.</li>
+          <li>Lisez <strong>TVA collectée (443)</strong>, <strong>TVA déductible (445)</strong> et le net : <strong>à payer (4441)</strong> ou <strong>crédit à reporter (4449)</strong>.</li>
+          <li>Cliquez <strong>Générer la liquidation</strong> : Nova solde 443/445 et constate le net.</li>
+          <li>Exportez la déclaration en <strong>PDF</strong>.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips"><li>Vérifiez le <strong>détail des comptes de TVA</strong> avant de liquider : un montant inattendu vient souvent d'un taux mal saisi en amont.</li></ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">La <strong>DSF / liasse fiscale</strong> n'est pas encore active dans Nova : elle sera assurée par branchement au logiciel dédié. Les données comptables de Nova l'alimenteront le moment venu.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 14 RÈGLES ============ -->
+    <section class="fiche" id="regles">
+      <h2>14 · Règles de l'IA <span class="tag">Paramétrer</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Apprendre à Nova vos habitudes : associer un <strong>libellé</strong> (ex. « Orange », « CIE ») à un <strong>compte imposé</strong>, pour que la Capture propose toujours le bon compte.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables qui veulent fiabiliser l'automatisation.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Règles</strong>.</li>
+          <li>Ajoutez une règle : <strong>mot-clé du libellé</strong> → <strong>compte SYSCOHADA</strong>.</li>
+          <li>Enregistrez : la règle s'applique désormais à chaque capture correspondante.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Complémentaire à l'apprentissage automatique : la règle est <strong>prioritaire et explicite</strong>.</li>
+          <li>Exemple : « télécom / Orange / MTN » → <strong>628</strong> (SYSCOHADA), pas 626.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Une règle ne se déclenche pas : vérifiez que le mot-clé apparaît bien dans le libellé lu sur le document.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <footer>
+      Nova Comptabilité — guide d'utilisation. Comptabilité SYSCOHADA révisé (AUDCIF) pour l'espace OHADA.
+      Besoin d'aide ? Rejouez le mini-tour via <strong>Guide de prise en main</strong> dans l'application.
+    </footer>
+  </main>
+</div>
+</body>
+</html>

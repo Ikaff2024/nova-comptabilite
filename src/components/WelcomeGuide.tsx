@@ -78,7 +78,11 @@ export default function WelcomeGuide({ onClose, onDemo }: { onClose: () => void;
 
         {error && <p className="mt-4 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
-        <div className="mt-8 flex items-center justify-between gap-3">
+        <div className="mt-6 text-center">
+          <a href="/guide.html" target="_blank" rel="noopener" className="text-sm text-emerald-400 underline-offset-2 hover:underline">Ouvrir le guide complet, module par module →</a>
+        </div>
+
+        <div className="mt-6 flex items-center justify-between gap-3">
           <button onClick={dismiss} className="text-sm text-zinc-400 hover:text-zinc-200">Je démarre moi-même</button>
           {last ? (
             <button onClick={tryDemo} disabled={loading}
