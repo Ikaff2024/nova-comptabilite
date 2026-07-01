@@ -8,6 +8,7 @@ import { extractDocument, aiProvider } from './ai/provider.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
+import * as tiers from './domain/tiers.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -263,6 +264,44 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.trialBalance(c, req.params.id, fy)));
+  }));
+
+  // --- Comptabilité auxiliaire (tiers) ---------------------------------------
+  app.get('/api/dossiers/:id/counterparties', h(async (req, res) => {
+    const userId = requireUser(req);
+    const type = (req.query.type as string) || undefined;
+    res.json(await withUser(userId, (c) => tiers.listCounterparties(c, req.params.id, type)));
+  }));
+
+  app.post('/api/dossiers/:id/counterparties', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, (c) => tiers.createCounterparty(c, req.params.id, req.body ?? {}));
+    res.status(201).json(out);
+  }));
+
+  app.patch('/api/dossiers/:id/counterparties/:cid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => tiers.updateCounterparty(c, req.params.id, req.params.cid, req.body ?? {}));
+    res.status(204).end();
+  }));
+
+  app.delete('/api/dossiers/:id/counterparties/:cid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => tiers.deleteCounterparty(c, req.params.id, req.params.cid));
+    res.status(204).end();
+  }));
+
+  app.get('/api/dossiers/:id/aux-balance', h(async (req, res) => {
+    const userId = requireUser(req);
+    const type = (req.query.type as string) || undefined;
+    res.json(await withUser(userId, (c) => tiers.auxiliaryBalance(c, req.params.id, type)));
+  }));
+
+  app.get('/api/dossiers/:id/aux-ledger', h(async (req, res) => {
+    const userId = requireUser(req);
+    const counterparty = (req.query.counterparty as string) || '';
+    if (!counterparty) { const e: any = new Error('counterparty requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => tiers.auxiliaryLedger(c, req.params.id, counterparty)));
   }));
 
   // --- Rapprochement bancaire (pointage) -------------------------------------

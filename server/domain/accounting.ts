@@ -209,10 +209,12 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
   // Résolution des comptes par code (dans le périmètre RLS du dossier)
   const codes = [...new Set(input.lines.map((l) => l.accountCode))];
   const { rows: accs } = await c.query(
-    'select id, account_code from accounts where dossier_id = $1 and account_code = any($2)',
+    'select id, account_code, is_collective from accounts where dossier_id = $1 and account_code = any($2)',
     [input.dossierId, codes],
   );
-  const byCode = new Map<string, string>(accs.map((a: any) => [a.account_code, a.id]));
+  const byCode = new Map<string, { id: string; collective: boolean }>(
+    accs.map((a: any) => [a.account_code, { id: a.id, collective: a.is_collective }]),
+  );
   for (const code of codes) {
     if (!byCode.has(code)) throw new Error(`Compte ${code} introuvable dans ce dossier.`);
   }
@@ -231,14 +233,20 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
 
   let lineNo = 1;
   for (const l of input.lines) {
+    const acc = byCode.get(l.accountCode)!;
+    // Auto-rattachement du tiers sur les comptes collectifs (401/411/42x).
+    let counterpartyId = l.counterpartyId ?? null;
+    if (!counterpartyId && input.counterpartyName && isCollective(l.accountCode, acc.collective)) {
+      counterpartyId = await resolveCounterparty(c, input.dossierId, input.counterpartyName, tiersTypeForCode(l.accountCode));
+    }
     await c.query(
       `insert into entry_lines(entry_id, dossier_id, account_id, line_no, amount_debit, amount_credit,
                                label, payment_channel, counterparty_id, tax_code_id, analytic_axis, external_ref)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
-        entryId, input.dossierId, byCode.get(l.accountCode), lineNo++,
+        entryId, input.dossierId, acc.id, lineNo++,
         l.debit ?? 0, l.credit ?? 0, l.label ?? null, l.paymentChannel ?? 'none',
-        l.counterpartyId ?? null, l.taxCodeId ?? null, l.analyticAxis ?? null, l.externalRef ?? null,
+        counterpartyId, l.taxCodeId ?? null, l.analyticAxis ?? null, l.externalRef ?? null,
       ],
     );
   }
@@ -273,6 +281,42 @@ async function learnFromEntry(c: Client, input: PostEntryInput): Promise<void> {
       [input.dossierId, p.keyword, p.code],
     );
   }
+}
+
+// --- Comptabilité auxiliaire : rattachement automatique des tiers -----------
+
+function isCollective(code: string, flag: boolean): boolean {
+  return flag || /^(40|41|42)/.test(code);
+}
+function tiersTypeForCode(code: string): 'client' | 'fournisseur' | 'salarie' | 'autre' {
+  if (code.startsWith('41')) return 'client';
+  if (code.startsWith('40')) return 'fournisseur';
+  if (code.startsWith('42')) return 'salarie';
+  return 'autre';
+}
+
+// Trouve le tiers par nom (insensible à la casse) ou le crée (compte auxiliaire).
+export async function resolveCounterparty(
+  c: Client, dossierId: string, name: string, type: 'client' | 'fournisseur' | 'salarie' | 'autre',
+): Promise<string> {
+  const trimmed = name.trim();
+  const { rows: ex } = await c.query(
+    'select id from counterparties where dossier_id=$1 and lower(name)=lower($2) limit 1', [dossierId, trimmed],
+  );
+  if (ex[0]) return ex[0].id;
+  const collCode = type === 'client' ? '411' : type === 'fournisseur' ? '401' : type === 'salarie' ? '421' : null;
+  let accId: string | null = null;
+  if (collCode) {
+    const { rows } = await c.query('select id from accounts where dossier_id=$1 and account_code=$2', [dossierId, collCode]);
+    accId = rows[0]?.id ?? null;
+  }
+  const { rows: cnt } = await c.query('select count(*) n from counterparties where dossier_id=$1 and type=$2', [dossierId, type]);
+  const aux = (collCode ?? 'TIER') + String(Number(cnt[0].n) + 1).padStart(4, '0');
+  const { rows: ins } = await c.query(
+    'insert into counterparties(dossier_id, type, name, aux_code, account_id) values ($1,$2,$3,$4,$5) returning id',
+    [dossierId, type, trimmed, aux, accId],
+  );
+  return ins[0].id;
 }
 
 // Comptes imputables (classes 4-7) du dossier, pour ancrer l'IA sur le plan réel.

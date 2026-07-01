@@ -1,22 +1,212 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2 } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow } from '../lib/api';
+import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2 } from 'lucide-react';
+import { api, fmtMoney, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
+type View = 'plan' | 'balance' | 'grandlivre' | 'lettrage' | 'aged';
+
 export default function Tiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
-  const [view, setView] = useState<'lettrage' | 'aged'>('lettrage');
+  const [view, setView] = useState<View>('balance');
+  const tabs: [View, string, any][] = [
+    ['plan', 'Plan tiers', BookUser], ['balance', 'Balance', Scale], ['grandlivre', 'Grand livre', Library],
+    ['lettrage', 'Lettrage', Link2], ['aged', 'Balance âgée', CalendarClock],
+  ];
   return (
     <div className="space-y-5">
-      <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
-        {([['lettrage', 'Lettrage', Link2], ['aged', 'Balance âgée', CalendarClock]] as const).map(([id, label, Icon]) => (
+      <div className="inline-flex flex-wrap rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
+        {tabs.map(([id, label, Icon]) => (
           <button key={id} onClick={() => setView(id)}
             className={cn('flex items-center gap-2 rounded-md px-3 py-1.5 font-medium transition-colors', view === id ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
             <Icon className="h-4 w-4" /> {label}
           </button>
         ))}
       </div>
-      {view === 'lettrage' ? <Lettrage dossierId={dossierId} currency={currency} /> : <Aged dossierId={dossierId} dossierName={dossierName} currency={currency} />}
+      {view === 'plan' && <PlanTiers dossierId={dossierId} />}
+      {view === 'balance' && <BalanceTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
+      {view === 'grandlivre' && <GrandLivreTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
+      {view === 'lettrage' && <Lettrage dossierId={dossierId} currency={currency} />}
+      {view === 'aged' && <Aged dossierId={dossierId} dossierName={dossierName} currency={currency} />}
+    </div>
+  );
+}
+
+const TYPE_LABEL: Record<string, string> = { client: 'Client', fournisseur: 'Fournisseur', salarie: 'Salarié', etat: 'État', autre: 'Autre' };
+
+function PlanTiers({ dossierId }: { dossierId: string }) {
+  const [rows, setRows] = useState<Counterparty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ type: 'client', name: '', auxCode: '', taxId: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => { setLoading(true); try { setRows(await api.counterparties(dossierId)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [dossierId]);
+
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!form.name.trim()) return;
+    setBusy(true); setError(null);
+    try { await api.createCounterparty(dossierId, { type: form.type, name: form.name.trim(), auxCode: form.auxCode.trim() || undefined, taxId: form.taxId.trim() || undefined }); setForm({ type: form.type, name: '', auxCode: '', taxId: '' }); await load(); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  const remove = async (id: string) => { await api.deleteCounterparty(dossierId, id); await load(); };
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div><label className="mb-1 block text-xs text-zinc-500">Type</label>
+          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50">
+            <option value="client">Client</option><option value="fournisseur">Fournisseur</option><option value="salarie">Salarié</option><option value="autre">Autre</option>
+          </select></div>
+        <div className="flex-1 min-w-[10rem]"><label className="mb-1 block text-xs text-zinc-500">Nom</label>
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Raison sociale du tiers" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+        <div className="w-28"><label className="mb-1 block text-xs text-zinc-500">Code aux.</label>
+          <input value={form.auxCode} onChange={(e) => setForm({ ...form, auxCode: e.target.value })} placeholder="auto" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
+        <div className="w-32"><label className="mb-1 block text-xs text-zinc-500">Id. fiscal</label>
+          <input value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} placeholder="IFU/NCC" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+        <button type="submit" disabled={busy} className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Ajouter</button>
+      </form>
+      {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : rows.length === 0 ? <p className="text-sm text-zinc-500">Aucun tiers. Ils se créent automatiquement à la saisie, ou ajoutez-les ici.</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-3 font-medium">Code aux.</th><th className="px-4 py-3 font-medium">Type</th><th className="px-4 py-3 font-medium">Nom</th><th className="px-4 py-3 font-medium">Collectif</th><th className="px-4 py-3 font-medium">Id. fiscal</th><th className="px-4 py-3"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5">
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-white/5">
+                  <td className="px-4 py-2.5 font-mono text-zinc-200">{r.aux_code}</td>
+                  <td className="px-4 py-2.5 text-zinc-400">{TYPE_LABEL[r.type] ?? r.type}</td>
+                  <td className="px-4 py-2.5 text-zinc-300">{r.name}</td>
+                  <td className="px-4 py-2.5 font-mono text-zinc-500">{r.collective ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-zinc-500">{r.tax_id ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-right"><button onClick={() => remove(r.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BalanceTiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+  const [rows, setRows] = useState<AuxBalanceRow[]>([]);
+  const [type, setType] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { (async () => { setLoading(true); try { setRows(await api.auxBalance(dossierId, type || undefined)); } finally { setLoading(false); } })(); }, [dossierId, type]);
+
+  const withMoves = rows.filter((r) => r.debit || r.credit);
+  const totD = withMoves.reduce((s, r) => s + r.debit, 0), totC = withMoves.reduce((s, r) => s + r.credit, 0);
+
+  const exportCsv = () => {
+    const out: (string | number)[][] = [['Code aux.', 'Tiers', 'Type', 'Collectif', 'Débit', 'Crédit', 'Solde']];
+    for (const r of withMoves) out.push([r.aux_code ?? '', r.name, r.type, r.collective, r.debit, r.credit, r.balance]);
+    out.push(['', 'TOTAUX', '', '', totD, totC, totD - totC]);
+    downloadCsv(`balance-tiers_${dossierName}`.replace(/\s+/g, '-'), out);
+  };
+  const exportPdf = () => {
+    const head = `<tr><th>Code</th><th>Tiers</th><th>Coll.</th><th class="n">Débit</th><th class="n">Crédit</th><th class="n">Solde</th></tr>`;
+    const body = withMoves.map((r) => `<tr><td>${r.aux_code ?? ''}</td><td>${(r.name ?? '').replace(/[&<>]/g, '')}</td><td>${r.collective}</td><td class="n">${r.debit ? fmtMoney(r.debit, currency) : ''}</td><td class="n">${r.credit ? fmtMoney(r.credit, currency) : ''}</td><td class="n">${fmtMoney(r.balance, currency)}</td></tr>`).join('');
+    printDocument(`Balance des tiers — ${dossierName}`, `au ${nowStamp()} · devise ${currency}`, `<table><thead>${head}</thead><tbody>${body}<tr class="tot"><td colspan="3">Totaux</td><td class="n">${fmtMoney(totD, currency)}</td><td class="n">${fmtMoney(totC, currency)}</td><td class="n">${fmtMoney(totD - totC, currency)}</td></tr></tbody></table>`);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
+          <option value="">Tous les tiers</option><option value="client">Clients</option><option value="fournisseur">Fournisseurs</option>
+        </select>
+        <div className="flex gap-2">
+          <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
+          <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
+        </div>
+      </div>
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul…</div> : withMoves.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement de tiers.</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-3 font-medium">Code</th><th className="px-4 py-3 font-medium">Tiers</th><th className="px-4 py-3 font-medium">Coll.</th>
+              <th className="px-4 py-3 text-right font-medium">Débit</th><th className="px-4 py-3 text-right font-medium">Crédit</th><th className="px-4 py-3 text-right font-medium">Solde</th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5 font-mono">
+              {withMoves.map((r) => (
+                <tr key={r.id} className="hover:bg-white/5">
+                  <td className="px-4 py-2 text-zinc-300">{r.aux_code}</td>
+                  <td className="px-4 py-2 font-sans text-zinc-300">{r.name}</td>
+                  <td className="px-4 py-2 text-zinc-500">{r.collective}</td>
+                  <td className="px-4 py-2 text-right text-zinc-300">{r.debit ? fmtMoney(r.debit, currency) : '—'}</td>
+                  <td className="px-4 py-2 text-right text-zinc-300">{r.credit ? fmtMoney(r.credit, currency) : '—'}</td>
+                  <td className={cn('px-4 py-2 text-right font-medium', r.balance >= 0 ? 'text-emerald-400' : 'text-rose-400')}>{fmtMoney(r.balance, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t border-white/10 bg-white/5 font-mono"><tr>
+              <td className="px-4 py-3 font-sans font-semibold text-zinc-200" colSpan={3}>Totaux</td>
+              <td className="px-4 py-3 text-right font-semibold text-zinc-100">{fmtMoney(totD, currency)}</td>
+              <td className="px-4 py-3 text-right font-semibold text-zinc-100">{fmtMoney(totC, currency)}</td>
+              <td className="px-4 py-3 text-right font-semibold text-zinc-100">{fmtMoney(totD - totC, currency)}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GrandLivreTiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+  const [tiers, setTiers] = useState<Counterparty[]>([]);
+  const [cid, setCid] = useState('');
+  const [rows, setRows] = useState<AuxLedgerRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => { (async () => { const t = await api.counterparties(dossierId); setTiers(t); if (!cid && t[0]) setCid(t[0].id); })(); }, [dossierId]);
+  useEffect(() => { if (!cid) return; (async () => { setLoading(true); try { setRows(await api.auxLedger(dossierId, cid)); } finally { setLoading(false); } })(); }, [cid]);
+
+  let solde = 0;
+  const withSolde = rows.map((r) => { solde += r.debit - r.credit; return { ...r, solde }; });
+  const tp = tiers.find((t) => t.id === cid);
+  const m = (n: number) => (n ? fmtMoney(n, currency) : '');
+
+  const exportPdf = () => {
+    const body = `<table><thead><tr><th>Date</th><th>Jrnl</th><th>Cpte</th><th>Libellé</th><th class="n">Débit</th><th class="n">Crédit</th><th class="n">Solde</th></tr></thead><tbody>
+      ${withSolde.map((r) => `<tr><td>${r.entry_date}</td><td>${r.journal_code}</td><td>${r.account_code}</td><td>${(r.label ?? '').replace(/[&<>]/g, '')}</td><td class="n">${m(r.debit)}</td><td class="n">${m(r.credit)}</td><td class="n">${fmtMoney(r.solde, currency)}</td></tr>`).join('')}</tbody></table>`;
+    printDocument(`Grand livre tiers — ${tp?.name ?? ''}`, `${dossierName} · ${tp?.aux_code ?? ''} · au ${nowStamp()}`, body);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <select value={cid} onChange={(e) => setCid(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
+          {tiers.map((t) => <option key={t.id} value={t.id}>{t.aux_code} · {t.name}</option>)}
+        </select>
+        <button onClick={exportPdf} disabled={!withSolde.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
+      </div>
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : withSolde.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement pour ce tiers.</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-2.5 font-medium">Date</th><th className="px-4 py-2.5 font-medium">Jrnl</th><th className="px-4 py-2.5 font-medium">Compte</th><th className="px-4 py-2.5 font-medium">Libellé</th>
+              <th className="px-4 py-2.5 text-right font-medium">Débit</th><th className="px-4 py-2.5 text-right font-medium">Crédit</th><th className="px-4 py-2.5 text-right font-medium">Solde</th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5 font-mono">
+              {withSolde.map((r, i) => (
+                <tr key={i} className="hover:bg-white/5">
+                  <td className="px-4 py-1.5 text-zinc-400">{r.entry_date}</td>
+                  <td className="px-4 py-1.5 text-zinc-500">{r.journal_code}</td>
+                  <td className="px-4 py-1.5 text-zinc-500">{r.account_code}</td>
+                  <td className="px-4 py-1.5 font-sans text-zinc-300">{r.label}</td>
+                  <td className="px-4 py-1.5 text-right text-zinc-300">{m(r.debit)}</td>
+                  <td className="px-4 py-1.5 text-right text-zinc-300">{m(r.credit)}</td>
+                  <td className={cn('px-4 py-1.5 text-right', r.solde >= 0 ? 'text-zinc-200' : 'text-rose-400')}>{fmtMoney(r.solde, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

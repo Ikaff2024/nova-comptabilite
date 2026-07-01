@@ -69,6 +69,9 @@ export interface Mapping {
   id: string; keyword: string; account_code: string; hits: number;
   source: 'manual' | 'learned'; account_label: string | null;
 }
+export interface Counterparty { id: string; type: string; name: string; aux_code: string | null; tax_id: string | null; collective: string | null; }
+export interface AuxBalanceRow { id: string; aux_code: string | null; name: string; type: string; collective: string; debit: number; credit: number; balance: number; }
+export interface AuxLedgerRow { entry_date: string; journal_code: string; piece_ref: string | null; account_code: string; label: string; debit: number; credit: number; }
 export interface BankAccount { account_code: string; label: string; moves: number; unpointed: number; }
 export interface ReconMove { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; pointed: boolean; }
 export interface ReconView { balance: number; pointedBalance: number; moves: ReconMove[]; }
@@ -144,6 +147,16 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/mappings/${id}`, { method: 'DELETE' }),
   trialBalance: (dossierId: string, fiscalYearId?: string) =>
     req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  counterparties: (dossierId: string, type?: string) =>
+    req<Counterparty[]>(`/api/dossiers/${dossierId}/counterparties${type ? `?type=${type}` : ''}`),
+  createCounterparty: (dossierId: string, body: { type: string; name: string; auxCode?: string; taxId?: string }) =>
+    req<Counterparty>(`/api/dossiers/${dossierId}/counterparties`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteCounterparty: (dossierId: string, cid: string) =>
+    req<void>(`/api/dossiers/${dossierId}/counterparties/${cid}`, { method: 'DELETE' }),
+  auxBalance: (dossierId: string, type?: string) =>
+    req<AuxBalanceRow[]>(`/api/dossiers/${dossierId}/aux-balance${type ? `?type=${type}` : ''}`),
+  auxLedger: (dossierId: string, counterparty: string) =>
+    req<AuxLedgerRow[]>(`/api/dossiers/${dossierId}/aux-ledger?counterparty=${counterparty}`),
   bankAccounts: (dossierId: string) => req<BankAccount[]>(`/api/dossiers/${dossierId}/bank-accounts`),
   reconciliation: (dossierId: string, account: string) =>
     req<ReconView>(`/api/dossiers/${dossierId}/reconciliation?account=${encodeURIComponent(account)}`),
