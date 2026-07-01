@@ -79,6 +79,10 @@ export interface TiersAccount { account_code: string; label: string; open_count:
 export interface OpenItem { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface LetteredItem { id: string; code: string; entry_date: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface AgedRow { account_code: string; label: string; balance: number; b0_30: number; b31_60: number; b61_90: number; b90_plus: number; }
+export interface JournalLine {
+  entry_id: string; entry_date: string; journal_code: string; piece_ref: string | null;
+  entry_description: string; source: string; account_code: string; label: string; debit: number; credit: number;
+}
 export interface LedgerRow {
   account_code: string; account_label: string;
   entry_date: string; journal_code: string; piece_ref: string | null;
@@ -171,6 +175,15 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/lettrage/${id}`, { method: 'DELETE' }),
   agedBalance: (dossierId: string, asOf?: string) =>
     req<AgedRow[]>(`/api/dossiers/${dossierId}/aged-balance${asOf ? `?asOf=${asOf}` : ''}`),
+  journalEntries: (dossierId: string, opts: { journal?: string; fiscalYearId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.journal) q.set('journal', opts.journal);
+    if (opts.fiscalYearId) q.set('fiscalYearId', opts.fiscalYearId);
+    const qs = q.toString();
+    return req<JournalLine[]>(`/api/dossiers/${dossierId}/journal-entries${qs ? `?${qs}` : ''}`);
+  },
+  closeExercise: (dossierId: string, fiscalYearId: string) =>
+    req<{ anEntryId: string; newFiscalYearId: string; resultat: number }>(`/api/dossiers/${dossierId}/close-exercise`, { method: 'POST', body: JSON.stringify({ fiscalYearId }) }),
   generalLedger: (dossierId: string, opts: { fiscalYearId?: string; account?: string } = {}) => {
     const q = new URLSearchParams();
     if (opts.fiscalYearId) q.set('fiscalYearId', opts.fiscalYearId);

@@ -219,13 +219,25 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
     if (!byCode.has(code)) throw new Error(`Compte ${code} introuvable dans ce dossier.`);
   }
 
+  // Numéro de pièce séquentiel par journal et par exercice (ex. VE-2026-0001)
+  let pieceRef = input.pieceRef;
+  if (!pieceRef) {
+    const { rows: jr } = await c.query('select code from journals where id = $1', [input.journalId]);
+    const jcode = jr[0]?.code ?? 'OD';
+    const { rows: cnt } = await c.query(
+      'select count(*) n from entries where dossier_id=$1 and journal_id=$2 and fiscal_year_id=$3',
+      [input.dossierId, input.journalId, input.fiscalYearId],
+    );
+    pieceRef = `${jcode}-${input.entryDate.slice(0, 4)}-${String(Number(cnt[0].n) + 1).padStart(4, '0')}`;
+  }
+
   const { rows: er } = await c.query(
     `insert into entries(dossier_id, fiscal_year_id, journal_id, entry_date, description,
                          source, piece_ref, document_url, ai_confidence, created_by)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
     [
       input.dossierId, input.fiscalYearId, input.journalId, input.entryDate, input.description,
-      input.source ?? 'manual', input.pieceRef ?? null, input.documentUrl ?? null,
+      input.source ?? 'manual', pieceRef, input.documentUrl ?? null,
       input.aiConfidence ?? null, input.createdBy ?? null,
     ],
   );
@@ -616,6 +628,91 @@ export async function financialStatements(c: Client, dossierId: string, fiscalYe
     incomeStatement: { produits, charges, totalProduits, totalCharges, resultatNet, sig },
     balanceSheet: { actif, passif, totalActif, totalPassif, equilibre: Math.abs(totalActif - totalPassif) < 0.001 },
   };
+}
+
+// Consultation d'un journal : écritures (avec leurs lignes) d'un journal.
+export async function journalEntries(
+  c: Client, dossierId: string, opts: { journal?: string; fiscalYearId?: string } = {},
+): Promise<any[]> {
+  const params: any[] = [dossierId];
+  let where = "e.dossier_id = $1 and e.status = 'posted'";
+  if (opts.journal) { params.push(opts.journal); where += ` and j.code = $${params.length}`; }
+  if (opts.fiscalYearId) { params.push(opts.fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
+  const { rows } = await c.query(
+    `select e.id as entry_id, to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, j.code as journal_code,
+            e.piece_ref, e.description as entry_description, e.source,
+            a.account_code, coalesce(l.label, e.description) as label,
+            l.amount_debit as debit, l.amount_credit as credit
+       from entries e
+       join journals j on j.id = e.journal_id
+       join entry_lines l on l.entry_id = e.id
+       join accounts a on a.id = l.account_id
+      where ${where}
+      order by e.entry_date, e.created_at, l.line_no`,
+    params,
+  );
+  return rows.map((r: any) => ({ ...r, debit: Number(r.debit), credit: Number(r.credit) }));
+}
+
+// Clôture d'exercice : reporte les soldes de bilan (classes 1-5) en à-nouveaux
+// dans l'exercice suivant, transfère le résultat (6-7) en report à nouveau (12),
+// et clôture l'exercice. Le résultat part en 121 (bénéfice) ou 129 (perte).
+export async function closeExercise(
+  c: Client, dossierId: string, fiscalYearId: string,
+): Promise<{ anEntryId: string; newFiscalYearId: string; resultat: number }> {
+  const { rows: fy } = await c.query('select * from fiscal_years where dossier_id=$1 and id=$2', [dossierId, fiscalYearId]);
+  if (!fy[0]) throw new Error('Exercice introuvable');
+  if (fy[0].status === 'closed') throw new Error('Exercice déjà clôturé');
+  const year = new Date(fy[0].start_date).getFullYear();
+
+  // Soldes de bilan (classes 1-5) de l'exercice
+  const { rows: bals } = await c.query(
+    `select a.account_code, coalesce(sum(l.amount_debit - l.amount_credit), 0) as balance
+       from entry_lines l
+       join entries e on e.id = l.entry_id and e.status='posted' and e.fiscal_year_id = $2
+       join accounts a on a.id = l.account_id and a.class_no between 1 and 5
+      where l.dossier_id = $1
+      group by a.account_code
+     having coalesce(sum(l.amount_debit - l.amount_credit), 0) <> 0`,
+    [dossierId, fiscalYearId],
+  );
+  // Résultat = produits - charges = -(somme des soldes classes 6 et 7)
+  const { rows: rr } = await c.query(
+    `select coalesce(sum(l.amount_debit - l.amount_credit), 0) as s
+       from entry_lines l
+       join entries e on e.id = l.entry_id and e.status='posted' and e.fiscal_year_id = $2
+       join accounts a on a.id = l.account_id and a.class_no in (6,7)
+      where l.dossier_id = $1`,
+    [dossierId, fiscalYearId],
+  );
+  const resultat = -Number(rr[0].s);
+
+  // Exercice suivant (créé si absent)
+  const nextStart = `${year + 1}-01-01`;
+  const { rows: ny } = await c.query('select id from fiscal_years where dossier_id=$1 and start_date=$2', [dossierId, nextStart]);
+  const newFiscalYearId = ny[0]?.id ?? await createFiscalYear(c, dossierId, `Exercice ${year + 1}`, nextStart, `${year + 1}-12-31`);
+
+  // Journal des à-nouveaux (créé si absent)
+  const { rows: jn } = await c.query("select id from journals where dossier_id=$1 and type='a_nouveaux' limit 1", [dossierId]);
+  const anJournal = jn[0]?.id ?? await createJournal(c, dossierId, 'AN', 'À-nouveaux', 'a_nouveaux');
+
+  const lines: EntryLineInput[] = bals.map((b: any) => {
+    const bal = Number(b.balance);
+    return { accountCode: b.account_code, debit: bal > 0 ? bal : 0, credit: bal < 0 ? -bal : 0 };
+  });
+  if (Math.abs(resultat) > 0.001) {
+    if (resultat > 0) lines.push({ accountCode: '121', credit: resultat });
+    else lines.push({ accountCode: '129', debit: -resultat });
+  }
+  if (lines.length < 2) throw new Error("Rien à reporter : l'exercice n'a pas de mouvements de bilan.");
+
+  const { id: anEntryId } = await postEntry(c, {
+    dossierId, fiscalYearId: newFiscalYearId, journalId: anJournal, entryDate: nextStart,
+    description: `À-nouveaux ${year + 1} (report de clôture ${year})`, source: 'opening_balance', lines,
+  });
+
+  await c.query("update fiscal_years set status='closed' where dossier_id=$1 and id=$2", [dossierId, fiscalYearId]);
+  return { anEntryId, newFiscalYearId, resultat };
 }
 
 // Grand livre : détail chronologique des mouvements par compte (dos de la balance).

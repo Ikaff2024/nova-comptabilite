@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -12,8 +12,9 @@ import FinancialStatements from './FinancialStatements';
 import GeneralLedger from './GeneralLedger';
 import Tiers from './Tiers';
 import BankReconciliation from './BankReconciliation';
+import Journaux from './Journaux';
 
-type Tab = 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'tiers' | 'etats' | 'saisie' | 'plan' | 'regles';
+type Tab = 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'etats' | 'saisie' | 'plan' | 'regles';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('capture');
@@ -42,6 +43,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'saisie', label: 'Saisie', icon: PencilLine },
     { id: 'balance', label: 'Balance', icon: Scale },
     { id: 'grandlivre', label: 'Grand livre', icon: Library },
+    { id: 'journaux', label: 'Journaux', icon: BookMarked },
     { id: 'tiers', label: 'Tiers', icon: Users },
     { id: 'banque', label: 'Banque', icon: Landmark },
     { id: 'etats', label: 'États financiers', icon: FileText },
@@ -97,6 +99,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             )}
             {tab === 'balance' && <BalanceTab dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'grandlivre' && <GeneralLedger dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
+            {tab === 'journaux' && <Journaux dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'tiers' && <Tiers dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'banque' && <BankReconciliation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'etats' && <FinancialStatements dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}

@@ -356,6 +356,20 @@ export function createApi() {
     res.json(await withUser(userId, (c) => lettrage.agedBalance(c, req.params.id, asOf)));
   }));
 
+  app.get('/api/dossiers/:id/journal-entries', h(async (req, res) => {
+    const userId = requireUser(req);
+    const journal = (req.query.journal as string) || undefined;
+    const fiscalYearId = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => acc.journalEntries(c, req.params.id, { journal, fiscalYearId })));
+  }));
+
+  app.post('/api/dossiers/:id/close-exercise', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { fiscalYearId } = req.body ?? {};
+    if (!fiscalYearId) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => acc.closeExercise(c, req.params.id, fiscalYearId)));
+  }));
+
   app.get('/api/dossiers/:id/general-ledger', h(async (req, res) => {
     const userId = requireUser(req);
     const fiscalYearId = (req.query.fiscalYearId as string) || undefined;
