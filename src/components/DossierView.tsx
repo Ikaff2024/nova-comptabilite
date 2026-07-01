@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -13,8 +13,9 @@ import GeneralLedger from './GeneralLedger';
 import Tiers from './Tiers';
 import BankReconciliation from './BankReconciliation';
 import Journaux from './Journaux';
+import Facturation from './Facturation';
 
-type Tab = 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'etats' | 'saisie' | 'plan' | 'regles';
+type Tab = 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'etats' | 'saisie' | 'plan' | 'regles';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('capture');
@@ -38,6 +39,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const needsSetup = ready && (fiscalYears.length === 0 || journals.length === 0);
 
   const tabs: { id: Tab; label: string; icon: any }[] = [
+    { id: 'facturation', label: 'Facturation', icon: ReceiptText },
     { id: 'capture', label: 'Capture IA', icon: ScanLine },
     { id: 'mobilemoney', label: 'Mobile Money', icon: Smartphone },
     { id: 'saisie', label: 'Saisie', icon: PencilLine },
@@ -85,6 +87,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
           </div>
 
           <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+            {tab === 'facturation' && <Facturation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'capture' && (
               <Capture dossierId={dossier.id} fiscalYears={fiscalYears} journals={journals}
                 currency={dossier.base_currency} onPosted={() => { /* la balance se recharge à l'ouverture de l'onglet */ }} />

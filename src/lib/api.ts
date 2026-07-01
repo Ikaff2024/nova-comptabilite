@@ -79,6 +79,12 @@ export interface TiersAccount { account_code: string; label: string; open_count:
 export interface OpenItem { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface LetteredItem { id: string; code: string; entry_date: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface AgedRow { account_code: string; label: string; balance: number; b0_30: number; b31_60: number; b61_90: number; b90_plus: number; }
+export interface Invoice {
+  id: string; number: string | null; client_name: string; invoice_date: string; status: string;
+  total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string;
+}
+export interface InvoiceLine { id?: string; line_no?: number; description: string; quantity: number; unit_price: number; vat_rate: number; account_code: string; amount_ht?: number; amount_tva?: number; }
+export interface InvoiceDetail extends Invoice { counterparty_id: string | null; due_date: string | null; entry_id: string | null; fne_qr: string | null; notes: string | null; lines: InvoiceLine[]; }
 export interface JournalLine {
   entry_id: string; entry_date: string; journal_code: string; piece_ref: string | null;
   entry_description: string; source: string; account_code: string; label: string; debit: number; credit: number;
@@ -175,6 +181,13 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/lettrage/${id}`, { method: 'DELETE' }),
   agedBalance: (dossierId: string, asOf?: string) =>
     req<AgedRow[]>(`/api/dossiers/${dossierId}/aged-balance${asOf ? `?asOf=${asOf}` : ''}`),
+  invoices: (dossierId: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices${status ? `?status=${status}` : ''}`),
+  invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
+  createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; lines: InvoiceLine[] }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/invoices`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteInvoice: (dossierId: string, iid: string) => req<void>(`/api/dossiers/${dossierId}/invoices/${iid}`, { method: 'DELETE' }),
+  issueInvoice: (dossierId: string, iid: string) => req<{ number: string; entryId: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/issue`, { method: 'POST', body: '{}' }),
+  certifyInvoice: (dossierId: string, iid: string) => req<{ reference: string; provider: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/certify`, { method: 'POST', body: '{}' }),
   journalEntries: (dossierId: string, opts: { journal?: string; fiscalYearId?: string } = {}) => {
     const q = new URLSearchParams();
     if (opts.journal) q.set('journal', opts.journal);

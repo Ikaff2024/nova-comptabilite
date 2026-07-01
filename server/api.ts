@@ -9,6 +9,7 @@ import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
 import * as tiers from './domain/tiers.js';
+import * as invoicing from './domain/invoicing.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -264,6 +265,33 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.trialBalance(c, req.params.id, fy)));
+  }));
+
+  // --- Facturation de vente + FNE --------------------------------------------
+  app.get('/api/dossiers/:id/invoices', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => invoicing.listInvoices(c, req.params.id, (req.query.status as string) || undefined)));
+  }));
+  app.post('/api/dossiers/:id/invoices', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => invoicing.createInvoice(c, req.params.id, req.body ?? {})));
+  }));
+  app.get('/api/dossiers/:id/invoices/:iid', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => invoicing.getInvoice(c, req.params.id, req.params.iid)));
+  }));
+  app.delete('/api/dossiers/:id/invoices/:iid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => invoicing.deleteInvoice(c, req.params.id, req.params.iid));
+    res.status(204).end();
+  }));
+  app.post('/api/dossiers/:id/invoices/:iid/issue', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => invoicing.issueInvoice(c, req.params.id, req.params.iid)));
+  }));
+  app.post('/api/dossiers/:id/invoices/:iid/certify', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => invoicing.certifyInvoiceFne(c, req.params.id, req.params.iid)));
   }));
 
   // --- Comptabilité auxiliaire (tiers) ---------------------------------------
