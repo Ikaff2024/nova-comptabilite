@@ -69,6 +69,10 @@ export interface Mapping {
   id: string; keyword: string; account_code: string; hits: number;
   source: 'manual' | 'learned'; account_label: string | null;
 }
+export interface TiersAccount { account_code: string; label: string; open_count: number; }
+export interface OpenItem { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; }
+export interface LetteredItem { id: string; code: string; entry_date: string; piece_ref: string | null; label: string; debit: number; credit: number; }
+export interface AgedRow { account_code: string; label: string; balance: number; b0_30: number; b31_60: number; b61_90: number; b90_plus: number; }
 export interface LedgerRow {
   account_code: string; account_label: string;
   entry_date: string; journal_code: string; piece_ref: string | null;
@@ -137,6 +141,15 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/mappings/${id}`, { method: 'DELETE' }),
   trialBalance: (dossierId: string, fiscalYearId?: string) =>
     req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  tiersAccounts: (dossierId: string) => req<TiersAccount[]>(`/api/dossiers/${dossierId}/tiers-accounts`),
+  lettrageView: (dossierId: string, account: string) =>
+    req<{ open: OpenItem[]; lettered: LetteredItem[] }>(`/api/dossiers/${dossierId}/lettrage?account=${encodeURIComponent(account)}`),
+  createLettrage: (dossierId: string, accountCode: string, lineIds: string[]) =>
+    req<{ id: string; code: string }>(`/api/dossiers/${dossierId}/lettrage`, { method: 'POST', body: JSON.stringify({ accountCode, lineIds }) }),
+  deleteLettrage: (dossierId: string, id: string) =>
+    req<void>(`/api/dossiers/${dossierId}/lettrage/${id}`, { method: 'DELETE' }),
+  agedBalance: (dossierId: string, asOf?: string) =>
+    req<AgedRow[]>(`/api/dossiers/${dossierId}/aged-balance${asOf ? `?asOf=${asOf}` : ''}`),
   generalLedger: (dossierId: string, opts: { fiscalYearId?: string; account?: string } = {}) => {
     const q = new URLSearchParams();
     if (opts.fiscalYearId) q.set('fiscalYearId', opts.fiscalYearId);

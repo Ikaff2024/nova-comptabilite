@@ -6,6 +6,7 @@ import * as users from './domain/users.js';
 import { hashPassword, verifyPassword, issueToken, verifyToken } from './auth.js';
 import { extractDocument, aiProvider } from './ai/provider.js';
 import * as mm from './domain/mobilemoney.js';
+import * as lettrage from './domain/lettrage.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -261,6 +262,38 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.trialBalance(c, req.params.id, fy)));
+  }));
+
+  // --- Lettrage des comptes de tiers -----------------------------------------
+  app.get('/api/dossiers/:id/tiers-accounts', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => lettrage.tiersAccounts(c, req.params.id)));
+  }));
+
+  app.get('/api/dossiers/:id/lettrage', h(async (req, res) => {
+    const userId = requireUser(req);
+    const account = (req.query.account as string) || '';
+    if (!account) { const e: any = new Error('account requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => lettrage.accountLettrageView(c, req.params.id, account)));
+  }));
+
+  app.post('/api/dossiers/:id/lettrage', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { accountCode, lineIds } = req.body ?? {};
+    const out = await withUser(userId, (c) => lettrage.createLettrage(c, req.params.id, accountCode, lineIds));
+    res.status(201).json(out);
+  }));
+
+  app.delete('/api/dossiers/:id/lettrage/:lettrageId', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => lettrage.deleteLettrage(c, req.params.id, req.params.lettrageId));
+    res.status(204).end();
+  }));
+
+  app.get('/api/dossiers/:id/aged-balance', h(async (req, res) => {
+    const userId = requireUser(req);
+    const asOf = (req.query.asOf as string) || undefined;
+    res.json(await withUser(userId, (c) => lettrage.agedBalance(c, req.params.id, asOf)));
   }));
 
   app.get('/api/dossiers/:id/general-ledger', h(async (req, res) => {
