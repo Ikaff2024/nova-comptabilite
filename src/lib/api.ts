@@ -71,6 +71,8 @@ export interface Mapping {
 }
 export interface BalanceRow {
   account_code: string; account_label: string;
+  open_debit: number; open_credit: number;
+  period_debit: number; period_credit: number;
   total_debit: number; total_credit: number; balance: number;
 }
 export interface EntryLineInput {

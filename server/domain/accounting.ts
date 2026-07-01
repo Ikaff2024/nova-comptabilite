@@ -574,14 +574,41 @@ export async function financialStatements(c: Client, dossierId: string, fiscalYe
   };
 }
 
+// Balance à 6 / 8 colonnes : sépare les à-nouveaux (report) des mouvements de la
+// période. Colonnes fournies : à-nouveaux (D/C), mouvements période (D/C),
+// mouvements cumulés (D/C) et solde. Le front choisit la présentation 6 ou 8.
 export async function trialBalance(
   c: Client, dossierId: string, fiscalYearId?: string,
 ): Promise<any[]> {
   const params: any[] = [dossierId];
-  let sql = `select account_code, account_label, total_debit, total_credit, balance
-             from v_account_balances where dossier_id = $1`;
-  if (fiscalYearId) { params.push(fiscalYearId); sql += ` and fiscal_year_id = $${params.length}`; }
-  sql += ' order by account_code';
-  const { rows } = await c.query(sql, params);
-  return rows;
+  let where = 'l.dossier_id = $1';
+  if (fiscalYearId) { params.push(fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
+  const opening = `(e.source = 'opening_balance' or j.type = 'a_nouveaux')`;
+
+  const { rows } = await c.query(
+    `select a.account_code, a.label as account_label,
+       coalesce(sum(l.amount_debit)  filter (where ${opening}), 0)     as open_debit,
+       coalesce(sum(l.amount_credit) filter (where ${opening}), 0)     as open_credit,
+       coalesce(sum(l.amount_debit)  filter (where not ${opening}), 0) as period_debit,
+       coalesce(sum(l.amount_credit) filter (where not ${opening}), 0) as period_credit,
+       coalesce(sum(l.amount_debit), 0)                                as total_debit,
+       coalesce(sum(l.amount_credit), 0)                               as total_credit,
+       coalesce(sum(l.amount_debit - l.amount_credit), 0)              as balance
+     from entry_lines l
+     join entries e on e.id = l.entry_id and e.status = 'posted'
+     join journals j on j.id = e.journal_id
+     join accounts a on a.id = l.account_id
+     where ${where}
+     group by a.account_code, a.label
+     having coalesce(sum(l.amount_debit), 0) <> 0 or coalesce(sum(l.amount_credit), 0) <> 0
+     order by a.account_code`,
+    params,
+  );
+  return rows.map((r: any) => ({
+    account_code: r.account_code, account_label: r.account_label,
+    open_debit: Number(r.open_debit), open_credit: Number(r.open_credit),
+    period_debit: Number(r.period_debit), period_credit: Number(r.period_credit),
+    total_debit: Number(r.total_debit), total_credit: Number(r.total_credit),
+    balance: Number(r.balance),
+  }));
 }
