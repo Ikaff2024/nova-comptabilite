@@ -94,6 +94,7 @@ export const api = {
   me: () => req<AuthUser>('/api/auth/me'),
   cabinets: () => req<Cabinet[]>('/api/cabinets'),
   dashboard: () => req<DashboardData>('/api/dashboard'),
+  seedDemo: () => req<{ dossierId: string }>('/api/demo/seed', { method: 'POST', body: '{}' }),
   onboard: (name: string, country: string) =>
     req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country }) }),
   dossiers: () => req<Dossier[]>('/api/dossiers'),

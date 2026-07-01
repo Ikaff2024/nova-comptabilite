@@ -9,14 +9,38 @@ const SOURCE_COLOR: Record<string, string> = {
   'Import bancaire': 'bg-violet-500', 'Récurrente': 'bg-amber-500', 'API': 'bg-pink-500', 'À-nouveaux': 'bg-teal-500',
 };
 
-export default function CabinetDashboard({ cabinetName, onOpen }: { cabinetName: string; onOpen: (id: string) => void }) {
+export default function CabinetDashboard({ cabinetName, onOpen, onDemo, refresh }: { cabinetName: string; onOpen: (id: string) => void; onDemo: (id: string) => void; refresh?: number }) {
   const [d, setD] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
 
-  useEffect(() => { let on = true; api.dashboard().then((x) => { if (on) { setD(x); setLoading(false); } }); return () => { on = false; }; }, []);
+  useEffect(() => { let on = true; setLoading(true); api.dashboard().then((x) => { if (on) { setD(x); setLoading(false); } }); return () => { on = false; }; }, [refresh]);
+
+  const seedDemo = async () => { setSeeding(true); try { const { dossierId } = await api.seedDemo(); onDemo(dossierId); } finally { setSeeding(false); } };
 
   if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div>;
   if (!d) return null;
+
+  if (d.totalEntries === 0) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Tableau de bord</h1>
+          <p className="mt-1 text-zinc-400">{cabinetName}</p>
+        </div>
+        <div className="flex flex-col items-center rounded-2xl border border-white/10 bg-white/5 p-10 text-center">
+          <div className="rounded-full bg-emerald-500/10 p-4 text-emerald-400"><Sparkles className="h-8 w-8" /></div>
+          <h2 className="mt-4 font-display text-xl font-semibold">Découvrez Nova en 30 secondes</h2>
+          <p className="mt-2 max-w-md text-zinc-400">Chargez un dossier de démonstration pré-rempli (ventes, achats, Mobile Money) et parcourez la capture, la balance et les états financiers — sans rien saisir.</p>
+          <button onClick={seedDemo} disabled={seeding}
+            className="mt-6 flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">
+            {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Créer un dossier de démonstration
+          </button>
+          <p className="mt-3 text-xs text-zinc-500">Ou créez votre propre dossier depuis l'onglet « Portefeuille ».</p>
+        </div>
+      </div>
+    );
+  }
 
   const totalSources = d.sourceBreakdown.reduce((s, x) => s + x.count, 0);
 

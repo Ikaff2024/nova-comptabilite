@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle } from 'lucide-react';
 import { api, type Cabinet, type Dossier, type AuthUser } from './lib/api';
-import { getToken, clearToken } from './lib/session';
+import { getToken, clearToken, isWelcomed } from './lib/session';
 import Auth from './components/Auth';
 import Onboarding from './components/Onboarding';
 import Dossiers from './components/Dossiers';
 import DossierView from './components/DossierView';
 import CabinetDashboard from './components/CabinetDashboard';
+import WelcomeGuide from './components/WelcomeGuide';
 import { cn } from './lib/utils';
 
 export default function App() {
@@ -17,6 +18,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Dossier | null>(null);
   const [nav, setNav] = useState<'dashboard' | 'portefeuille'>('dashboard');
+  const [showGuide, setShowGuide] = useState(false);
+  const [dashKey, setDashKey] = useState(0); // force refresh du dashboard après démo
 
   const openDossierById = async (id: string) => {
     const list = await api.dossiers();
@@ -42,7 +45,13 @@ export default function App() {
     })();
   }, []);
 
+  // Guide d'accueil : au premier passage avec un cabinet créé.
+  useEffect(() => {
+    if (user && cabinets.length > 0 && !isWelcomed()) setShowGuide(true);
+  }, [user, cabinets]);
+
   const onAuth = async (u: AuthUser) => { setUser(u); await loadCabinets(); };
+  const onDemoCreated = (id: string) => { setShowGuide(false); setDashKey((k) => k + 1); openDossierById(id); };
   const logout = () => { clearToken(); setUser(null); setCabinets([]); setSelected(null); };
 
   if (booting) {
@@ -101,8 +110,12 @@ export default function App() {
           })}
         </nav>
 
-        <div className="mt-auto space-y-3 border-t border-white/5 pt-6">
-          <div className="truncate px-2 text-xs text-zinc-500">{user.name || user.email}</div>
+        <div className="mt-auto space-y-1 border-t border-white/5 pt-6">
+          <div className="truncate px-2 pb-2 text-xs text-zinc-500">{user.name || user.email}</div>
+          <button onClick={() => setShowGuide(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-emerald-400">
+            <HelpCircle className="h-5 w-5" />
+            Guide de prise en main
+          </button>
           <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-rose-400">
             <LogOut className="h-5 w-5" />
             Déconnexion
@@ -115,10 +128,12 @@ export default function App() {
           {selected
             ? <DossierView dossier={selected} onBack={() => setSelected(null)} />
             : nav === 'dashboard'
-              ? <CabinetDashboard cabinetName={cabinet.name} onOpen={openDossierById} />
+              ? <CabinetDashboard refresh={dashKey} cabinetName={cabinet.name} onOpen={openDossierById} onDemo={onDemoCreated} />
               : <Dossiers cabinet={cabinet} onOpen={setSelected} />}
         </div>
       </main>
+
+      {showGuide && <WelcomeGuide onClose={() => setShowGuide(false)} onDemo={onDemoCreated} />}
     </div>
   );
 }

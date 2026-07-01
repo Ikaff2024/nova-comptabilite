@@ -88,6 +88,16 @@ export function createApi() {
     res.json(await withUser(userId, (c) => acc.cabinetDashboard(c)));
   }));
 
+  app.post('/api/demo/seed', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, async (c) => {
+      const cabs = await acc.listCabinets(c);
+      if (!cabs[0]) { const e: any = new Error('Aucun cabinet'); e.status = 400; throw e; }
+      return acc.seedDemoDossier(c, cabs[0].id);
+    });
+    res.status(201).json(out);
+  }));
+
   app.get('/api/dossiers', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => acc.listDossiers(c)));

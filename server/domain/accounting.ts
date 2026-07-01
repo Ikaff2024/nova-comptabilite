@@ -360,6 +360,34 @@ export async function reverseEntry(c: Client, entryId: string, date?: string): P
   return { reversalId: rows[0].id };
 }
 
+// ---- Dossier de démonstration (prise en main immédiate) --------------------
+
+export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ dossierId: string }> {
+  const { id } = await openDossier(c, { cabinetId, raisonSociale: 'Dossier de démonstration', country: 'CI' });
+  const { fiscalYears, journals } = await setupDossierDefaults(c, id);
+  const fy = fiscalYears[0].id;
+  const J = (code: string) => journals.find((j: any) => j.code === code)!.id;
+  const post = (jc: string, date: string, description: string, source: EntrySource, cp: string, lines: EntryLineInput[]) =>
+    postEntry(c, { dossierId: id, fiscalYearId: fy, journalId: J(jc), entryDate: date, description, source, counterpartyName: cp, lines });
+
+  await post('VE', '2026-07-02', 'Vente marchandises comptant', 'ocr', 'Client Awa',
+    [{ accountCode: '521', debit: 450000, paymentChannel: 'bank' }, { accountCode: '701', credit: 450000 }]);
+  await post('VE', '2026-07-05', 'Prestation de service (Orange Money)', 'mobile_money', 'Société TechCorp',
+    [{ accountCode: '521', debit: 200000, paymentChannel: 'om' }, { accountCode: '706', credit: 200000 }]);
+  await post('AC', '2026-07-06', 'Achat marchandises', 'ocr', 'Grossiste Adjamé',
+    [{ accountCode: '601', debit: 180000 }, { accountCode: '401', credit: 180000 }]);
+  await post('AC', '2026-07-08', 'Facture Orange Internet', 'ocr', 'Orange CI',
+    [{ accountCode: '628', debit: 29661 }, { accountCode: '445', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
+  await post('AC', '2026-07-10', 'Loyer boutique', 'manual', 'Bailleur Cocody',
+    [{ accountCode: '622', debit: 120000 }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
+  await post('OD', '2026-07-28', 'Salaires du mois', 'manual', 'Personnel',
+    [{ accountCode: '661', debit: 150000 }, { accountCode: '521', credit: 150000, paymentChannel: 'bank' }]);
+  await post('AC', '2026-07-30', 'Frais Mobile Money', 'mobile_money', 'Wave',
+    [{ accountCode: '631', debit: 1200 }, { accountCode: '521', credit: 1200, paymentChannel: 'wave' }]);
+
+  return { dossierId: id };
+}
+
 // ---- Tableau de bord cabinet (agrégats portefeuille) -----------------------
 
 const AUTO_SOURCES = ['ocr', 'mobile_money', 'bank_import', 'recurring', 'api'];
