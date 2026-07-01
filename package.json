@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit",
     "api": "tsx server/index.ts",
     "api:dev": "tsx watch server/index.ts",
     "test:domain": "tsx server/integration-test.ts"

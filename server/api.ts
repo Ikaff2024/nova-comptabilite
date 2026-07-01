@@ -1,5 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { withUser } from './db.js';
+import { withUser, pool } from './db.js';
 import * as acc from './domain/accounting.js';
 import * as users from './domain/users.js';
 import { hashPassword, verifyPassword, issueToken, verifyToken } from './auth.js';
@@ -35,7 +35,10 @@ export function createApi() {
     return req.userId as string;
   };
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'nova-comptabilite-api' }));
+  app.get('/api/health', async (_req, res) => {
+    try { await pool.query('select 1'); res.json({ ok: true, db: true, service: 'nova-comptabilite-api' }); }
+    catch { res.status(503).json({ ok: false, db: false, service: 'nova-comptabilite-api' }); }
+  });
 
   // --- Authentification -------------------------------------------------------
 
@@ -264,6 +267,16 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+
+  // 404 pour toute route API inconnue
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Ressource introuvable' }));
+
+  // Filet de sécurité : aucune erreur non gérée ne doit crasher le process
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Erreur non gérée:', err?.message ?? err);
+    if (res.headersSent) return;
+    res.status(err?.status ?? 500).json({ error: err?.message ?? 'Erreur serveur' });
+  });
 
   return app;
 }
