@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit",
     "api": "tsx server/index.ts",
     "api:dev": "tsx watch server/index.ts",
+    "start": "tsx server/index.ts",
+    "migrate": "node scripts/migrate.mjs",
     "test:domain": "tsx server/integration-test.ts"
   },
   "dependencies": {

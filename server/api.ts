@@ -1,3 +1,4 @@
+import path from 'node:path';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { withUser, pool } from './db.js';
 import * as acc from './domain/accounting.js';
@@ -270,6 +271,13 @@ export function createApi() {
 
   // 404 pour toute route API inconnue
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ressource introuvable' }));
+
+  // Production : sert le front build (dist) + fallback SPA (même origine → /api relatif).
+  if (process.env.SERVE_STATIC === 'true') {
+    const dist = path.resolve('dist');
+    app.use(express.static(dist));
+    app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+  }
 
   // Filet de sécurité : aucune erreur non gérée ne doit crasher le process
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
