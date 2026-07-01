@@ -574,6 +574,36 @@ export async function financialStatements(c: Client, dossierId: string, fiscalYe
   };
 }
 
+// Grand livre : détail chronologique des mouvements par compte (dos de la balance).
+export async function generalLedger(
+  c: Client, dossierId: string, opts: { fiscalYearId?: string; accountCode?: string } = {},
+): Promise<any[]> {
+  const params: any[] = [dossierId];
+  let where = 'l.dossier_id = $1';
+  if (opts.fiscalYearId) { params.push(opts.fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
+  if (opts.accountCode) { params.push(opts.accountCode); where += ` and a.account_code = $${params.length}`; }
+
+  const { rows } = await c.query(
+    `select a.account_code, a.label as account_label,
+            to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, j.code as journal_code,
+            e.piece_ref, e.description, l.label as line_label,
+            l.amount_debit as debit, l.amount_credit as credit
+       from entry_lines l
+       join entries e on e.id = l.entry_id and e.status = 'posted'
+       join journals j on j.id = e.journal_id
+       join accounts a on a.id = l.account_id
+      where ${where}
+      order by a.account_code, e.entry_date, e.created_at, l.line_no`,
+    params,
+  );
+  return rows.map((r: any) => ({
+    account_code: r.account_code, account_label: r.account_label,
+    entry_date: r.entry_date, journal_code: r.journal_code,
+    piece_ref: r.piece_ref, description: r.description, line_label: r.line_label,
+    debit: Number(r.debit), credit: Number(r.credit),
+  }));
+}
+
 // Balance à 6 / 8 colonnes : sépare les à-nouveaux (report) des mouvements de la
 // période. Colonnes fournies : à-nouveaux (D/C), mouvements période (D/C),
 // mouvements cumulés (D/C) et solde. Le front choisit la présentation 6 ou 8.

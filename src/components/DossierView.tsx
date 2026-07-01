@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
+import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import EntryForm from './EntryForm';
 import Capture from './Capture';
 import RulesTab from './RulesTab';
 import MobileMoney from './MobileMoney';
 import FinancialStatements from './FinancialStatements';
+import GeneralLedger from './GeneralLedger';
 
-type Tab = 'capture' | 'mobilemoney' | 'balance' | 'etats' | 'saisie' | 'plan' | 'regles';
+type Tab = 'capture' | 'mobilemoney' | 'balance' | 'grandlivre' | 'etats' | 'saisie' | 'plan' | 'regles';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('capture');
@@ -37,6 +39,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'mobilemoney', label: 'Mobile Money', icon: Smartphone },
     { id: 'saisie', label: 'Saisie', icon: PencilLine },
     { id: 'balance', label: 'Balance', icon: Scale },
+    { id: 'grandlivre', label: 'Grand livre', icon: Library },
     { id: 'etats', label: 'États financiers', icon: FileText },
     { id: 'regles', label: 'Règles', icon: ShieldCheck },
     { id: 'plan', label: 'Plan comptable', icon: BookOpen },
@@ -88,7 +91,8 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
               <MobileMoney dossierId={dossier.id} fiscalYears={fiscalYears}
                 currency={dossier.base_currency} onImported={() => { /* balance se recharge à l'ouverture */ }} />
             )}
-            {tab === 'balance' && <BalanceTab dossierId={dossier.id} currency={dossier.base_currency} />}
+            {tab === 'balance' && <BalanceTab dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'grandlivre' && <GeneralLedger dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'etats' && <FinancialStatements dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'regles' && <RulesTab dossierId={dossier.id} />}
             {tab === 'plan' && <PlanTab dossierId={dossier.id} />}
@@ -99,7 +103,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   );
 }
 
-function BalanceTab({ dossierId, currency }: { dossierId: string; currency: string }) {
+function BalanceTab({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
   const [rows, setRows] = useState<BalanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<6 | 8>(6);
@@ -121,18 +125,36 @@ function BalanceTab({ dossierId, currency }: { dossierId: string; currency: stri
     : [{ label: 'À-nouveaux', sub: ['Débit', 'Crédit'] }, { label: 'Mouvements période', sub: ['Débit', 'Crédit'] }, { label: 'Soldes', sub: ['Débiteur', 'Créditeur'] }];
   const nVals = mode === 6 ? 4 : 6;
   const totals = Array.from({ length: nVals }, (_, i) => rows.reduce((s, r) => s + vals(r)[i], 0));
+  const subHeaders = groups.flatMap((g) => g.sub.map((s) => `${g.label} ${s}`));
+
+  const exportCsv = () => {
+    const out: (string | number)[][] = [['Compte', 'Intitulé', ...subHeaders]];
+    for (const r of rows) out.push([r.account_code, r.account_label, ...vals(r)]);
+    out.push(['', 'TOTAUX', ...totals]);
+    downloadCsv(`balance-${mode}col_${dossierName}`.replace(/\s+/g, '-'), out);
+  };
+  const exportPdf = () => {
+    const head = `<tr><th>Compte</th><th>Intitulé</th>${subHeaders.map((s) => `<th class="n">${s}</th>`).join('')}</tr>`;
+    const body = rows.map((r) => `<tr><td>${r.account_code}</td><td>${(r.account_label ?? '').replace(/[&<>]/g, '')}</td>${vals(r).map((x) => `<td class="n">${x ? fmtMoney(x, currency) : ''}</td>`).join('')}</tr>`).join('');
+    const tot = `<tr class="tot"><td colspan="2">Totaux</td>${totals.map((t) => `<td class="n">${fmtMoney(t, currency)}</td>`).join('')}</tr>`;
+    printDocument(`Balance à ${mode} colonnes — ${dossierName}`, `devise ${currency} · édité le ${nowStamp()}`, `<table><thead>${head}</thead><tbody>${body}${tot}</tbody></table>`);
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-zinc-400">Balance générale des comptes</p>
-        <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
-          {[6, 8].map((n) => (
-            <button key={n} onClick={() => setMode(n as 6 | 8)}
-              className={cn('rounded-md px-3 py-1 font-medium transition-colors', mode === n ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
-              {n} colonnes
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
+          <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
+            {[6, 8].map((n) => (
+              <button key={n} onClick={() => setMode(n as 6 | 8)}
+                className={cn('rounded-md px-3 py-1 font-medium transition-colors', mode === n ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
+                {n} col.
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

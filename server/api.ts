@@ -263,6 +263,13 @@ export function createApi() {
     res.json(await withUser(userId, (c) => acc.trialBalance(c, req.params.id, fy)));
   }));
 
+  app.get('/api/dossiers/:id/general-ledger', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fiscalYearId = (req.query.fiscalYearId as string) || undefined;
+    const accountCode = (req.query.account as string) || undefined;
+    res.json(await withUser(userId, (c) => acc.generalLedger(c, req.params.id, { fiscalYearId, accountCode })));
+  }));
+
   app.get('/api/dossiers/:id/financial-statements', h(async (req, res) => {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;

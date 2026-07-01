@@ -69,6 +69,11 @@ export interface Mapping {
   id: string; keyword: string; account_code: string; hits: number;
   source: 'manual' | 'learned'; account_label: string | null;
 }
+export interface LedgerRow {
+  account_code: string; account_label: string;
+  entry_date: string; journal_code: string; piece_ref: string | null;
+  description: string; line_label: string | null; debit: number; credit: number;
+}
 export interface BalanceRow {
   account_code: string; account_label: string;
   open_debit: number; open_credit: number;
@@ -132,6 +137,13 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/mappings/${id}`, { method: 'DELETE' }),
   trialBalance: (dossierId: string, fiscalYearId?: string) =>
     req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  generalLedger: (dossierId: string, opts: { fiscalYearId?: string; account?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.fiscalYearId) q.set('fiscalYearId', opts.fiscalYearId);
+    if (opts.account) q.set('account', opts.account);
+    const qs = q.toString();
+    return req<LedgerRow[]>(`/api/dossiers/${dossierId}/general-ledger${qs ? `?${qs}` : ''}`);
+  },
   financialStatements: (dossierId: string, fiscalYearId?: string) =>
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
 };
