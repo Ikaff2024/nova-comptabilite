@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword, issueToken, verifyToken } from './auth.js
 import { extractDocument, aiProvider } from './ai/provider.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
+import * as bank from './domain/bank.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -262,6 +263,26 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.trialBalance(c, req.params.id, fy)));
+  }));
+
+  // --- Rapprochement bancaire (pointage) -------------------------------------
+  app.get('/api/dossiers/:id/bank-accounts', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => bank.bankAccounts(c, req.params.id)));
+  }));
+
+  app.get('/api/dossiers/:id/reconciliation', h(async (req, res) => {
+    const userId = requireUser(req);
+    const account = (req.query.account as string) || '';
+    if (!account) { const e: any = new Error('account requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => bank.reconciliationView(c, req.params.id, account)));
+  }));
+
+  app.post('/api/dossiers/:id/reconciliation/point', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { entryLineId, pointed } = req.body ?? {};
+    await withUser(userId, (c) => bank.setPointing(c, req.params.id, entryLineId, !!pointed));
+    res.status(204).end();
   }));
 
   // --- Lettrage des comptes de tiers -----------------------------------------

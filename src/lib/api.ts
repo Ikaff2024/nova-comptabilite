@@ -69,6 +69,9 @@ export interface Mapping {
   id: string; keyword: string; account_code: string; hits: number;
   source: 'manual' | 'learned'; account_label: string | null;
 }
+export interface BankAccount { account_code: string; label: string; moves: number; unpointed: number; }
+export interface ReconMove { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; pointed: boolean; }
+export interface ReconView { balance: number; pointedBalance: number; moves: ReconMove[]; }
 export interface TiersAccount { account_code: string; label: string; open_count: number; }
 export interface OpenItem { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface LetteredItem { id: string; code: string; entry_date: string; piece_ref: string | null; label: string; debit: number; credit: number; }
@@ -141,6 +144,11 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/mappings/${id}`, { method: 'DELETE' }),
   trialBalance: (dossierId: string, fiscalYearId?: string) =>
     req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  bankAccounts: (dossierId: string) => req<BankAccount[]>(`/api/dossiers/${dossierId}/bank-accounts`),
+  reconciliation: (dossierId: string, account: string) =>
+    req<ReconView>(`/api/dossiers/${dossierId}/reconciliation?account=${encodeURIComponent(account)}`),
+  point: (dossierId: string, entryLineId: string, pointed: boolean) =>
+    req<void>(`/api/dossiers/${dossierId}/reconciliation/point`, { method: 'POST', body: JSON.stringify({ entryLineId, pointed }) }),
   tiersAccounts: (dossierId: string) => req<TiersAccount[]>(`/api/dossiers/${dossierId}/tiers-accounts`),
   lettrageView: (dossierId: string, account: string) =>
     req<{ open: OpenItem[]; lettered: LetteredItem[] }>(`/api/dossiers/${dossierId}/lettrage?account=${encodeURIComponent(account)}`),
