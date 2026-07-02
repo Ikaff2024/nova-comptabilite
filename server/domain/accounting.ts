@@ -207,6 +207,17 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
     throw new Error(`Écriture déséquilibrée : débit ${totalDebit} ≠ crédit ${totalCredit}.`);
   }
 
+  // Garde-fou : la date d'écriture doit tomber dans les bornes de l'exercice.
+  const { rows: fyr } = await c.query(
+    "select label, to_char(start_date,'YYYY-MM-DD') as start, to_char(end_date,'YYYY-MM-DD') as end from fiscal_years where dossier_id=$1 and id=$2",
+    [input.dossierId, input.fiscalYearId],
+  );
+  if (!fyr[0]) throw new Error('Exercice introuvable pour ce dossier.');
+  if (input.entryDate < fyr[0].start || input.entryDate > fyr[0].end) {
+    const fr = (s: string) => s.split('-').reverse().join('/');
+    throw new Error(`La date ${fr(input.entryDate)} est hors de l'exercice « ${fyr[0].label} » (${fr(fyr[0].start)} – ${fr(fyr[0].end)}). Choisissez l'exercice correspondant ou une date dans l'exercice.`);
+  }
+
   // Résolution des comptes par code (dans le périmètre RLS du dossier)
   const codes = [...new Set(input.lines.map((l) => l.accountCode))];
   const { rows: accs } = await c.query(
