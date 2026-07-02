@@ -92,6 +92,12 @@ export interface ImportBalanceAnalysis {
   totalDebit: number; totalCredit: number; diff: number; balanced: boolean;
   okCount: number; missingCount: number; alreadyImported: boolean;
 }
+export interface RecurringLine { accountCode: string; debit?: number; credit?: number; label?: string }
+export interface RecurringTemplate {
+  id: string; label: string; journalCode: string; frequency: string; frequencyLabel: string;
+  dayOfMonth: number; startDate: string; endDate: string | null; counterpartyName: string | null;
+  lines: RecurringLine[]; amount: number; active: boolean; generated: number; due: number;
+}
 export interface DossierDashboard {
   fiscalYear: { id: string; label: string } | null;
   kpis: { resultat: number; chiffreAffaires: number; tresorerie: number; creances: number; dettesFrs: number; vncTotal: number };
@@ -235,6 +241,13 @@ export const api = {
   commitBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId: string; date: string; description?: string; createMissing?: boolean }) =>
     req<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number }>(`/api/dossiers/${dossierId}/import-balance/commit`, { method: 'POST', body: JSON.stringify(body) }),
   dossierDashboard: (dossierId: string, fiscalYearId?: string) => req<DossierDashboard>(`/api/dossiers/${dossierId}/dashboard${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  recurringTemplates: (dossierId: string) => req<RecurringTemplate[]>(`/api/dossiers/${dossierId}/recurring`),
+  createRecurring: (dossierId: string, body: { label: string; journalId: string; frequency: string; dayOfMonth?: number; startDate: string; endDate?: string | null; counterpartyName?: string; lines: RecurringLine[]; notes?: string }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/recurring`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteRecurring: (dossierId: string, tid: string) => req<void>(`/api/dossiers/${dossierId}/recurring/${tid}`, { method: 'DELETE' }),
+  setRecurringActive: (dossierId: string, tid: string, active: boolean) => req<void>(`/api/dossiers/${dossierId}/recurring/${tid}/active`, { method: 'POST', body: JSON.stringify({ active }) }),
+  generateRecurring: (dossierId: string, tid: string, upTo?: string) => req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/recurring/${tid}/generate`, { method: 'POST', body: JSON.stringify({ upTo }) }),
+  generateAllRecurring: (dossierId: string, upTo?: string) => req<{ count: number; total: number; templates: number }>(`/api/dossiers/${dossierId}/recurring-generate`, { method: 'POST', body: JSON.stringify({ upTo }) }),
   audit: (dossierId: string, limit?: number) => req<AuditEntry[]>(`/api/dossiers/${dossierId}/audit${limit ? `?limit=${limit}` : ''}`),
   assets: (dossierId: string) => req<FixedAsset[]>(`/api/dossiers/${dossierId}/assets`),
   assetDetail: (dossierId: string, aid: string) => req<FixedAssetDetail>(`/api/dossiers/${dossierId}/assets/${aid}`),
