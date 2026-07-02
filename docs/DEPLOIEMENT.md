@@ -46,6 +46,17 @@ L'URL que l'**application** utilisera est celle du rôle **`nova_app`** (pas le 
 - `GET https://<ton-url>/api/health` doit répondre `{"ok":true,"db":true,...}`.
 - L'app se charge (front servi par le même service, `/api` en même origine).
 
+## Checklist de mise en production
+
+- [ ] Projet Neon créé (région EU/Frankfurt), migrations appliquées (`npm run migrate`) — inclut immobilisations (0014), piste d'audit (0015).
+- [ ] Rôle `nova_app` sécurisé (mot de passe fort) ; `DATABASE_URL` de l'app = rôle `nova_app` (RLS active).
+- [ ] Variables Railway posées (`DATABASE_URL`, `JWT_SECRET` long et aléatoire, `AI_PROVIDER` + clé).
+- [ ] Déploiement effectué ; `GET /api/health` → `{"ok":true,"db":true}`.
+- [ ] Login → onboarding → dashboard OK ; `/guide.html` accessible (servi par le même service).
+- [ ] Vérifier la piste d'audit (onglet **Audit** d'un dossier) après une première écriture.
+
+> **Artefact validé en local** : en mode `SERVE_STATIC=true`, un seul process sert `/api`, le front (SPA + fallback) et `/guide.html`. C'est l'image déployée sur Railway.
+
 ## Notes
 
 - **CI** : chaque push sur `main` rejoue migrations + tests (`.github/workflows/ci.yml`).
