@@ -94,14 +94,15 @@
     <a href="#plan">9 · Plan comptable</a>
     <a class="pillar">Tiers &amp; trésorerie</a>
     <a href="#tiers">10 · Tiers (clients/fournisseurs)</a>
-    <a href="#banque">11 · Rapprochement bancaire</a>
+    <a href="#immos">11 · Immobilisations &amp; amortissements</a>
+    <a href="#banque">12 · Rapprochement bancaire</a>
     <a class="pillar">Restituer &amp; déclarer</a>
-    <a href="#etats">12 · États financiers</a>
-    <a href="#fiscalite">13 · Fiscalité (TVA / DSF)</a>
+    <a href="#etats">13 · États financiers</a>
+    <a href="#fiscalite">14 · Fiscalité (TVA / DSF)</a>
     <a class="pillar">Paramétrer</a>
-    <a href="#regles">14 · Règles de l'IA</a>
+    <a href="#regles">15 · Règles de l'IA</a>
     <a class="pillar">Migration</a>
-    <a href="#import">15 · Import de balance (reprise)</a>
+    <a href="#import">16 · Import de balance (reprise)</a>
   </nav>
 
   <!-- ===================== CONTENU ===================== -->
@@ -129,14 +130,14 @@
         <ol><li>Capture IA (photo de facture/reçu)</li><li>Mobile Money (relevé Wave/Orange/MTN)</li><li>Facturation &amp; FNE</li><li>Saisie manuelle</li></ol></div>
       <div class="pillar-row"><b>📚 Consulter — vérifier la comptabilité</b>
         <ol start="6"><li>Balance à 6 ou 8 colonnes</li><li>Grand livre</li><li>Journaux &amp; clôture</li><li>Plan comptable</li></ol></div>
-      <div class="pillar-row"><b>👥 Tiers &amp; trésorerie — suivre qui doit quoi</b>
-        <ol start="10"><li>Tiers (clients / fournisseurs, lettrage, balance âgée)</li><li>Rapprochement bancaire</li></ol></div>
+      <div class="pillar-row"><b>👥 Tiers &amp; trésorerie — suivre qui doit quoi &amp; le patrimoine</b>
+        <ol start="10"><li>Tiers (clients / fournisseurs, lettrage, balance âgée)</li><li>Immobilisations &amp; amortissements</li><li>Rapprochement bancaire</li></ol></div>
       <div class="pillar-row"><b>📄 Restituer &amp; déclarer — sortir les documents officiels</b>
-        <ol start="12"><li>États financiers (SIG, compte de résultat, bilan)</li><li>Fiscalité — TVA (DSF à venir par branchement)</li></ol></div>
+        <ol start="13"><li>États financiers (SIG, compte de résultat, bilan)</li><li>Fiscalité — TVA (DSF à venir par branchement)</li></ol></div>
       <div class="pillar-row"><b>⚙️ Paramétrer — apprendre à Nova vos habitudes</b>
-        <ol start="14"><li>Règles de l'IA</li></ol></div>
+        <ol start="15"><li>Règles de l'IA</li></ol></div>
       <div class="pillar-row"><b>🔁 Migration — reprendre un dossier existant</b>
-        <ol start="15"><li>Import de balance (reprise depuis un autre logiciel)</li></ol></div>
+        <ol start="16"><li>Import de balance (reprise depuis un autre logiciel)</li></ol></div>
     </div>
 
     <!-- ============ 1 DÉMARRAGE ============ -->
@@ -372,9 +373,34 @@
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
-    <!-- ============ 11 BANQUE ============ -->
+    <!-- ============ 11 IMMOBILISATIONS ============ -->
+    <section class="fiche" id="immos">
+      <h2>11 · Immobilisations &amp; amortissements <span class="tag">Tiers &amp; trésorerie</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Tenir le <strong>registre des biens durables</strong> (matériel, véhicules, bâtiments…) et calculer automatiquement leur <strong>amortissement linéaire</strong>. Nova génère le plan d'amortissement et passe les <strong>dotations</strong> comptables à votre place.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables et chefs de mission ; utile en clôture pour constater les dotations de l'exercice.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Immobilisations</strong> → <strong>Nouvelle immo</strong>.</li>
+          <li>Renseignez le <strong>libellé</strong>, le <strong>compte d'immobilisation</strong> (classe 2), la <strong>valeur d'origine</strong>, la <strong>durée d'utilité</strong> et la date de <strong>mise en service</strong>.</li>
+          <li>Enregistrez : Nova calcule le <strong>plan d'amortissement</strong> (dépliez la ligne pour le voir).</li>
+          <li>Cliquez <strong>Comptabiliser</strong> sur un exercice échu, ou utilisez le bouton <strong>Dotations {année}</strong> pour traiter toutes les immos d'un coup.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>La 1re année est calculée au <strong>prorata temporis</strong> à partir de la date de mise en service (une immo mise en service au 1er juillet ne s'amortit que sur 6 mois la 1re année).</li>
+          <li>Les comptes d'<strong>amortissement (28x)</strong> et de <strong>dotation (68x)</strong> sont déduits automatiquement du compte d'immobilisation.</li>
+          <li>La dotation passe l'écriture <span class="font-mono">681 → 28x</span> ; la <strong>VNC</strong> (valeur nette comptable) se met à jour dans le registre.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">« Exercice introuvable » : créez d'abord l'exercice concerné. « Dotation déjà comptabilisée » : elle a déjà été passée — pour la refaire, contre-passez l'écriture correspondante.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 12 BANQUE ============ -->
     <section class="fiche" id="banque">
-      <h2>11 · Rapprochement bancaire <span class="tag">Tiers &amp; trésorerie</span></h2>
+      <h2>12 · Rapprochement bancaire <span class="tag">Tiers &amp; trésorerie</span></h2>
       <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
         Pointer les écritures de banque avec le relevé de la banque et vérifier que le <strong>solde comptable</strong> correspond au <strong>solde réel</strong>.</div>
       <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
@@ -394,7 +420,7 @@
 
     <!-- ============ 12 ÉTATS ============ -->
     <section class="fiche" id="etats">
-      <h2>12 · États financiers <span class="tag">Restituer &amp; déclarer</span></h2>
+      <h2>13 · États financiers <span class="tag">Restituer &amp; déclarer</span></h2>
       <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
         Produire en temps réel les <strong>Soldes Intermédiaires de Gestion</strong> (marge, valeur ajoutée, EBE, résultat), le <strong>compte de résultat</strong> et le <strong>bilan</strong> SYSCOHADA.</div>
       <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
@@ -414,7 +440,7 @@
 
     <!-- ============ 13 FISCALITÉ ============ -->
     <section class="fiche" id="fiscalite">
-      <h2>13 · Fiscalité — TVA / DSF <span class="tag">Restituer &amp; déclarer</span></h2>
+      <h2>14 · Fiscalité — TVA / DSF <span class="tag">Restituer &amp; déclarer</span></h2>
       <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
         Calculer la <strong>TVA du mois</strong> (collectée − déductible), générer l'<strong>écriture de liquidation</strong>, et éditer la déclaration en PDF. La <strong>DSF</strong> sera produite par branchement au logiciel dédié.</div>
       <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
@@ -435,7 +461,7 @@
 
     <!-- ============ 14 RÈGLES ============ -->
     <section class="fiche" id="regles">
-      <h2>14 · Règles de l'IA <span class="tag">Paramétrer</span></h2>
+      <h2>15 · Règles de l'IA <span class="tag">Paramétrer</span></h2>
       <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
         Apprendre à Nova vos habitudes : associer un <strong>libellé</strong> (ex. « Orange », « CIE ») à un <strong>compte imposé</strong>, pour que la Capture propose toujours le bon compte.</div>
       <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
@@ -458,7 +484,7 @@
 
     <!-- ============ 15 IMPORT BALANCE ============ -->
     <section class="fiche" id="import">
-      <h2>15 · Import de balance (reprise) <span class="tag">Migration</span></h2>
+      <h2>16 · Import de balance (reprise) <span class="tag">Migration</span></h2>
       <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
         Reprendre un dossier venu d'un autre logiciel : vous collez sa <strong>balance</strong>, Nova la contrôle puis crée l'écriture d'<strong>à-nouveaux</strong> (soldes d'ouverture). Vous démarrez avec la situation exacte, sans tout ressaisir.</div>
       <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
