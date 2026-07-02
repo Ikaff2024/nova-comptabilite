@@ -14,6 +14,7 @@ import * as tax from './domain/tax.js';
 import * as importbalance from './domain/importbalance.js';
 import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
+import { dossierDashboard } from './domain/dossierdashboard.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -298,6 +299,13 @@ export function createApi() {
     if (!fiscalYearId || !date) { const e: any = new Error('fiscalYearId et date requis'); e.status = 400; throw e; }
     const parsed = Array.isArray(lines) ? lines : importbalance.parseBalanceCsv(String(csv ?? ''));
     res.json(await withUser(userId, (c) => importbalance.commitBalanceImport(c, req.params.id, parsed, { fiscalYearId, date, description, createMissing: !!createMissing })));
+  }));
+
+  // --- Tableau de bord par entreprise (dossier) ------------------------------
+  app.get('/api/dossiers/:id/dashboard', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => dossierDashboard(c, req.params.id, fy)));
   }));
 
   // --- Journal d'audit (piste d'audit inaltérable) ---------------------------

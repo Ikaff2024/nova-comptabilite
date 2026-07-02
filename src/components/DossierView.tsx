@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -18,11 +18,12 @@ import Fiscalite from './Fiscalite';
 import ImportBalance from './ImportBalance';
 import Immobilisations from './Immobilisations';
 import AuditTrail from './AuditTrail';
+import DossierDashboard from './DossierDashboard';
 
-type Tab = 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'saisie' | 'plan' | 'regles' | 'import' | 'audit';
+type Tab = 'synthese' | 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'saisie' | 'plan' | 'regles' | 'import' | 'audit';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
-  const [tab, setTab] = useState<Tab>('capture');
+  const [tab, setTab] = useState<Tab>('synthese');
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [journals, setJournals] = useState<Journal[]>([]);
   const [ready, setReady] = useState(false);
@@ -43,6 +44,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const needsSetup = ready && (fiscalYears.length === 0 || journals.length === 0);
 
   const tabs: { id: Tab; label: string; icon: any }[] = [
+    { id: 'synthese', label: 'Synthèse', icon: LayoutDashboard },
     { id: 'facturation', label: 'Facturation', icon: ReceiptText },
     { id: 'capture', label: 'Capture IA', icon: ScanLine },
     { id: 'mobilemoney', label: 'Mobile Money', icon: Smartphone },
@@ -95,6 +97,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
           </div>
 
           <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+            {tab === 'synthese' && <DossierDashboard dossierId={dossier.id} currency={dossier.base_currency} onNavigate={(t) => setTab(t as Tab)} />}
             {tab === 'facturation' && <Facturation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'capture' && (
               <Capture dossierId={dossier.id} fiscalYears={fiscalYears} journals={journals}

@@ -92,6 +92,18 @@ export interface ImportBalanceAnalysis {
   totalDebit: number; totalCredit: number; diff: number; balanced: boolean;
   okCount: number; missingCount: number; alreadyImported: boolean;
 }
+export interface DossierDashboard {
+  fiscalYear: { id: string; label: string } | null;
+  kpis: { resultat: number; chiffreAffaires: number; tresorerie: number; creances: number; dettesFrs: number; vncTotal: number };
+  activity: { posted: number; drafts: number; thisMonth: number; autoPct: number };
+  vat: { collectee: number; deductible: number; netDue: number; creditReportable: number; period: string };
+  monthly: { month: string; produits: number; charges: number; resultat: number }[];
+  topClients: { name: string; amount: number }[];
+  topFournisseurs: { name: string; amount: number }[];
+  aged: { overdue90: number };
+  recent: { date: string; piece_ref: string; description: string; source: string; journal: string; amount: number }[];
+  alerts: { level: 'info' | 'warn'; message: string; tab?: string }[];
+}
 export interface AuditEntry {
   id: number; created_at: string; user_name: string | null; user_email: string | null;
   action: string; entity: string | null; entity_id: string | null; detail: Record<string, any>;
@@ -222,6 +234,7 @@ export const api = {
     req<ImportBalanceAnalysis>(`/api/dossiers/${dossierId}/import-balance/analyze`, { method: 'POST', body: JSON.stringify(body) }),
   commitBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId: string; date: string; description?: string; createMissing?: boolean }) =>
     req<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number }>(`/api/dossiers/${dossierId}/import-balance/commit`, { method: 'POST', body: JSON.stringify(body) }),
+  dossierDashboard: (dossierId: string, fiscalYearId?: string) => req<DossierDashboard>(`/api/dossiers/${dossierId}/dashboard${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   audit: (dossierId: string, limit?: number) => req<AuditEntry[]>(`/api/dossiers/${dossierId}/audit${limit ? `?limit=${limit}` : ''}`),
   assets: (dossierId: string) => req<FixedAsset[]>(`/api/dossiers/${dossierId}/assets`),
   assetDetail: (dossierId: string, aid: string) => req<FixedAssetDetail>(`/api/dossiers/${dossierId}/assets/${aid}`),
