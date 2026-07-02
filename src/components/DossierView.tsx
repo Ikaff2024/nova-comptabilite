@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2 } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -16,8 +16,9 @@ import Journaux from './Journaux';
 import Facturation from './Facturation';
 import Fiscalite from './Fiscalite';
 import ImportBalance from './ImportBalance';
+import Immobilisations from './Immobilisations';
 
-type Tab = 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'etats' | 'fiscalite' | 'saisie' | 'plan' | 'regles' | 'import';
+type Tab = 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'saisie' | 'plan' | 'regles' | 'import';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('capture');
@@ -49,6 +50,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'grandlivre', label: 'Grand livre', icon: Library },
     { id: 'journaux', label: 'Journaux', icon: BookMarked },
     { id: 'tiers', label: 'Tiers', icon: Users },
+    { id: 'immos', label: 'Immobilisations', icon: Building2 },
     { id: 'banque', label: 'Banque', icon: Landmark },
     { id: 'etats', label: 'États financiers', icon: FileText },
     { id: 'fiscalite', label: 'Fiscalité', icon: Receipt },
@@ -108,6 +110,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'grandlivre' && <GeneralLedger dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'journaux' && <Journaux dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'tiers' && <Tiers dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'immos' && <Immobilisations dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'banque' && <BankReconciliation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'etats' && <FinancialStatements dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'fiscalite' && <Fiscalite dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}

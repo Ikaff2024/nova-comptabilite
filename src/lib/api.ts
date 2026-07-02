@@ -92,6 +92,22 @@ export interface ImportBalanceAnalysis {
   totalDebit: number; totalCredit: number; diff: number; balanced: boolean;
   okCount: number; missingCount: number; alreadyImported: boolean;
 }
+export interface FixedAsset {
+  id: string; label: string;
+  assetAccountCode: string; amortAccountCode: string; expenseAccountCode: string;
+  acquisitionDate: string; commissioningDate: string;
+  amount: number; residualValue: number; durationYears: number; method: string;
+  counterpartyName: string | null; notes: string | null; status: string;
+  cumulPosted: number; vnc: number; pendingYears: number[]; fullyAmortized: boolean;
+}
+export interface AssetScheduleRow { year: number; rate: number; dotation: number; cumul: number; vnc: number; posted: boolean; entryId: string | null; }
+export interface FixedAssetDetail {
+  id: string; label: string;
+  assetAccountCode: string; amortAccountCode: string; expenseAccountCode: string;
+  acquisitionDate: string; commissioningDate: string;
+  amount: number; residualValue: number; durationYears: number; method: string;
+  notes: string | null; status: string; schedule: AssetScheduleRow[];
+}
 export interface Invoice {
   id: string; number: string | null; client_name: string; invoice_date: string; status: string;
   total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string;
@@ -202,6 +218,15 @@ export const api = {
     req<ImportBalanceAnalysis>(`/api/dossiers/${dossierId}/import-balance/analyze`, { method: 'POST', body: JSON.stringify(body) }),
   commitBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId: string; date: string; description?: string; createMissing?: boolean }) =>
     req<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number }>(`/api/dossiers/${dossierId}/import-balance/commit`, { method: 'POST', body: JSON.stringify(body) }),
+  assets: (dossierId: string) => req<FixedAsset[]>(`/api/dossiers/${dossierId}/assets`),
+  assetDetail: (dossierId: string, aid: string) => req<FixedAssetDetail>(`/api/dossiers/${dossierId}/assets/${aid}`),
+  createAsset: (dossierId: string, body: { label: string; assetAccountCode: string; amortAccountCode?: string; expenseAccountCode?: string; acquisitionDate: string; commissioningDate?: string; amount: number; residualValue?: number; durationYears: number; notes?: string }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/assets`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteAsset: (dossierId: string, aid: string) => req<void>(`/api/dossiers/${dossierId}/assets/${aid}`, { method: 'DELETE' }),
+  depreciateAsset: (dossierId: string, aid: string, year: number) =>
+    req<{ entryId: string; amount: number; year: number }>(`/api/dossiers/${dossierId}/assets/${aid}/depreciate`, { method: 'POST', body: JSON.stringify({ year }) }),
+  depreciateYear: (dossierId: string, year: number) =>
+    req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/depreciate-year`, { method: 'POST', body: JSON.stringify({ year }) }),
   invoices: (dossierId: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices${status ? `?status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
   createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; lines: InvoiceLine[] }) =>

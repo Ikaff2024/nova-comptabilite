@@ -12,6 +12,7 @@ import * as tiers from './domain/tiers.js';
 import * as invoicing from './domain/invoicing.js';
 import * as tax from './domain/tax.js';
 import * as importbalance from './domain/importbalance.js';
+import * as assets from './domain/assets.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -296,6 +297,37 @@ export function createApi() {
     if (!fiscalYearId || !date) { const e: any = new Error('fiscalYearId et date requis'); e.status = 400; throw e; }
     const parsed = Array.isArray(lines) ? lines : importbalance.parseBalanceCsv(String(csv ?? ''));
     res.json(await withUser(userId, (c) => importbalance.commitBalanceImport(c, req.params.id, parsed, { fiscalYearId, date, description, createMissing: !!createMissing })));
+  }));
+
+  // --- Immobilisations & amortissements --------------------------------------
+  app.get('/api/dossiers/:id/assets', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => assets.listAssets(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/assets', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => assets.createAsset(c, req.params.id, req.body ?? {}, userId)));
+  }));
+  app.get('/api/dossiers/:id/assets/:aid', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => assets.assetDetail(c, req.params.id, req.params.aid)));
+  }));
+  app.delete('/api/dossiers/:id/assets/:aid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => assets.deleteAsset(c, req.params.id, req.params.aid));
+    res.status(204).end();
+  }));
+  app.post('/api/dossiers/:id/assets/:aid/depreciate', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { year } = req.body ?? {};
+    if (!year) { const e: any = new Error('year requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => assets.postDepreciation(c, req.params.id, req.params.aid, Number(year))));
+  }));
+  app.post('/api/dossiers/:id/depreciate-year', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { year } = req.body ?? {};
+    if (!year) { const e: any = new Error('year requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => assets.postDepreciationForYear(c, req.params.id, Number(year))));
   }));
 
   // --- Facturation de vente + FNE --------------------------------------------
