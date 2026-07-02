@@ -92,6 +92,10 @@ export interface ImportBalanceAnalysis {
   totalDebit: number; totalCredit: number; diff: number; balanced: boolean;
   okCount: number; missingCount: number; alreadyImported: boolean;
 }
+export interface AuditEntry {
+  id: number; created_at: string; user_name: string | null; user_email: string | null;
+  action: string; entity: string | null; entity_id: string | null; detail: Record<string, any>;
+}
 export interface FixedAsset {
   id: string; label: string;
   assetAccountCode: string; amortAccountCode: string; expenseAccountCode: string;
@@ -218,6 +222,7 @@ export const api = {
     req<ImportBalanceAnalysis>(`/api/dossiers/${dossierId}/import-balance/analyze`, { method: 'POST', body: JSON.stringify(body) }),
   commitBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId: string; date: string; description?: string; createMissing?: boolean }) =>
     req<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number }>(`/api/dossiers/${dossierId}/import-balance/commit`, { method: 'POST', body: JSON.stringify(body) }),
+  audit: (dossierId: string, limit?: number) => req<AuditEntry[]>(`/api/dossiers/${dossierId}/audit${limit ? `?limit=${limit}` : ''}`),
   assets: (dossierId: string) => req<FixedAsset[]>(`/api/dossiers/${dossierId}/assets`),
   assetDetail: (dossierId: string, aid: string) => req<FixedAssetDetail>(`/api/dossiers/${dossierId}/assets/${aid}`),
   createAsset: (dossierId: string, body: { label: string; assetAccountCode: string; amortAccountCode?: string; expenseAccountCode?: string; acquisitionDate: string; commissioningDate?: string; amount: number; residualValue?: number; durationYears: number; notes?: string }) =>

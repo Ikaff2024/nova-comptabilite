@@ -1,6 +1,7 @@
 import type { Client } from '../db.js';
 import { postEntry, resolveCounterparty } from './accounting.js';
 import { certifyInvoice, fneProvider } from '../fne/provider.js';
+import { recordAudit } from './audit.js';
 
 // ============================================================================
 // Facturation de vente. L'émission génère l'écriture (411 / 70x / 443) et
@@ -115,6 +116,10 @@ export async function issueInvoice(c: Client, dossierId: string, id: string): Pr
 
   await c.query("update invoices set status='issued', number=$3, entry_id=$4, counterparty_id=$5 where dossier_id=$1 and id=$2",
     [dossierId, id, number, entryId, cpId]);
+  await recordAudit(c, {
+    dossierId, action: 'invoice.issued', entity: 'invoice', entityId: id,
+    detail: { number, client: inv.client_name, total_ttc: inv.total_ttc, entryId },
+  });
   return { number, entryId };
 }
 
@@ -128,5 +133,9 @@ export async function certifyInvoiceFne(c: Client, dossierId: string, id: string
   });
   await c.query("update invoices set fne_status='certified', fne_reference=$3, fne_qr=$4 where dossier_id=$1 and id=$2",
     [dossierId, id, r.reference, r.qr]);
+  await recordAudit(c, {
+    dossierId, action: 'invoice.certified', entity: 'invoice', entityId: id,
+    detail: { number: inv.number, reference: r.reference, provider: fneProvider() },
+  });
   return { reference: r.reference, provider: fneProvider() };
 }

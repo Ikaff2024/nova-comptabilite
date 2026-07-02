@@ -1,4 +1,5 @@
 import type { Client } from '../db.js';
+import { recordAudit } from './audit.js';
 
 // ============================================================================
 // Couche domaine comptable — opérations sûres au-dessus du ledger Postgres.
@@ -268,6 +269,12 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
 
   // Apprentissage : enrichit la mémoire de codification du dossier.
   await learnFromEntry(c, input);
+
+  // Piste d'audit : toute écriture comptabilisée est tracée (source incluse).
+  await recordAudit(c, {
+    dossierId: input.dossierId, action: 'entry.posted', entity: 'entry', entityId: entryId,
+    detail: { piece_ref: pieceRef, source: input.source ?? 'manual', amount: totalDebit, lines: input.lines.length, description: input.description },
+  });
   return { id: entryId };
 }
 
@@ -413,7 +420,13 @@ export async function deleteMapping(c: Client, dossierId: string, id: string): P
 
 export async function reverseEntry(c: Client, entryId: string, date?: string): Promise<{ reversalId: string }> {
   const { rows } = await c.query('select reverse_entry($1,$2) as id', [entryId, date ?? null]);
-  return { reversalId: rows[0].id };
+  const reversalId = rows[0].id;
+  const { rows: dr } = await c.query('select dossier_id from entries where id = $1', [entryId]);
+  await recordAudit(c, {
+    dossierId: dr[0]?.dossier_id ?? null, action: 'entry.reversed', entity: 'entry', entityId: entryId,
+    detail: { reversalId },
+  });
+  return { reversalId };
 }
 
 // ---- Dossier de démonstration (prise en main immédiate) --------------------
@@ -712,6 +725,10 @@ export async function closeExercise(
   });
 
   await c.query("update fiscal_years set status='closed' where dossier_id=$1 and id=$2", [dossierId, fiscalYearId]);
+  await recordAudit(c, {
+    dossierId, action: 'exercise.closed', entity: 'fiscal_year', entityId: fiscalYearId,
+    detail: { resultat, anEntryId, newFiscalYearId },
+  });
   return { anEntryId, newFiscalYearId, resultat };
 }
 
