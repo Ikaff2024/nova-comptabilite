@@ -100,6 +100,8 @@
     <a href="#fiscalite">13 · Fiscalité (TVA / DSF)</a>
     <a class="pillar">Paramétrer</a>
     <a href="#regles">14 · Règles de l'IA</a>
+    <a class="pillar">Migration</a>
+    <a href="#import">15 · Import de balance (reprise)</a>
   </nav>
 
   <!-- ===================== CONTENU ===================== -->
@@ -133,6 +135,8 @@
         <ol start="12"><li>États financiers (SIG, compte de résultat, bilan)</li><li>Fiscalité — TVA (DSF à venir par branchement)</li></ol></div>
       <div class="pillar-row"><b>⚙️ Paramétrer — apprendre à Nova vos habitudes</b>
         <ol start="14"><li>Règles de l'IA</li></ol></div>
+      <div class="pillar-row"><b>🔁 Migration — reprendre un dossier existant</b>
+        <ol start="15"><li>Import de balance (reprise depuis un autre logiciel)</li></ol></div>
     </div>
 
     <!-- ============ 1 DÉMARRAGE ============ -->
@@ -449,6 +453,32 @@
         </ul></div>
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
         <div class="warn">Une règle ne se déclenche pas : vérifiez que le mot-clé apparaît bien dans le libellé lu sur le document.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 15 IMPORT BALANCE ============ -->
+    <section class="fiche" id="import">
+      <h2>15 · Import de balance (reprise) <span class="tag">Migration</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Reprendre un dossier venu d'un autre logiciel : vous collez sa <strong>balance</strong>, Nova la contrôle puis crée l'écriture d'<strong>à-nouveaux</strong> (soldes d'ouverture). Vous démarrez avec la situation exacte, sans tout ressaisir.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Comptables et chefs de mission lors de la migration d'un client.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Import balance</strong>.</li>
+          <li><strong>Collez</strong> la balance ou importez un <strong>fichier CSV</strong> (colonnes : Compte ; Libellé ; Débit ; Crédit — une colonne « Solde » signée est aussi acceptée). Le bouton <strong>Exemple</strong> montre le format attendu.</li>
+          <li>Choisissez l'<strong>exercice</strong> et la <strong>date</strong> de l'à-nouveau, puis cliquez <strong>Analyser</strong>.</li>
+          <li>Vérifiez l'aperçu : totaux, <strong>équilibre</strong> (Σ débit = Σ crédit) et comptes <strong>absents du plan</strong>.</li>
+          <li>Laissez cochée <strong>Créer les comptes absents</strong> pour une reprise complète, puis cliquez <strong>Comptabiliser la reprise</strong>.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>La balance <strong>doit être équilibrée</strong> : si un écart apparaît, corrigez le fichier source (c'est souvent un compte oublié).</li>
+          <li>Les à-nouveaux s'affichent ensuite dans les <strong>colonnes d'ouverture</strong> de la <a href="#balance">Balance 8 colonnes</a>.</li>
+          <li>Les montants acceptent les <strong>espaces de milliers</strong> et la <strong>virgule décimale</strong> (format FR).</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">« Une balance d'ouverture existe déjà » : la reprise a déjà été passée pour cet exercice. Pour la refaire, contre-passez d'abord l'écriture d'à-nouveaux existante.</div></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
