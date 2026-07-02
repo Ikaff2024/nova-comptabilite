@@ -83,6 +83,15 @@ export interface VatDeclaration {
   from: string; to: string; collectee: number; deductible: number; netDue: number; creditReportable: number;
   breakdown: { account_code: string; label: string; debit: number; credit: number }[];
 }
+export interface ImportBalanceLine {
+  accountCode: string; label: string | null; debit: number; credit: number;
+  status: 'ok' | 'missing'; existingLabel?: string;
+}
+export interface ImportBalanceAnalysis {
+  lines: ImportBalanceLine[];
+  totalDebit: number; totalCredit: number; diff: number; balanced: boolean;
+  okCount: number; missingCount: number; alreadyImported: boolean;
+}
 export interface Invoice {
   id: string; number: string | null; client_name: string; invoice_date: string; status: string;
   total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string;
@@ -189,6 +198,10 @@ export const api = {
     req<VatDeclaration>(`/api/dossiers/${dossierId}/vat?from=${from}&to=${to}`),
   liquidateVat: (dossierId: string, body: { from: string; to: string; date: string }) =>
     req<{ entryId: string } & VatDeclaration>(`/api/dossiers/${dossierId}/vat/liquidate`, { method: 'POST', body: JSON.stringify(body) }),
+  analyzeBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId?: string }) =>
+    req<ImportBalanceAnalysis>(`/api/dossiers/${dossierId}/import-balance/analyze`, { method: 'POST', body: JSON.stringify(body) }),
+  commitBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId: string; date: string; description?: string; createMissing?: boolean }) =>
+    req<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number }>(`/api/dossiers/${dossierId}/import-balance/commit`, { method: 'POST', body: JSON.stringify(body) }),
   invoices: (dossierId: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices${status ? `?status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
   createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; lines: InvoiceLine[] }) =>
