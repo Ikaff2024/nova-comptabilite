@@ -163,6 +163,11 @@ function AssetSchedule({ dossierId, assetId, currency, onPosted, onError }: { do
   );
 }
 
+const inputCls = 'w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50';
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label className="text-xs uppercase text-zinc-400">{label}</label><div className="mt-1">{children}</div></div>;
+}
+
 function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string; currency: string; onDone: () => void; onError: (s: string) => void }) {
   const today = new Date().toISOString().slice(0, 10);
   const [label, setLabel] = useState('');
@@ -185,21 +190,16 @@ function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string
     } catch (e: any) { onError(e.message); } finally { setSaving(false); }
   };
 
-  const F = ({ label: l, children }: { label: string; children: React.ReactNode }) => (
-    <div><label className="text-xs uppercase text-zinc-400">{l}</label><div className="mt-1">{children}</div></div>
-  );
-  const inputCls = 'w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50';
-
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <F label="Libellé"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex. Camion de livraison" className={inputCls} /></F>
-        <F label="Compte immobilisation (classe 2)"><input value={assetAccountCode} onChange={(e) => setAsset(e.target.value)} className={cn(inputCls, 'font-mono')} /></F>
-        <F label={`Valeur d'origine (${currency})`}><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={cn(inputCls, 'font-mono')} /></F>
-        <F label="Valeur résiduelle"><input type="number" value={residualValue} onChange={(e) => setResidual(e.target.value)} className={cn(inputCls, 'font-mono')} /></F>
-        <F label="Durée d'utilité (ans)"><input type="number" value={durationYears} onChange={(e) => setDuration(e.target.value)} className={cn(inputCls, 'font-mono')} /></F>
-        <F label="Date d'acquisition"><input type="date" value={acquisitionDate} onChange={(e) => { setAcq(e.target.value); setComm(e.target.value); }} className={inputCls} /></F>
-        <F label="Mise en service (début amortissement)"><input type="date" value={commissioningDate} onChange={(e) => setComm(e.target.value)} className={inputCls} /></F>
+        <Field label="Libellé"><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex. Camion de livraison" className={inputCls} /></Field>
+        <Field label="Compte immobilisation (classe 2)"><input value={assetAccountCode} onChange={(e) => setAsset(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
+        <Field label={`Valeur d'origine (${currency})`}><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
+        <Field label="Valeur résiduelle"><input type="number" value={residualValue} onChange={(e) => setResidual(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
+        <Field label="Durée d'utilité (ans)"><input type="number" value={durationYears} onChange={(e) => setDuration(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
+        <Field label="Date d'acquisition"><input type="date" value={acquisitionDate} onChange={(e) => { setAcq(e.target.value); setComm(e.target.value); }} className={inputCls} /></Field>
+        <Field label="Mise en service (début amortissement)"><input type="date" value={commissioningDate} onChange={(e) => setComm(e.target.value)} className={inputCls} /></Field>
       </div>
       <p className="mt-2 text-xs text-zinc-500">Les comptes d'amortissement (28x) et de dotation (68x) sont déduits automatiquement du compte d'immobilisation.</p>
       <div className="mt-3 flex justify-end gap-2">

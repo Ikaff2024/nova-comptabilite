@@ -84,7 +84,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
         </div>
       ) : (
         <>
-          <div className="flex gap-2 border-b border-white/10">
+          <div className="flex flex-wrap gap-x-2 gap-y-1 border-b border-white/10">
             {tabs.map((t) => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={cn('flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',

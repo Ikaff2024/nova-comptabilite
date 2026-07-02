@@ -128,7 +128,7 @@ export default function App() {
       </aside>
 
       <main className="flex-1 overflow-y-auto overflow-x-hidden p-8 lg:p-12">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           {selected
             ? <DossierView dossier={selected} onBack={() => setSelected(null)} />
             : nav === 'dashboard'
