@@ -380,15 +380,17 @@ export function createApi() {
   }));
   app.post('/api/dossiers/:id/assets/:aid/depreciate', h(async (req, res) => {
     const userId = requireUser(req);
-    const { year } = req.body ?? {};
-    if (!year) { const e: any = new Error('year requis'); e.status = 400; throw e; }
-    res.json(await withUser(userId, (c) => assets.postDepreciation(c, req.params.id, req.params.aid, Number(year))));
+    const { periodDate } = req.body ?? {};
+    if (!periodDate) { const e: any = new Error('periodDate requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => assets.postDepreciation(c, req.params.id, req.params.aid, String(periodDate))));
   }));
-  app.post('/api/dossiers/:id/depreciate-year', h(async (req, res) => {
+  app.post('/api/dossiers/:id/assets/:aid/depreciate-due', h(async (req, res) => {
     const userId = requireUser(req);
-    const { year } = req.body ?? {};
-    if (!year) { const e: any = new Error('year requis'); e.status = 400; throw e; }
-    res.json(await withUser(userId, (c) => assets.postDepreciationForYear(c, req.params.id, Number(year))));
+    res.json(await withUser(userId, (c) => assets.postAssetDue(c, req.params.id, req.params.aid, req.body?.upTo)));
+  }));
+  app.post('/api/dossiers/:id/depreciate-due', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => assets.postDepreciationDue(c, req.params.id, req.body?.upTo)));
   }));
 
   // --- Facturation de vente + FNE --------------------------------------------

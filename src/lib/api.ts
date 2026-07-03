@@ -126,16 +126,16 @@ export interface FixedAsset {
   id: string; label: string;
   assetAccountCode: string; amortAccountCode: string; expenseAccountCode: string;
   acquisitionDate: string; commissioningDate: string;
-  amount: number; residualValue: number; durationYears: number; method: string;
+  amount: number; residualValue: number; durationYears: number; method: string; depreciationPeriod: 'annual' | 'monthly';
   counterpartyName: string | null; notes: string | null; status: string;
-  cumulPosted: number; vnc: number; pendingYears: number[]; fullyAmortized: boolean;
+  cumulPosted: number; vnc: number; pending: number; fullyAmortized: boolean;
 }
-export interface AssetScheduleRow { year: number; rate: number; dotation: number; cumul: number; vnc: number; posted: boolean; entryId: string | null; }
+export interface AssetScheduleRow { periodDate: string; label: string; rate: number; dotation: number; cumul: number; vnc: number; posted: boolean; entryId: string | null; }
 export interface FixedAssetDetail {
   id: string; label: string;
   assetAccountCode: string; amortAccountCode: string; expenseAccountCode: string;
   acquisitionDate: string; commissioningDate: string;
-  amount: number; residualValue: number; durationYears: number; method: string;
+  amount: number; residualValue: number; durationYears: number; method: string; depreciationPeriod: 'annual' | 'monthly';
   notes: string | null; status: string; schedule: AssetScheduleRow[];
 }
 export interface Invoice {
@@ -261,13 +261,15 @@ export const api = {
   audit: (dossierId: string, limit?: number) => req<AuditEntry[]>(`/api/dossiers/${dossierId}/audit${limit ? `?limit=${limit}` : ''}`),
   assets: (dossierId: string) => req<FixedAsset[]>(`/api/dossiers/${dossierId}/assets`),
   assetDetail: (dossierId: string, aid: string) => req<FixedAssetDetail>(`/api/dossiers/${dossierId}/assets/${aid}`),
-  createAsset: (dossierId: string, body: { label: string; assetAccountCode: string; amortAccountCode?: string; expenseAccountCode?: string; acquisitionDate: string; commissioningDate?: string; amount: number; residualValue?: number; durationYears: number; notes?: string }) =>
+  createAsset: (dossierId: string, body: { label: string; assetAccountCode: string; amortAccountCode?: string; expenseAccountCode?: string; acquisitionDate: string; commissioningDate?: string; amount: number; residualValue?: number; durationYears: number; depreciationPeriod?: 'annual' | 'monthly'; notes?: string }) =>
     req<{ id: string }>(`/api/dossiers/${dossierId}/assets`, { method: 'POST', body: JSON.stringify(body) }),
   deleteAsset: (dossierId: string, aid: string) => req<void>(`/api/dossiers/${dossierId}/assets/${aid}`, { method: 'DELETE' }),
-  depreciateAsset: (dossierId: string, aid: string, year: number) =>
-    req<{ entryId: string; amount: number; year: number }>(`/api/dossiers/${dossierId}/assets/${aid}/depreciate`, { method: 'POST', body: JSON.stringify({ year }) }),
-  depreciateYear: (dossierId: string, year: number) =>
-    req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/depreciate-year`, { method: 'POST', body: JSON.stringify({ year }) }),
+  depreciateAsset: (dossierId: string, aid: string, periodDate: string) =>
+    req<{ entryId: string; amount: number; periodDate: string }>(`/api/dossiers/${dossierId}/assets/${aid}/depreciate`, { method: 'POST', body: JSON.stringify({ periodDate }) }),
+  depreciateAssetDue: (dossierId: string, aid: string, upTo?: string) =>
+    req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/assets/${aid}/depreciate-due`, { method: 'POST', body: JSON.stringify({ upTo }) }),
+  depreciateDue: (dossierId: string, upTo?: string) =>
+    req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/depreciate-due`, { method: 'POST', body: JSON.stringify({ upTo }) }),
   invoices: (dossierId: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices${status ? `?status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
   createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; lines: InvoiceLine[] }) =>
