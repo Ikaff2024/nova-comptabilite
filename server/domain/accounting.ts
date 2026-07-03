@@ -664,7 +664,7 @@ export async function journalEntries(
   if (opts.fiscalYearId) { params.push(opts.fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
   const { rows } = await c.query(
     `select e.id as entry_id, to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, j.code as journal_code,
-            e.piece_ref, e.description as entry_description, e.source,
+            e.piece_ref, e.description as entry_description, e.source, e.document_url,
             a.account_code, coalesce(l.label, e.description) as label,
             l.amount_debit as debit, l.amount_credit as credit
        from entries e

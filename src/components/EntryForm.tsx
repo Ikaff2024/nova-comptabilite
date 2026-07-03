@@ -18,10 +18,10 @@ export interface EntryFormInitial {
 }
 
 export default function EntryForm({
-  dossierId, fiscalYears, journals, currency, onPosted, initial, banner,
+  dossierId, fiscalYears, journals, currency, onPosted, initial, banner, documentUrl,
 }: {
   dossierId: string; fiscalYears: FiscalYear[]; journals: Journal[]; currency: string; onPosted: () => void;
-  initial?: EntryFormInitial; banner?: React.ReactNode;
+  initial?: EntryFormInitial; banner?: React.ReactNode; documentUrl?: string;
 }) {
   const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
   const [journal, setJournal] = useState(
@@ -52,7 +52,7 @@ export default function EntryForm({
     try {
       await api.postEntry(dossierId, {
         fiscalYearId: fy, journalId: journal, entryDate: date, description, source: 'manual',
-        counterpartyName: initial?.counterpartyName,
+        counterpartyName: initial?.counterpartyName, documentUrl,
         lines: lines.filter((l) => l.accountCode.trim()).map((l) => ({
           accountCode: l.accountCode.trim(),
           debit: Number(l.debit) || undefined, credit: Number(l.credit) || undefined,

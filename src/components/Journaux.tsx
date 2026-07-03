@@ -1,18 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, FileSpreadsheet, Printer, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { api, fmtMoney, type Journal, type FiscalYear, type JournalLine } from '../lib/api';
+import { Loader2, FileSpreadsheet, Printer, Lock, CheckCircle2, AlertTriangle, Paperclip } from 'lucide-react';
+import { api, fmtMoney, fetchDocumentUrl, type Journal, type FiscalYear, type JournalLine } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
-interface Entry { entry_id: string; piece_ref: string | null; entry_date: string; entry_description: string; journal_code: string; lines: JournalLine[]; debit: number; credit: number; }
+interface Entry { entry_id: string; piece_ref: string | null; entry_date: string; entry_description: string; journal_code: string; document_url: string | null; lines: JournalLine[]; debit: number; credit: number; }
 
 function group(lines: JournalLine[]): Entry[] {
   const out: Entry[] = []; let cur: Entry | null = null;
   for (const l of lines) {
-    if (!cur || cur.entry_id !== l.entry_id) { cur = { entry_id: l.entry_id, piece_ref: l.piece_ref, entry_date: l.entry_date, entry_description: l.entry_description, journal_code: l.journal_code, lines: [], debit: 0, credit: 0 }; out.push(cur); }
+    if (!cur || cur.entry_id !== l.entry_id) { cur = { entry_id: l.entry_id, piece_ref: l.piece_ref, entry_date: l.entry_date, entry_description: l.entry_description, journal_code: l.journal_code, document_url: l.document_url, lines: [], debit: 0, credit: 0 }; out.push(cur); }
     cur.lines.push(l); cur.debit += l.debit; cur.credit += l.credit;
   }
   return out;
+}
+
+async function openDocument(url: string) {
+  try { const o = await fetchDocumentUrl(url); window.open(o, '_blank', 'noopener'); }
+  catch { alert('Pièce jointe inaccessible.'); }
 }
 
 export default function Journaux({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
@@ -106,7 +111,10 @@ export default function Journaux({ dossierId, dossierName, currency }: { dossier
             <div key={e.entry_id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
               <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-2 text-sm">
                 <span className="font-mono text-emerald-400">{e.piece_ref}<span className="ml-3 font-sans text-zinc-400">{e.entry_date} · {e.entry_description}</span></span>
-                <span className="font-mono text-xs text-zinc-500">{e.journal_code}</span>
+                <span className="flex items-center gap-3">
+                  {e.document_url && <button onClick={() => openDocument(e.document_url!)} title="Voir la pièce jointe" className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300"><Paperclip className="h-3.5 w-3.5" /> pièce</button>}
+                  <span className="font-mono text-xs text-zinc-500">{e.journal_code}</span>
+                </span>
               </div>
               <table className="w-full text-left text-sm">
                 <tbody className="divide-y divide-white/5 font-mono">

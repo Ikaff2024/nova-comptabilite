@@ -29,6 +29,14 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Récupère une pièce (avec le jeton) et renvoie une URL objet affichable/téléchargeable.
+export async function fetchDocumentUrl(path: string): Promise<string> {
+  const token = getToken();
+  const res = await fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new Error('Pièce inaccessible');
+  return URL.createObjectURL(await res.blob());
+}
+
 export interface Cabinet { id: string; name: string; country: string; base_currency: string; }
 export interface Dossier {
   id: string; cabinet_id: string; raison_sociale: string; country: string;
@@ -138,7 +146,7 @@ export interface InvoiceLine { id?: string; line_no?: number; description: strin
 export interface InvoiceDetail extends Invoice { counterparty_id: string | null; due_date: string | null; entry_id: string | null; fne_qr: string | null; notes: string | null; lines: InvoiceLine[]; }
 export interface JournalLine {
   entry_id: string; entry_date: string; journal_code: string; piece_ref: string | null;
-  entry_description: string; source: string; account_code: string; label: string; debit: number; credit: number;
+  entry_description: string; source: string; document_url: string | null; account_code: string; label: string; debit: number; credit: number;
 }
 export interface LedgerRow {
   account_code: string; account_label: string;
@@ -186,8 +194,10 @@ export const api = {
     req<{ fiscalYears: FiscalYear[]; journals: Journal[] }>(`/api/dossiers/${dossierId}/setup`, { method: 'POST', body: '{}' }),
   postEntry: (dossierId: string, body: {
     fiscalYearId: string; journalId: string; entryDate: string; description: string;
-    source?: string; counterpartyName?: string; lines: EntryLineInput[];
+    source?: string; counterpartyName?: string; documentUrl?: string; lines: EntryLineInput[];
   }) => req<{ id: string }>(`/api/dossiers/${dossierId}/entries`, { method: 'POST', body: JSON.stringify(body) }),
+  uploadDocument: (dossierId: string, body: { mimeType: string; dataBase64: string; filename?: string; entryId?: string }) =>
+    req<{ id: string; url: string; storage: string; size: number }>(`/api/dossiers/${dossierId}/documents`, { method: 'POST', body: JSON.stringify(body) }),
   capture: (dossierId: string, mimeType: string, dataBase64: string) =>
     req<{ provider: string; proposal: CaptureProposal }>(`/api/dossiers/${dossierId}/capture`, {
       method: 'POST', body: JSON.stringify({ mimeType, dataBase64 }),

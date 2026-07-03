@@ -15,8 +15,9 @@ export default function Capture({
   const [error, setError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<CaptureProposal | null>(null);
   const [provider, setProvider] = useState<string>('');
+  const [docUrl, setDocUrl] = useState<string | null>(null);
 
-  const reset = () => { setPreview(null); setProposal(null); setError(null); if (inputRef.current) inputRef.current.value = ''; };
+  const reset = () => { setPreview(null); setProposal(null); setError(null); setDocUrl(null); if (inputRef.current) inputRef.current.value = ''; };
 
   const handleFile = (file: File) => {
     setError(null); setProposal(null);
@@ -29,6 +30,8 @@ export default function Capture({
       try {
         const res = await api.capture(dossierId, file.type || 'image/jpeg', base64);
         setProposal(res.proposal); setProvider(res.provider);
+        // Conserve la pièce (justificatif) et la rattachera à l'écriture validée.
+        try { const up = await api.uploadDocument(dossierId, { mimeType: file.type || 'image/jpeg', dataBase64: base64, filename: file.name }); setDocUrl(up.url); } catch { /* la capture reste utilisable même si la conservation échoue */ }
       } catch (e: any) { setError(e.message); }
       finally { setLoading(false); }
     };
@@ -102,6 +105,7 @@ export default function Capture({
           <motion.div key={preview} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
             <EntryForm
               dossierId={dossierId} fiscalYears={fiscalYears} journals={journals} currency={currency}
+              documentUrl={docUrl ?? undefined}
               onPosted={() => { onPosted(); reset(); }}
               initial={{ description: proposal.description, entryDate: proposal.entryDate, journalCode: proposal.journalCode, lines: proposal.lines, counterpartyName: proposal.counterpartyName }}
               banner={

@@ -16,6 +16,7 @@ import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import * as recurring from './domain/recurring.js';
+import * as documents from './domain/documents.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -300,6 +301,21 @@ export function createApi() {
     if (!fiscalYearId || !date) { const e: any = new Error('fiscalYearId et date requis'); e.status = 400; throw e; }
     const parsed = Array.isArray(lines) ? lines : importbalance.parseBalanceCsv(String(csv ?? ''));
     res.json(await withUser(userId, (c) => importbalance.commitBalanceImport(c, req.params.id, parsed, { fiscalYearId, date, description, createMissing: !!createMissing })));
+  }));
+
+  // --- Pièces justificatives (conservation / GED) ----------------------------
+  app.post('/api/dossiers/:id/documents', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { mimeType, dataBase64, filename, entryId } = req.body ?? {};
+    if (!mimeType || !dataBase64) { const e: any = new Error('mimeType et dataBase64 requis'); e.status = 400; throw e; }
+    res.status(201).json(await withUser(userId, (c) => documents.saveDocument(c, req.params.id, { mimeType, dataBase64, filename, entryId }, userId)));
+  }));
+  app.get('/api/dossiers/:id/documents/:docId', h(async (req, res) => {
+    const userId = requireUser(req);
+    const doc = await withUser(userId, (c) => documents.getDocument(c, req.params.id, req.params.docId));
+    res.setHeader('Content-Type', doc.mime);
+    res.setHeader('Content-Disposition', `inline; filename="${(doc.filename || 'piece').replace(/[^\w.\-]/g, '_')}"`);
+    res.send(doc.buffer);
   }));
 
   // --- Tableau de bord par entreprise (dossier) ------------------------------
