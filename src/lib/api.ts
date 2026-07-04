@@ -194,7 +194,12 @@ export interface BalanceRow {
   total_debit: number; total_credit: number; balance: number;
 }
 export interface EntryLineInput {
-  accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string;
+  accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
+}
+export interface AnalyticSection { id: string; code: string; label: string; }
+export interface AnalyticReport {
+  sections: { code: string; label: string; produits: number; charges: number; resultat: number }[];
+  totals: { produits: number; charges: number; resultat: number };
 }
 export interface ProposedLine {
   accountCode: string; accountLabel?: string; debit?: number; credit?: number; label?: string;
@@ -365,6 +370,10 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  analyticSections: (dossierId: string) => req<AnalyticSection[]>(`/api/dossiers/${dossierId}/analytic/sections`),
+  createAnalyticSection: (dossierId: string, code: string, label: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/analytic/sections`, { method: 'POST', body: JSON.stringify({ code, label }) }),
+  deleteAnalyticSection: (dossierId: string, sid: string) => req<void>(`/api/dossiers/${dossierId}/analytic/sections/${sid}`, { method: 'DELETE' }),
+  analyticReport: (dossierId: string, fiscalYearId?: string) => req<AnalyticReport>(`/api/dossiers/${dossierId}/analytic/report${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
 };
 
 export const OHADA_COUNTRIES: { code: string; name: string }[] = [

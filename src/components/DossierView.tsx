@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2 } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -20,8 +20,9 @@ import Immobilisations from './Immobilisations';
 import AuditTrail from './AuditTrail';
 import DossierDashboard from './DossierDashboard';
 import Recurring from './Recurring';
+import Analytique from './Analytique';
 
-type Tab = 'synthese' | 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'saisie' | 'recurrences' | 'plan' | 'regles' | 'import' | 'audit';
+type Tab = 'synthese' | 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'saisie' | 'recurrences' | 'plan' | 'regles' | 'import' | 'audit';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -58,6 +59,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'immos', label: 'Immobilisations', icon: Building2 },
     { id: 'banque', label: 'Banque', icon: Landmark },
     { id: 'etats', label: 'États financiers', icon: FileText },
+    { id: 'analytique', label: 'Analytique', icon: PieChart },
     { id: 'fiscalite', label: 'Fiscalité', icon: Receipt },
     { id: 'regles', label: 'Règles', icon: ShieldCheck },
     { id: 'plan', label: 'Plan comptable', icon: BookOpen },
@@ -120,6 +122,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'immos' && <Immobilisations dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'banque' && <BankReconciliation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'etats' && <FinancialStatements dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
+            {tab === 'analytique' && <Analytique dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
             {tab === 'fiscalite' && <Fiscalite dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'regles' && <RulesTab dossierId={dossier.id} />}
             {tab === 'plan' && <PlanTab dossierId={dossier.id} />}

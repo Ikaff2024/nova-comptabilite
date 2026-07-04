@@ -16,6 +16,7 @@ import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
+import * as analytic from './domain/analytic.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -657,6 +658,27 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  // --- Comptabilité analytique ----------------------------------------------
+  app.get('/api/dossiers/:id/analytic/sections', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => analytic.listSections(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/analytic/sections', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { code, label } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => analytic.createSection(c, req.params.id, code, label)));
+  }));
+  app.delete('/api/dossiers/:id/analytic/sections/:sid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => analytic.deleteSection(c, req.params.id, req.params.sid));
+    res.status(204).end();
+  }));
+  app.get('/api/dossiers/:id/analytic/report', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => analytic.analyticReport(c, req.params.id, fy)));
+  }));
+
   app.get('/api/dossiers/:id/fec', h(async (req, res) => {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
