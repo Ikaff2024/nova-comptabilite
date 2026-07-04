@@ -1,8 +1,68 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText } from 'lucide-react';
-import { api, fmtMoney, type VatDeclaration } from '../lib/api';
+import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles } from 'lucide-react';
+import { api, fmtMoney, type VatDeclaration, type Obligation } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
+
+const PERIOD_LABEL: Record<string, string> = { monthly: 'Mensuel', quarterly: 'Trimestriel', annual: 'Annuel' };
+
+function ObligationsPanel({ dossierId }: { dossierId: string }) {
+  const [rows, setRows] = useState<Obligation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ label: '', periodicity: 'monthly', dueDay: '15', dueMonth: '1' });
+  const [error, setError] = useState<string | null>(null);
+  const load = async () => { setLoading(true); try { setRows(await api.obligations(dossierId)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [dossierId]);
+
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault(); setError(null);
+    try { await api.createObligation(dossierId, { label: form.label.trim(), periodicity: form.periodicity, dueDay: Number(form.dueDay) || 15, dueMonth: form.periodicity === 'annual' ? Number(form.dueMonth) || 1 : null }); setForm({ ...form, label: '' }); await load(); }
+    catch (e: any) { setError(e.message); }
+  };
+  const seed = async () => { setError(null); try { const r = await api.seedObligations(dossierId); if (!r.added) setError('Des obligations existent déjà.'); await load(); } catch (e: any) { setError(e.message); } };
+  const remove = async (o: Obligation) => { setError(null); try { await api.deleteObligation(dossierId, o.id); await load(); } catch (e: any) { setError(e.message); } };
+
+  const dueColor = (d: number | null) => d == null ? 'text-zinc-500' : d < 0 ? 'text-rose-400' : d <= 7 ? 'text-amber-400' : 'text-zinc-300';
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm text-zinc-300"><CalendarClock className="h-4 w-4 text-emerald-400" /> Échéancier des obligations</div>
+        {rows.length === 0 && !loading && <button onClick={seed} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Sparkles className="h-4 w-4" /> Charger le modèle Côte d'Ivoire</button>}
+      </div>
+      <form onSubmit={add} className="flex flex-wrap items-end gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="flex-1 min-w-[10rem]"><label className="mb-1 block text-xs text-zinc-500">Obligation</label><input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Déclaration TVA" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none" /></div>
+        <div><label className="mb-1 block text-xs text-zinc-500">Périodicité</label><select value={form.periodicity} onChange={(e) => setForm({ ...form, periodicity: e.target.value })} className="rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none"><option value="monthly">Mensuel</option><option value="quarterly">Trimestriel</option><option value="annual">Annuel</option></select></div>
+        {form.periodicity === 'annual' && <div><label className="mb-1 block text-xs text-zinc-500">Mois</label><input type="number" min={1} max={12} value={form.dueMonth} onChange={(e) => setForm({ ...form, dueMonth: e.target.value })} className="w-16 rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none" /></div>}
+        <div><label className="mb-1 block text-xs text-zinc-500">Jour</label><input type="number" min={1} max={31} value={form.dueDay} onChange={(e) => setForm({ ...form, dueDay: e.target.value })} className="w-16 rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none" /></div>
+        <button type="submit" disabled={!form.label.trim()} className="flex h-[34px] items-center gap-1.5 rounded-lg bg-emerald-500 px-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40"><Plus className="h-4 w-4" /> Ajouter</button>
+      </form>
+      {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div>
+        : rows.length === 0 ? <p className="text-sm text-zinc-500">Aucune obligation. Ajoutez-en ou chargez le modèle CI.</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-2.5 font-medium">Obligation</th><th className="px-4 py-2.5 font-medium">Périodicité</th>
+              <th className="px-4 py-2.5 font-medium">Prochaine échéance</th><th className="px-4 py-2.5 text-right font-medium">Dans</th><th className="px-4 py-2.5"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5">
+              {rows.map((o) => (
+                <tr key={o.id} className="hover:bg-white/5">
+                  <td className="px-4 py-2 text-zinc-200">{o.label}</td>
+                  <td className="px-4 py-2 text-zinc-400">{PERIOD_LABEL[o.periodicity] ?? o.periodicity}</td>
+                  <td className="px-4 py-2 font-mono text-zinc-300">{o.nextDue ?? '—'}</td>
+                  <td className={cn('px-4 py-2 text-right font-mono', dueColor(o.daysLeft))}>{o.daysLeft != null ? `${o.daysLeft} j` : '—'}</td>
+                  <td className="px-4 py-2 text-right"><button onClick={() => remove(o)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function monthRange(ym: string): { from: string; to: string } {
   const [y, m] = ym.split('-').map(Number);
@@ -93,6 +153,8 @@ export default function Fiscalite({ dossierId, dossierName, currency }: { dossie
           </>
         )}
       </section>
+
+      <ObligationsPanel dossierId={dossierId} />
 
       {/* DSF — branchement externe à venir */}
       <section className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-5">

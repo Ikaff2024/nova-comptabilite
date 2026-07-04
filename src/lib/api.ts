@@ -196,6 +196,7 @@ export interface BalanceRow {
 export interface EntryLineInput {
   accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
 }
+export interface Obligation { id: string; label: string; periodicity: string; dueDay: number; dueMonth: number | null; active: boolean; nextDue: string | null; daysLeft: number | null; }
 export interface BudgetRow { account_code: string; label: string; classNo: number; budget: number; realise: number; ecart: number; pct: number | null; }
 export interface BudgetReport {
   rows: BudgetRow[];
@@ -375,6 +376,11 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  obligations: (dossierId: string) => req<Obligation[]>(`/api/dossiers/${dossierId}/obligations`),
+  createObligation: (dossierId: string, body: { label: string; periodicity: string; dueDay: number; dueMonth?: number | null }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/obligations`, { method: 'POST', body: JSON.stringify(body) }),
+  seedObligations: (dossierId: string) => req<{ added: number }>(`/api/dossiers/${dossierId}/obligations/seed`, { method: 'POST', body: '{}' }),
+  deleteObligation: (dossierId: string, oid: string) => req<void>(`/api/dossiers/${dossierId}/obligations/${oid}`, { method: 'DELETE' }),
   postCutoff: (dossierId: string, body: { type: string; date: string; accountCode: string; amount: number; label: string; autoReverse?: boolean }) =>
     req<{ entryId: string; reversalId: string | null }>(`/api/dossiers/${dossierId}/cutoff`, { method: 'POST', body: JSON.stringify(body) }),
   budgetReport: (dossierId: string, fiscalYearId: string) => req<BudgetReport>(`/api/dossiers/${dossierId}/budget?fiscalYearId=${fiscalYearId}`),
