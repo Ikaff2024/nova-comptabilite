@@ -17,6 +17,7 @@ import * as audit from './domain/audit.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
+import * as budget from './domain/budget.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -658,6 +659,27 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  // --- Budgets ---------------------------------------------------------------
+  app.get('/api/dossiers/:id/budget', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || '';
+    if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => budget.budgetReport(c, req.params.id, fy)));
+  }));
+  app.post('/api/dossiers/:id/budget', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { fiscalYearId, accountCode, amount } = req.body ?? {};
+    if (!fiscalYearId || !accountCode) { const e: any = new Error('fiscalYearId et accountCode requis'); e.status = 400; throw e; }
+    await withUser(userId, (c) => budget.setBudget(c, req.params.id, fiscalYearId, accountCode, Number(amount) || 0));
+    res.status(204).end();
+  }));
+  app.delete('/api/dossiers/:id/budget', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { fiscalYearId, accountCode } = req.body ?? {};
+    await withUser(userId, (c) => budget.deleteBudget(c, req.params.id, fiscalYearId, accountCode));
+    res.status(204).end();
+  }));
+
   // --- Comptabilité analytique ----------------------------------------------
   app.get('/api/dossiers/:id/analytic/sections', h(async (req, res) => {
     const userId = requireUser(req);

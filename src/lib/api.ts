@@ -196,6 +196,11 @@ export interface BalanceRow {
 export interface EntryLineInput {
   accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
 }
+export interface BudgetRow { account_code: string; label: string; classNo: number; budget: number; realise: number; ecart: number; pct: number | null; }
+export interface BudgetReport {
+  rows: BudgetRow[];
+  totals: { chargesBudget: number; chargesRealise: number; produitsBudget: number; produitsRealise: number };
+}
 export interface AnalyticSection { id: string; code: string; label: string; }
 export interface AnalyticReport {
   sections: { code: string; label: string; produits: number; charges: number; resultat: number }[];
@@ -370,6 +375,9 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  budgetReport: (dossierId: string, fiscalYearId: string) => req<BudgetReport>(`/api/dossiers/${dossierId}/budget?fiscalYearId=${fiscalYearId}`),
+  setBudget: (dossierId: string, fiscalYearId: string, accountCode: string, amount: number) => req<void>(`/api/dossiers/${dossierId}/budget`, { method: 'POST', body: JSON.stringify({ fiscalYearId, accountCode, amount }) }),
+  deleteBudget: (dossierId: string, fiscalYearId: string, accountCode: string) => req<void>(`/api/dossiers/${dossierId}/budget`, { method: 'DELETE', body: JSON.stringify({ fiscalYearId, accountCode }) }),
   analyticSections: (dossierId: string) => req<AnalyticSection[]>(`/api/dossiers/${dossierId}/analytic/sections`),
   createAnalyticSection: (dossierId: string, code: string, label: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/analytic/sections`, { method: 'POST', body: JSON.stringify({ code, label }) }),
   deleteAnalyticSection: (dossierId: string, sid: string) => req<void>(`/api/dossiers/${dossierId}/analytic/sections/${sid}`, { method: 'DELETE' }),
