@@ -156,7 +156,7 @@ function AssetSchedule({ dossierId, assetId, currency, onPosted, onError }: { do
           <span>Débit dotation : <span className="font-mono text-zinc-300">{detail.expenseAccountCode}</span></span>
           <span>Crédit amortissement : <span className="font-mono text-zinc-300">{detail.amortAccountCode}</span></span>
           <span>Base amortissable : <span className="font-mono text-zinc-300">{m(detail.amount - detail.residualValue)}</span></span>
-          <span>Cadence : {monthly ? 'mensuelle' : 'annuelle'} · linéaire {detail.durationYears} ans</span>
+          <span>Méthode : {detail.method === 'degressive' ? 'dégressif' : 'linéaire'} · {monthly ? 'mensuel' : 'annuel'} · {detail.durationYears} ans</span>
         </div>
         {dueCount > 0 && <button onClick={postDue} disabled={bulk} className="flex items-center gap-1 rounded-md bg-emerald-500/90 px-2.5 py-1 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{bulk ? <Loader2 className="h-3 w-3 animate-spin" /> : <CalendarClock className="h-3 w-3" />} Générer les dues ({dueCount})</button>}
       </div>
@@ -239,6 +239,7 @@ function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string
   const [acquisitionDate, setAcq] = useState(today);
   const [commissioningDate, setComm] = useState(today);
   const [depreciationPeriod, setPeriod] = useState<'annual' | 'monthly'>('annual');
+  const [depreciationMethod, setMethod] = useState<'linear' | 'degressive'>('linear');
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
@@ -246,7 +247,7 @@ function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string
     try {
       await api.createAsset(dossierId, {
         label, assetAccountCode, amount: Number(amount), residualValue: Number(residualValue) || 0,
-        durationYears: Number(durationYears), acquisitionDate, commissioningDate, depreciationPeriod,
+        durationYears: Number(durationYears), acquisitionDate, commissioningDate, depreciationPeriod, depreciationMethod,
       });
       onDone();
     } catch (e: any) { onError(e.message); } finally { setSaving(false); }
@@ -260,7 +261,8 @@ function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string
         <Field label={`Valeur d'origine (${currency})`}><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
         <Field label="Valeur résiduelle"><input type="number" value={residualValue} onChange={(e) => setResidual(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
         <Field label="Durée d'utilité (ans)"><input type="number" value={durationYears} onChange={(e) => setDuration(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
-        <Field label="Cadence d'amortissement"><select value={depreciationPeriod} onChange={(e) => setPeriod(e.target.value as 'annual' | 'monthly')} className={inputCls}><option value="annual">Annuel (par exercice)</option><option value="monthly">Mensuel (clôture mensuelle)</option></select></Field>
+        <Field label="Méthode"><select value={depreciationMethod} onChange={(e) => setMethod(e.target.value as 'linear' | 'degressive')} className={inputCls}><option value="linear">Linéaire</option><option value="degressive">Dégressif</option></select></Field>
+        <Field label="Cadence d'amortissement"><select value={depreciationPeriod} disabled={depreciationMethod === 'degressive'} onChange={(e) => setPeriod(e.target.value as 'annual' | 'monthly')} className={inputCls}><option value="annual">Annuel (par exercice)</option><option value="monthly">Mensuel (clôture mensuelle)</option></select></Field>
         <Field label="Date d'acquisition"><input type="date" value={acquisitionDate} onChange={(e) => { setAcq(e.target.value); setComm(e.target.value); }} className={inputCls} /></Field>
         <Field label="Mise en service (début amortissement)"><input type="date" value={commissioningDate} onChange={(e) => setComm(e.target.value)} className={inputCls} /></Field>
       </div>

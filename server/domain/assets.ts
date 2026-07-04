@@ -9,6 +9,7 @@ import { postEntry, createJournal } from './accounting.js';
 // ============================================================================
 
 export type DepreciationPeriod = 'annual' | 'monthly';
+export type DepreciationMethod = 'linear' | 'degressive';
 
 export interface CreateAssetInput {
   label: string;
@@ -21,8 +22,16 @@ export interface CreateAssetInput {
   residualValue?: number;
   durationYears: number;
   depreciationPeriod?: DepreciationPeriod;
+  depreciationMethod?: DepreciationMethod;
   counterpartyId?: string;
   notes?: string;
+}
+
+// Coefficient dégressif selon la durée d'utilité (usage OHADA courant).
+function degressiveCoef(duration: number): number {
+  if (duration <= 4) return 1.5;
+  if (duration <= 6) return 2;
+  return 2.5;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -68,11 +77,34 @@ function firstFraction(commissioning: string, period: DepreciationPeriod): numbe
 
 export function computeSchedule(a: {
   amount: number; residualValue: number; durationYears: number; commissioningDate: string;
-  depreciationPeriod?: DepreciationPeriod;
+  depreciationPeriod?: DepreciationPeriod; depreciationMethod?: DepreciationMethod;
 }): ScheduleRow[] {
-  const period: DepreciationPeriod = a.depreciationPeriod === 'monthly' ? 'monthly' : 'annual';
   const base = round2(a.amount - a.residualValue);
   if (base <= 0 || a.durationYears <= 0) return [];
+
+  // --- Dégressif (annuel) : taux dégressif, bascule en linéaire quand avantageux ---
+  if (a.depreciationMethod === 'degressive') {
+    const dRate = round2(degressiveCoef(a.durationYears) / a.durationYears * 100) / 100;
+    const startYear = new Date(a.commissioningDate).getUTCFullYear();
+    const rows: ScheduleRow[] = [];
+    let cumul = 0, year = startYear, yearsLeft = a.durationYears;
+    let fraction = firstFraction(a.commissioningDate, 'annual');
+    let switched = false;
+    while (cumul < base - 0.005 && rows.length < 100) {
+      const remaining = base - cumul;
+      const linRate = 1 / Math.max(yearsLeft, 0.0001);
+      if (!switched && linRate >= dRate) switched = true;
+      const rate = switched ? linRate : dRate;
+      let dot = round2(remaining * rate * fraction);
+      if (cumul + dot > base) dot = round2(base - cumul);
+      cumul = round2(cumul + dot);
+      rows.push({ periodDate: `${year}-12-31`, label: String(year), rate: switched ? round2(linRate * 100) / 100 : dRate, dotation: dot, cumul, vnc: round2(a.amount - cumul) });
+      year++; yearsLeft -= fraction; fraction = 1;
+    }
+    return rows;
+  }
+
+  const period: DepreciationPeriod = a.depreciationPeriod === 'monthly' ? 'monthly' : 'annual';
   const rate = round2(1 / a.durationYears * 100) / 100;   // taux annuel (ex. 0.2)
   const perStep = period === 'monthly' ? base / (a.durationYears * 12) : base / a.durationYears;
 
@@ -119,12 +151,13 @@ export async function createAsset(c: Client, dossierId: string, input: CreateAss
   await assertAccountExists(c, dossierId, amort, 'amortissement');
   await assertAccountExists(c, dossierId, expense, 'dotation');
 
+  const method: DepreciationMethod = input.depreciationMethod === 'degressive' ? 'degressive' : 'linear';
   const { rows } = await c.query(
     `insert into fixed_assets(dossier_id, label, asset_account_code, amort_account_code, expense_account_code,
-        acquisition_date, commissioning_date, amount, residual_value, duration_years, depreciation_period, counterparty_id, notes, created_by)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
+        acquisition_date, commissioning_date, amount, residual_value, duration_years, depreciation_period, method, counterparty_id, notes, created_by)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`,
     [dossierId, input.label.trim(), input.assetAccountCode, amort, expense,
-     input.acquisitionDate, commissioning, input.amount, input.residualValue ?? 0, input.durationYears, period,
+     input.acquisitionDate, commissioning, input.amount, input.residualValue ?? 0, input.durationYears, period, method,
      input.counterpartyId ?? null, input.notes ?? null, userId ?? null],
   );
   return { id: rows[0].id };
@@ -140,7 +173,7 @@ export async function deleteAsset(c: Client, dossierId: string, id: string) {
 function scheduleFor(a: any): ScheduleRow[] {
   return computeSchedule({
     amount: Number(a.amount), residualValue: Number(a.residual_value), durationYears: Number(a.duration_years),
-    commissioningDate: a.commissioning_date, depreciationPeriod: a.depreciation_period,
+    commissioningDate: a.commissioning_date, depreciationPeriod: a.depreciation_period, depreciationMethod: a.method,
   });
 }
 const isoDate = (d: any) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
