@@ -18,6 +18,7 @@ import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
 import * as budget from './domain/budget.js';
+import { postCutoff } from './domain/cutoff.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -659,6 +660,12 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  // --- Régularisations de cut-off (CCA/PCA/FNP/FAE) --------------------------
+  app.post('/api/dossiers/:id/cutoff', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => postCutoff(c, req.params.id, req.body ?? {})));
+  }));
+
   // --- Budgets ---------------------------------------------------------------
   app.get('/api/dossiers/:id/budget', h(async (req, res) => {
     const userId = requireUser(req);

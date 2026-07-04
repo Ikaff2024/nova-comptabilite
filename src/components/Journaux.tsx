@@ -30,6 +30,20 @@ export default function Journaux({ dossierId, dossierName, currency }: { dossier
   const [closing, setClosing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // cut-off
+  const [coOpen, setCoOpen] = useState(false);
+  const [co, setCo] = useState({ type: 'CCA', accountCode: '', amount: '', label: '', date: new Date().toISOString().slice(0, 10), autoReverse: true });
+  const [coBusy, setCoBusy] = useState(false);
+
+  const postCutoff = async () => {
+    setCoBusy(true); setErr(null); setMsg(null);
+    try {
+      const r = await api.postCutoff(dossierId, { type: co.type, date: co.date, accountCode: co.accountCode.trim(), amount: Number(co.amount) || 0, label: co.label.trim(), autoReverse: co.autoReverse });
+      setMsg(`Régularisation ${co.type} comptabilisée${r.reversalId ? ' + extourne à l\'ouverture suivante' : ''}.`);
+      setCo({ ...co, accountCode: '', amount: '', label: '' });
+      await load();
+    } catch (e: any) { setErr(e.message); } finally { setCoBusy(false); }
+  };
 
   const loadStructures = async () => {
     const [js, fys] = await Promise.all([api.journals(dossierId), api.fiscalYears(dossierId)]);
@@ -86,6 +100,33 @@ export default function Journaux({ dossierId, dossierName, currency }: { dossier
         </div>
         {msg && <p className="mt-3 flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> {msg}</p>}
         {err && <p className="mt-3 flex items-center gap-1.5 text-sm text-rose-400"><AlertTriangle className="h-4 w-4" /> {err}</p>}
+
+        <button onClick={() => setCoOpen((v) => !v)} className="mt-4 text-xs font-medium text-emerald-400 hover:text-emerald-300">{coOpen ? '− ' : '+ '}Régularisations de cut-off (CCA / PCA / FNP / FAE)</button>
+        {coOpen && (
+          <div className="mt-3 space-y-3 rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div><label className="mb-1 block text-xs text-zinc-500">Type</label>
+                <select value={co.type} onChange={(e) => setCo({ ...co, type: e.target.value })} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none">
+                  <option value="CCA">CCA — charge constatée d'avance</option>
+                  <option value="PCA">PCA — produit constaté d'avance</option>
+                  <option value="FNP">FNP — facture non parvenue</option>
+                  <option value="FAE">FAE — facture à établir</option>
+                </select></div>
+              <div><label className="mb-1 block text-xs text-zinc-500">Compte {co.type === 'PCA' || co.type === 'FAE' ? '(7x produit)' : '(6x charge)'}</label>
+                <input value={co.accountCode} onChange={(e) => setCo({ ...co, accountCode: e.target.value })} placeholder={co.type === 'PCA' || co.type === 'FAE' ? '706' : '622'} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none" /></div>
+              <div><label className="mb-1 block text-xs text-zinc-500">Montant</label>
+                <input type="number" value={co.amount} onChange={(e) => setCo({ ...co, amount: e.target.value })} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none" /></div>
+              <div><label className="mb-1 block text-xs text-zinc-500">Date</label>
+                <input type="date" value={co.date} onChange={(e) => setCo({ ...co, date: e.target.value })} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none" /></div>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Libellé</label>
+                <input value={co.label} onChange={(e) => setCo({ ...co, label: e.target.value })} placeholder="Loyer janvier payé d'avance" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none" /></div>
+              <label className="flex items-center gap-1.5 text-sm text-zinc-300"><input type="checkbox" checked={co.autoReverse} onChange={(e) => setCo({ ...co, autoReverse: e.target.checked })} className="accent-emerald-500" /> Extourne à l'ouverture suivante</label>
+              <button onClick={postCutoff} disabled={coBusy || !co.accountCode || !co.amount || !co.label} className="flex h-[34px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{coBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Comptabiliser</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Consultation par journal */}
