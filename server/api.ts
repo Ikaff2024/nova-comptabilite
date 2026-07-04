@@ -397,11 +397,19 @@ export function createApi() {
   // --- Facturation de vente + FNE --------------------------------------------
   app.get('/api/dossiers/:id/invoices', h(async (req, res) => {
     const userId = requireUser(req);
-    res.json(await withUser(userId, (c) => invoicing.listInvoices(c, req.params.id, (req.query.status as string) || undefined)));
+    res.json(await withUser(userId, (c) => invoicing.listInvoices(c, req.params.id, (req.query.status as string) || undefined, (req.query.docType as string) || undefined)));
   }));
   app.post('/api/dossiers/:id/invoices', h(async (req, res) => {
     const userId = requireUser(req);
     res.status(201).json(await withUser(userId, (c) => invoicing.createInvoice(c, req.params.id, req.body ?? {})));
+  }));
+  app.post('/api/dossiers/:id/invoices/:iid/convert', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => invoicing.convertQuote(c, req.params.id, req.params.iid)));
+  }));
+  app.post('/api/dossiers/:id/invoices/:iid/credit-note', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => invoicing.creditNoteFromInvoice(c, req.params.id, req.params.iid)));
   }));
   app.get('/api/dossiers/:id/invoices/:iid', h(async (req, res) => {
     const userId = requireUser(req);

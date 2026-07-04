@@ -148,8 +148,8 @@ export interface FixedAssetDetail {
   notes: string | null; status: string; schedule: AssetScheduleRow[];
 }
 export interface Invoice {
-  id: string; number: string | null; client_name: string; invoice_date: string; status: string;
-  total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string;
+  id: string; number: string | null; client_name: string; invoice_date: string; status: string; doc_type: string;
+  total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string; source_document_id?: string | null;
 }
 export interface InvoiceLine { id?: string; line_no?: number; description: string; quantity: number; unit_price: number; vat_rate: number; account_code: string; amount_ht?: number; amount_tva?: number; }
 export interface InvoiceDetail extends Invoice { counterparty_id: string | null; due_date: string | null; entry_id: string | null; fne_qr: string | null; notes: string | null; lines: InvoiceLine[]; }
@@ -287,10 +287,12 @@ export const api = {
     req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/assets/${aid}/depreciate-due`, { method: 'POST', body: JSON.stringify({ upTo }) }),
   depreciateDue: (dossierId: string, upTo?: string) =>
     req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/depreciate-due`, { method: 'POST', body: JSON.stringify({ upTo }) }),
-  invoices: (dossierId: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices${status ? `?status=${status}` : ''}`),
+  invoices: (dossierId: string, docType?: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices?docType=${docType || 'invoice'}${status ? `&status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
-  createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; lines: InvoiceLine[] }) =>
+  createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; docType?: string; lines: InvoiceLine[] }) =>
     req<{ id: string }>(`/api/dossiers/${dossierId}/invoices`, { method: 'POST', body: JSON.stringify(body) }),
+  convertQuote: (dossierId: string, iid: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/convert`, { method: 'POST', body: '{}' }),
+  creditNoteFromInvoice: (dossierId: string, iid: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/credit-note`, { method: 'POST', body: '{}' }),
   deleteInvoice: (dossierId: string, iid: string) => req<void>(`/api/dossiers/${dossierId}/invoices/${iid}`, { method: 'DELETE' }),
   issueInvoice: (dossierId: string, iid: string) => req<{ number: string; entryId: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/issue`, { method: 'POST', body: '{}' }),
   certifyInvoice: (dossierId: string, iid: string) => req<{ reference: string; provider: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/certify`, { method: 'POST', body: '{}' }),
