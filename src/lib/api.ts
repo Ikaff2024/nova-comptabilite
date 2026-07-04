@@ -83,6 +83,14 @@ export interface AuxLedgerRow { entry_date: string; journal_code: string; piece_
 export interface BankAccount { account_code: string; label: string; moves: number; unpointed: number; }
 export interface ReconMove { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; pointed: boolean; }
 export interface ReconView { balance: number; pointedBalance: number; moves: ReconMove[]; }
+export interface StatementRow { date: string; label: string; amount: number }
+export interface StatementMatch {
+  matched: { statement: StatementRow; entryLineId: string; ledgerDate: string; pieceRef: string | null; label: string; amount: number }[];
+  unmatchedStatement: StatementRow[];
+  unmatchedLedger: { entryLineId: string; date: string; pieceRef: string | null; label: string; net: number }[];
+  counts: { statement: number; matched: number; alreadyReconciled: number; unmatchedStatement: number; unmatchedLedger: number };
+  statementFlow: number;
+}
 export interface TiersAccount { account_code: string; label: string; open_count: number; }
 export interface OpenItem { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface LetteredItem { id: string; code: string; entry_date: string; piece_ref: string | null; label: string; debit: number; credit: number; }
@@ -242,6 +250,12 @@ export const api = {
     req<ReconView>(`/api/dossiers/${dossierId}/reconciliation?account=${encodeURIComponent(account)}`),
   point: (dossierId: string, entryLineId: string, pointed: boolean) =>
     req<void>(`/api/dossiers/${dossierId}/reconciliation/point`, { method: 'POST', body: JSON.stringify({ entryLineId, pointed }) }),
+  matchStatement: (dossierId: string, account: string, csv: string) =>
+    req<StatementMatch>(`/api/dossiers/${dossierId}/reconciliation/match`, { method: 'POST', body: JSON.stringify({ account, csv }) }),
+  applyPointings: (dossierId: string, entryLineIds: string[]) =>
+    req<{ pointed: number }>(`/api/dossiers/${dossierId}/reconciliation/apply`, { method: 'POST', body: JSON.stringify({ entryLineIds }) }),
+  createFromStatement: (dossierId: string, account: string, row: StatementRow, counterAccount: string) =>
+    req<{ entryId: string }>(`/api/dossiers/${dossierId}/reconciliation/create`, { method: 'POST', body: JSON.stringify({ account, row, counterAccount }) }),
   tiersAccounts: (dossierId: string) => req<TiersAccount[]>(`/api/dossiers/${dossierId}/tiers-accounts`),
   lettrageView: (dossierId: string, account: string) =>
     req<{ open: OpenItem[]; lettered: LetteredItem[] }>(`/api/dossiers/${dossierId}/lettrage?account=${encodeURIComponent(account)}`),

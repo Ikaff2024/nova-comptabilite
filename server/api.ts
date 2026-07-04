@@ -487,6 +487,24 @@ export function createApi() {
     res.status(204).end();
   }));
 
+  app.post('/api/dossiers/:id/reconciliation/match', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { account, csv } = req.body ?? {};
+    if (!account || !csv) { const e: any = new Error('account et csv requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => bank.matchStatement(c, req.params.id, account, String(csv))));
+  }));
+  app.post('/api/dossiers/:id/reconciliation/apply', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { entryLineIds } = req.body ?? {};
+    res.json(await withUser(userId, (c) => bank.applyPointings(c, req.params.id, Array.isArray(entryLineIds) ? entryLineIds : [])));
+  }));
+  app.post('/api/dossiers/:id/reconciliation/create', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { account, row, counterAccount } = req.body ?? {};
+    if (!account || !row || !counterAccount) { const e: any = new Error('account, row, counterAccount requis'); e.status = 400; throw e; }
+    res.status(201).json(await withUser(userId, (c) => bank.createFromStatement(c, req.params.id, account, row, counterAccount)));
+  }));
+
   // --- Lettrage des comptes de tiers -----------------------------------------
   app.get('/api/dossiers/:id/tiers-accounts', h(async (req, res) => {
     const userId = requireUser(req);
