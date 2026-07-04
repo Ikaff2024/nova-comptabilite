@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2 } from 'lucide-react';
-import { api, fmtMoney, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow } from '../lib/api';
+import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2, Wand2, BellRing, Send } from 'lucide-react';
+import { api, fmtMoney, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow, type OverdueClient } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
-type View = 'plan' | 'balance' | 'grandlivre' | 'lettrage' | 'aged';
+type View = 'plan' | 'balance' | 'grandlivre' | 'lettrage' | 'aged' | 'relances';
 
 export default function Tiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
   const [view, setView] = useState<View>('balance');
   const tabs: [View, string, any][] = [
     ['plan', 'Plan tiers', BookUser], ['balance', 'Balance', Scale], ['grandlivre', 'Grand livre', Library],
-    ['lettrage', 'Lettrage', Link2], ['aged', 'Balance âgée', CalendarClock],
+    ['lettrage', 'Lettrage', Link2], ['aged', 'Balance âgée', CalendarClock], ['relances', 'Relances', BellRing],
   ];
   return (
     <div className="space-y-5">
@@ -27,6 +27,82 @@ export default function Tiers({ dossierId, dossierName, currency }: { dossierId:
       {view === 'grandlivre' && <GrandLivreTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
       {view === 'lettrage' && <Lettrage dossierId={dossierId} currency={currency} />}
       {view === 'aged' && <Aged dossierId={dossierId} dossierName={dossierName} currency={currency} />}
+      {view === 'relances' && <Relances dossierId={dossierId} dossierName={dossierName} currency={currency} />}
+    </div>
+  );
+}
+
+function Relances({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+  const [rows, setRows] = useState<OverdueClient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = async () => { setLoading(true); try { setRows(await api.overdueClients(dossierId)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [dossierId]);
+  const m = (n: number) => fmtMoney(n, currency);
+
+  const relancer = async (r: OverdueClient) => {
+    setBusy(r.counterpartyId); setMsg(null);
+    try {
+      const L = await api.relanceLetter(dossierId, r.counterpartyId);
+      const rows = L.open.map((o) => `<tr><td>${o.date}</td><td>${o.piece_ref ?? ''}</td><td>${(o.label ?? '').replace(/[&<>]/g, '')}</td><td class="n">${o.age} j</td><td class="n">${m(o.amount)}</td></tr>`).join('');
+      const niveau = L.suggestedLevel === 1 ? '1re relance' : L.suggestedLevel === 2 ? '2e relance' : L.suggestedLevel >= 3 ? 'Mise en demeure' : `Relance ${L.suggestedLevel}`;
+      const body = `
+        <p>À l'attention de <b>${(L.name ?? '').replace(/[&<>]/g, '')}</b>${L.auxCode ? ` (${L.auxCode})` : ''}</p>
+        <p>Objet : <b>${niveau}</b> — sommes échues au ${L.asOf}</p>
+        <p>Sauf erreur ou règlement de votre part, notre comptabilité fait apparaître les factures suivantes restées impayées :</p>
+        <table><thead><tr><th>Date</th><th>Pièce</th><th>Libellé</th><th class="n">Ancienneté</th><th class="n">Montant</th></tr></thead>
+        <tbody>${rows}<tr class="tot"><td colspan="4">Total dû</td><td class="n">${m(L.total)}</td></tr></tbody></table>
+        <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais. Pour toute question, n'hésitez pas à nous contacter.</p>
+        <p style="margin-top:24px">${dossierName}</p>`;
+      printDocument(`${niveau} — ${L.name}`, `${dossierName} · édité le ${nowStamp()}`, body);
+      await api.recordRelance(dossierId, r.counterpartyId, { level: L.suggestedLevel, amount: L.total });
+      setMsg(`Relance niveau ${L.suggestedLevel} enregistrée pour ${L.name}.`);
+      await load();
+    } catch (e: any) { setMsg(e.message); } finally { setBusy(null); }
+  };
+
+  const levelLabel = (n: number) => n === 0 ? '—' : n === 1 ? '1re' : n === 2 ? '2e' : n >= 3 ? 'MED' : `${n}`;
+  const total = rows.reduce((s, r) => s + r.balance, 0);
+  const overdue90 = rows.reduce((s, r) => s + Math.max(r.b90_plus, 0), 0);
+
+  if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Analyse des créances…</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="text-sm text-zinc-400">Clients à relancer</div><div className="mt-1 font-mono text-2xl font-bold text-zinc-100">{rows.length}</div></div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="text-sm text-zinc-400">Créances ouvertes</div><div className="mt-1 font-mono text-2xl font-bold text-zinc-100">{m(total)}</div></div>
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4"><div className="text-sm text-zinc-400">Dont +90 jours</div><div className="mt-1 font-mono text-2xl font-bold text-amber-400">{m(overdue90)}</div></div>
+      </div>
+      {msg && <p className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> {msg}</p>}
+
+      {rows.length === 0 ? <p className="text-sm text-zinc-500">Aucune créance client échue. 🎉</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-3 font-medium">Client</th><th className="px-4 py-3 text-right font-medium">Solde dû</th>
+              <th className="px-4 py-3 text-right font-medium">+90 j</th><th className="px-4 py-3 text-right font-medium">Ancienneté</th>
+              <th className="px-4 py-3 text-center font-medium">Dernière relance</th><th className="px-4 py-3"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5">
+              {rows.map((r) => (
+                <tr key={r.counterpartyId} className="hover:bg-white/5">
+                  <td className="px-4 py-2.5 text-zinc-200">{r.name}<span className="ml-2 font-mono text-xs text-zinc-500">{r.auxCode}</span></td>
+                  <td className="px-4 py-2.5 text-right font-mono text-zinc-100">{m(r.balance)}</td>
+                  <td className={cn('px-4 py-2.5 text-right font-mono', r.b90_plus > 0 ? 'text-amber-400' : 'text-zinc-500')}>{r.b90_plus > 0 ? m(r.b90_plus) : '—'}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-zinc-400">{r.oldestAge} j</td>
+                  <td className="px-4 py-2.5 text-center">{r.lastLevel > 0 ? <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-zinc-300">{levelLabel(r.lastLevel)} · {r.lastSentAt}</span> : <span className="text-xs text-zinc-600">jamais</span>}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button onClick={() => relancer(r)} disabled={busy === r.counterpartyId} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy === r.counterpartyId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Relancer</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-zinc-500">« Relancer » génère la lettre (PDF à imprimer / enregistrer) et enregistre le niveau de relance. Le niveau s'incrémente à chaque relance (1re → 2e → mise en demeure).</p>
     </div>
   );
 }
@@ -217,6 +293,7 @@ function Lettrage({ dossierId, currency }: { dossierId: string; currency: string
   const [data, setData] = useState<{ open: OpenItem[]; lettered: LetteredItem[] } | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
@@ -225,6 +302,16 @@ function Lettrage({ dossierId, currency }: { dossierId: string; currency: string
     if (!account && a[0]) setAccount(a[0].account_code);
   };
   useEffect(() => { loadAccounts(); }, [dossierId]);
+
+  const autoLetter = async () => {
+    setError(null); setOk(null); setAutoBusy(true);
+    try {
+      const r = await api.autoLettrage(dossierId, account || undefined);
+      setOk(r.groups > 0 ? `${r.groups} lettrage(s) automatique(s) · ${r.linesLettered} pièce(s)` : 'Aucun rapprochement automatique trouvé');
+      setTimeout(() => setOk(null), 3500);
+      await loadView(); await loadAccounts();
+    } catch (e: any) { setError(e.message); } finally { setAutoBusy(false); }
+  };
 
   const loadView = async () => {
     if (!account) return;
@@ -263,6 +350,10 @@ function Lettrage({ dossierId, currency }: { dossierId: string; currency: string
           className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50">
           {accounts.map((a) => <option key={a.account_code} value={a.account_code}>{a.account_code} · {a.label} ({a.open_count})</option>)}
         </select>
+        <button onClick={autoLetter} disabled={autoBusy} title="Rapproche automatiquement les paires et règlements échelonnés par tiers"
+          className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">
+          {autoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Lettrage automatique
+        </button>
         {ok && <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> {ok}</span>}
       </div>
 

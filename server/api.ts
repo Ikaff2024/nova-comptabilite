@@ -17,6 +17,7 @@ import * as audit from './domain/audit.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
+import * as relances from './domain/relances.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -502,6 +503,27 @@ export function createApi() {
     const userId = requireUser(req);
     await withUser(userId, (c) => lettrage.deleteLettrage(c, req.params.id, req.params.lettrageId));
     res.status(204).end();
+  }));
+
+  app.post('/api/dossiers/:id/lettrage-auto', h(async (req, res) => {
+    const userId = requireUser(req);
+    const account = (req.body?.accountCode as string) || undefined;
+    res.json(await withUser(userId, (c) => lettrage.autoLettrage(c, req.params.id, account)));
+  }));
+
+  // --- Relances clients -------------------------------------------------------
+  app.get('/api/dossiers/:id/overdue', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => relances.overdueClients(c, req.params.id, (req.query.asOf as string) || undefined)));
+  }));
+  app.get('/api/dossiers/:id/relance/:cid', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => relances.relanceLetter(c, req.params.id, req.params.cid, (req.query.asOf as string) || undefined)));
+  }));
+  app.post('/api/dossiers/:id/relance/:cid', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { level, amount, asOf, note } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => relances.recordRelance(c, req.params.id, req.params.cid, Number(level) || 1, Number(amount) || 0, asOf, note)));
   }));
 
   app.get('/api/dossiers/:id/aged-balance', h(async (req, res) => {

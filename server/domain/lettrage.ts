@@ -101,6 +101,90 @@ export async function deleteLettrage(c: Client, dossierId: string, id: string): 
   await c.query('delete from lettrages where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 
+// --- Lettrage automatique ----------------------------------------------------
+// Rapproche, PAR TIERS, les lignes non lettrées qui s'annulent : paires exactes
+// (une facture ↔ un règlement de même montant) et règlements échelonnés
+// (une facture ↔ plusieurs règlements dont la somme égale la facture, et inversement).
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+interface OpenLine { id: string; net: number } // net = débit - crédit
+
+// Renvoie les groupes de lignes (ids) qui s'équilibrent au sein d'un tiers.
+function matchGroups(lines: OpenLine[]): string[][] {
+  const groups: string[][] = [];
+  const used = new Set<string>();
+  const debits = lines.filter((l) => l.net > 0).sort((a, b) => b.net - a.net);
+  const credits = lines.filter((l) => l.net < 0).sort((a, b) => a.net - b.net); // plus négatif d'abord
+
+  // 1) Paires exactes 1:1 (montant identique)
+  for (const d of debits) {
+    if (used.has(d.id)) continue;
+    const m = credits.find((cr) => !used.has(cr.id) && round2(d.net + cr.net) === 0);
+    if (m) { used.add(d.id); used.add(m.id); groups.push([d.id, m.id]); }
+  }
+  // 2) Une facture ↔ plusieurs règlements (et l'inverse) : accumulation exacte
+  const accumulate = (anchors: OpenLine[], others: OpenLine[]) => {
+    for (const a of anchors) {
+      if (used.has(a.id)) continue;
+      const target = Math.abs(a.net);
+      const picked: string[] = []; let sum = 0;
+      for (const o of others) {
+        if (used.has(o.id)) continue;
+        const v = Math.abs(o.net);
+        if (round2(sum + v) > target + 0.005) continue;
+        picked.push(o.id); sum = round2(sum + v);
+        if (round2(sum) === round2(target)) break;
+      }
+      if (round2(sum) === round2(target) && picked.length > 0) {
+        used.add(a.id); picked.forEach((id) => used.add(id));
+        groups.push([a.id, ...picked]);
+      }
+    }
+  };
+  accumulate(debits, credits); // facture payée en plusieurs fois
+  accumulate(credits, debits); // avoir/acompte imputé sur plusieurs factures
+  return groups;
+}
+
+export async function autoLettrage(
+  c: Client, dossierId: string, accountCode?: string,
+): Promise<{ groups: number; linesLettered: number }> {
+  const params: any[] = [dossierId];
+  let filter = '';
+  if (accountCode) { params.push(accountCode); filter = ' and a.account_code = $2'; }
+  const { rows } = await c.query(
+    `select l.id, a.account_code, l.counterparty_id,
+            (l.amount_debit - l.amount_credit) as net
+       from entry_lines l
+       join entries e on e.id = l.entry_id and e.status = 'posted'
+       join accounts a on a.id = l.account_id and a.class_no = 4
+      where l.dossier_id = $1${filter}
+        and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+      order by e.entry_date, e.created_at`,
+    params,
+  );
+
+  // Partition par (compte, tiers) — on ne lettre jamais entre deux tiers différents.
+  const parts = new Map<string, { accountCode: string; lines: OpenLine[] }>();
+  for (const r of rows) {
+    const net = round2(Number(r.net));
+    if (net === 0) continue;
+    const key = `${r.account_code}|${r.counterparty_id ?? 'none'}`;
+    if (!parts.has(key)) parts.set(key, { accountCode: r.account_code, lines: [] });
+    parts.get(key)!.lines.push({ id: r.id, net });
+  }
+
+  let groups = 0, linesLettered = 0;
+  for (const part of parts.values()) {
+    for (const ids of matchGroups(part.lines)) {
+      await createLettrage(c, dossierId, part.accountCode, ids);
+      groups++; linesLettered += ids.length;
+    }
+  }
+  return { groups, linesLettered };
+}
+
 // Balance âgée : encours non lettré par compte de tiers, ventilé par ancienneté.
 export async function agedBalance(c: Client, dossierId: string, asOf?: string): Promise<any[]> {
   const ref = asOf || new Date().toISOString().slice(0, 10);

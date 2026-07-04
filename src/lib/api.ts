@@ -87,6 +87,15 @@ export interface TiersAccount { account_code: string; label: string; open_count:
 export interface OpenItem { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface LetteredItem { id: string; code: string; entry_date: string; piece_ref: string | null; label: string; debit: number; credit: number; }
 export interface AgedRow { account_code: string; label: string; balance: number; b0_30: number; b31_60: number; b61_90: number; b90_plus: number; }
+export interface OverdueClient {
+  counterpartyId: string; name: string; auxCode: string; balance: number;
+  b0_30: number; b31_60: number; b61_90: number; b90_plus: number; oldestAge: number;
+  lastLevel: number; lastSentAt: string | null;
+}
+export interface RelanceLetter {
+  name: string; auxCode: string; asOf: string; total: number; suggestedLevel: number;
+  open: { date: string; piece_ref: string | null; label: string; amount: number; age: number }[];
+}
 export interface VatDeclaration {
   from: string; to: string; collectee: number; deductible: number; netDue: number; creditReportable: number;
   breakdown: { account_code: string; label: string; debit: number; credit: number }[];
@@ -242,6 +251,14 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/lettrage/${id}`, { method: 'DELETE' }),
   agedBalance: (dossierId: string, asOf?: string) =>
     req<AgedRow[]>(`/api/dossiers/${dossierId}/aged-balance${asOf ? `?asOf=${asOf}` : ''}`),
+  autoLettrage: (dossierId: string, accountCode?: string) =>
+    req<{ groups: number; linesLettered: number }>(`/api/dossiers/${dossierId}/lettrage-auto`, { method: 'POST', body: JSON.stringify({ accountCode }) }),
+  overdueClients: (dossierId: string, asOf?: string) =>
+    req<OverdueClient[]>(`/api/dossiers/${dossierId}/overdue${asOf ? `?asOf=${asOf}` : ''}`),
+  relanceLetter: (dossierId: string, cid: string, asOf?: string) =>
+    req<RelanceLetter>(`/api/dossiers/${dossierId}/relance/${cid}${asOf ? `?asOf=${asOf}` : ''}`),
+  recordRelance: (dossierId: string, cid: string, body: { level: number; amount: number; asOf?: string; note?: string }) =>
+    req<{ id: string; level: number }>(`/api/dossiers/${dossierId}/relance/${cid}`, { method: 'POST', body: JSON.stringify(body) }),
   vatDeclaration: (dossierId: string, from: string, to: string) =>
     req<VatDeclaration>(`/api/dossiers/${dossierId}/vat?from=${from}&to=${to}`),
   liquidateVat: (dossierId: string, body: { from: string; to: string; date: string }) =>
