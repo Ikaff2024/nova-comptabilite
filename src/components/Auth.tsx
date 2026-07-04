@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Hexagon, Loader2, Mail, Lock, User } from 'lucide-react';
+import { Hexagon, Loader2, Mail, Lock, User, ShieldCheck } from 'lucide-react';
 import { api, type AuthUser } from '../lib/api';
 import { setToken } from '../lib/session';
 
@@ -9,6 +9,8 @@ export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [needCode, setNeedCode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,12 +19,13 @@ export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
     setLoading(true); setError(null);
     try {
       const res = mode === 'login'
-        ? await api.login(email.trim(), password)
+        ? await api.login(email.trim(), password, needCode ? code.trim() : undefined)
         : await api.register(email.trim(), password, name.trim());
       setToken(res.token);
       onAuth(res.user);
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === '2FA_REQUIRED') { setNeedCode(true); setError(null); }
+      else { setError(err.message); }
     } finally {
       setLoading(false);
     }
@@ -60,12 +63,20 @@ export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
               className="w-full bg-transparent text-sm outline-none placeholder-zinc-500" />
           </Field>
 
+          {needCode && mode === 'login' && (
+            <Field icon={ShieldCheck} label="Code de vérification (2FA)">
+              <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" inputMode="numeric" autoFocus
+                className="w-full bg-transparent font-mono text-sm tracking-widest outline-none placeholder-zinc-500" />
+            </Field>
+          )}
+
+          {needCode && <p className="text-xs text-zinc-500">Saisissez le code à 6 chiffres de votre application d'authentification.</p>}
           {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
           <button type="submit" disabled={loading}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:opacity-50">
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
+            {mode === 'login' ? (needCode ? 'Vérifier & se connecter' : 'Se connecter') : 'Créer mon compte'}
           </button>
         </form>
 

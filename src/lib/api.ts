@@ -7,7 +7,8 @@ const BASE = (import.meta as any).env?.VITE_API_BASE ?? '';
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) { super(message); this.status = status; }
+  code?: string;
+  constructor(message: string, status: number, code?: string) { super(message); this.status = status; this.code = code; }
 }
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
@@ -20,10 +21,11 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
       ...(opts.headers ?? {}),
     },
   });
-  if (res.status === 401) { clearToken(); }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(body.error ?? `Erreur ${res.status}`, res.status);
+    // 401 sans challenge 2FA = session invalide -> on nettoie le jeton.
+    if (res.status === 401 && body.code !== '2FA_REQUIRED' && body.code !== '2FA_INVALID') clearToken();
+    throw new ApiError(body.error ?? `Erreur ${res.status}`, res.status, body.code);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -192,14 +194,22 @@ export interface CaptureProposal {
   currency: string; confidence: number; lines: ProposedLine[]; warnings?: string[];
 }
 
-export interface AuthUser { id: string; email: string; name: string | null; }
+export interface AuthUser { id: string; email: string; name: string | null; twoFactorEnabled?: boolean; }
+export interface CabinetMember { userId: string; email: string; name: string | null; role: string; createdAt: string; }
 
 export const api = {
   register: (email: string, password: string, name: string) =>
     req<{ token: string; user: AuthUser }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) }),
-  login: (email: string, password: string) =>
-    req<{ token: string; user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  login: (email: string, password: string, code?: string) =>
+    req<{ token: string; user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password, code }) }),
   me: () => req<AuthUser>('/api/auth/me'),
+  setup2fa: () => req<{ secret: string; otpauth: string }>('/api/auth/2fa/setup', { method: 'POST', body: '{}' }),
+  enable2fa: (code: string) => req<{ enabled: boolean }>('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+  disable2fa: () => req<{ enabled: boolean }>('/api/auth/2fa/disable', { method: 'POST', body: '{}' }),
+  members: (cabinetId: string) => req<CabinetMember[]>(`/api/cabinets/${cabinetId}/members`),
+  addMember: (cabinetId: string, email: string, role: string) => req<{ id: string }>(`/api/cabinets/${cabinetId}/members`, { method: 'POST', body: JSON.stringify({ email, role }) }),
+  setMemberRole: (cabinetId: string, uid: string, role: string) => req<void>(`/api/cabinets/${cabinetId}/members/${uid}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+  removeMember: (cabinetId: string, uid: string) => req<void>(`/api/cabinets/${cabinetId}/members/${uid}`, { method: 'DELETE' }),
   cabinets: () => req<Cabinet[]>('/api/cabinets'),
   dashboard: () => req<DashboardData>('/api/dashboard'),
   seedDemo: () => req<{ dossierId: string }>('/api/demo/seed', { method: 'POST', body: '{}' }),

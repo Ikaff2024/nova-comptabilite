@@ -61,3 +61,57 @@ export function verifyToken(token: string): TokenPayload | null {
     return payload;
   } catch { return null; }
 }
+
+// --- 2FA TOTP (RFC 6238) — maison, base32 + HMAC-SHA1 ------------------------
+
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function base32Encode(buf: Buffer): string {
+  let bits = 0, value = 0, out = '';
+  for (const byte of buf) {
+    value = (value << 8) | byte; bits += 8;
+    while (bits >= 5) { out += B32[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
+  return out;
+}
+
+function base32Decode(s: string): Buffer {
+  const clean = s.toUpperCase().replace(/=+$/, '').replace(/[^A-Z2-7]/g, '');
+  let bits = 0, value = 0; const out: number[] = [];
+  for (const ch of clean) {
+    value = (value << 5) | B32.indexOf(ch); bits += 5;
+    if (bits >= 8) { out.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(out);
+}
+
+export function generateTotpSecret(): string {
+  return base32Encode(randomBytes(20));
+}
+
+export function totpUri(secret: string, email: string, issuer = 'Nova Comptabilité'): string {
+  const label = encodeURIComponent(`${issuer}:${email}`);
+  return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+}
+
+function hotp(secret: Buffer, counter: number): string {
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(counter));
+  const hmac = createHmac('sha1', secret).update(buf).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const bin = ((hmac[offset] & 0x7f) << 24) | (hmac[offset + 1] << 16) | (hmac[offset + 2] << 8) | hmac[offset + 3];
+  return String(bin % 1_000_000).padStart(6, '0');
+}
+
+// Vérifie un code TOTP (fenêtre ±1 pas de 30 s pour tolérer le décalage d'horloge).
+export function verifyTotp(secret: string, code: string, window = 1): boolean {
+  const clean = String(code ?? '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(clean)) return false;
+  const key = base32Decode(secret);
+  const counter = Math.floor(Date.now() / 1000 / 30);
+  for (let i = -window; i <= window; i++) {
+    if (timingSafeEqual(Buffer.from(hotp(key, counter + i)), Buffer.from(clean))) return true;
+  }
+  return false;
+}

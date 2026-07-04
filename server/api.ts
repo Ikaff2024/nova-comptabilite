@@ -3,7 +3,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { withUser, pool } from './db.js';
 import * as acc from './domain/accounting.js';
 import * as users from './domain/users.js';
-import { hashPassword, verifyPassword, issueToken, verifyToken } from './auth.js';
+import { hashPassword, verifyPassword, issueToken, verifyToken, generateTotpSecret, totpUri, verifyTotp } from './auth.js';
 import { extractDocument, aiProvider } from './ai/provider.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
@@ -70,20 +70,71 @@ export function createApi() {
   }));
 
   app.post('/api/auth/login', h(async (req, res) => {
-    const { email, password } = req.body ?? {};
+    const { email, password, code } = req.body ?? {};
     const row = await withUser(null, (c) => users.getUserForLogin(c, String(email ?? '')));
     if (!row || !verifyPassword(String(password ?? ''), row.password_hash)) {
       const e: any = new Error('Identifiants invalides'); e.status = 401; throw e;
     }
+    if (row.totp_enabled) {
+      if (!code) { const e: any = new Error('Code de vérification requis'); e.status = 401; e.code = '2FA_REQUIRED'; throw e; }
+      if (!verifyTotp(row.totp_secret ?? '', String(code))) { const e: any = new Error('Code de vérification invalide'); e.status = 401; e.code = '2FA_INVALID'; throw e; }
+    }
     const token = issueToken({ id: row.id, email: row.email, name: row.name ?? undefined });
-    res.json({ token, user: { id: row.id, email: row.email, name: row.name } });
+    res.json({ token, user: { id: row.id, email: row.email, name: row.name, twoFactorEnabled: row.totp_enabled } });
   }));
 
   app.get('/api/auth/me', h(async (req, res) => {
     const userId = requireUser(req);
     const user = await withUser(userId, (c) => users.getUser(c, userId));
     if (!user) { const e: any = new Error('Utilisateur introuvable'); e.status = 404; throw e; }
-    res.json(user);
+    res.json({ id: user.id, email: user.email, name: user.name, twoFactorEnabled: user.totp_enabled });
+  }));
+
+  // --- Double authentification (2FA TOTP) ------------------------------------
+  app.post('/api/auth/2fa/setup', h(async (req, res) => {
+    const userId = requireUser(req);
+    const me = await withUser(userId, (c) => users.getUser(c, userId));
+    const secret = generateTotpSecret();
+    await withUser(userId, (c) => users.totpSetPending(c, secret));
+    res.json({ secret, otpauth: totpUri(secret, me?.email ?? 'user') });
+  }));
+  app.post('/api/auth/2fa/enable', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { code } = req.body ?? {};
+    const row = await withUser(userId, (c) => users.getUser(c, userId));
+    // relit le secret en attente via le login helper (par email)
+    const full = await withUser(null, (c) => users.getUserForLogin(c, row?.email ?? ''));
+    if (!full?.totp_secret) { const e: any = new Error("Lancez d'abord la configuration 2FA."); e.status = 400; throw e; }
+    if (!verifyTotp(full.totp_secret, String(code ?? ''))) { const e: any = new Error('Code invalide — réessayez.'); e.status = 400; throw e; }
+    await withUser(userId, (c) => users.totpEnable(c));
+    res.json({ enabled: true });
+  }));
+  app.post('/api/auth/2fa/disable', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => users.totpDisable(c));
+    res.json({ enabled: false });
+  }));
+
+  // --- Membres du cabinet (collaborateurs & rôles) ---------------------------
+  app.get('/api/cabinets/:cid/members', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => users.listMembers(c, req.params.cid)));
+  }));
+  app.post('/api/cabinets/:cid/members', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { email, role } = req.body ?? {};
+    if (!email) { const e: any = new Error('Email requis'); e.status = 400; throw e; }
+    res.status(201).json(await withUser(userId, (c) => users.addMember(c, req.params.cid, String(email), role || 'collaborateur')));
+  }));
+  app.patch('/api/cabinets/:cid/members/:uid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => users.setMemberRole(c, req.params.cid, req.params.uid, req.body?.role));
+    res.status(204).end();
+  }));
+  app.delete('/api/cabinets/:cid/members/:uid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => users.removeMember(c, req.params.cid, req.params.uid));
+    res.status(204).end();
   }));
 
   // Onboarding : créer un cabinet (l'appelant en devient owner)

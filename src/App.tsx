@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle, BookOpen } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle, BookOpen, Building2 } from 'lucide-react';
 import { api, type Cabinet, type Dossier, type AuthUser } from './lib/api';
 import { getToken, clearToken, isWelcomed } from './lib/session';
 import Auth from './components/Auth';
@@ -7,6 +7,7 @@ import Onboarding from './components/Onboarding';
 import Dossiers from './components/Dossiers';
 import DossierView from './components/DossierView';
 import CabinetDashboard from './components/CabinetDashboard';
+import CabinetSettings from './components/CabinetSettings';
 import WelcomeGuide from './components/WelcomeGuide';
 import { cn } from './lib/utils';
 
@@ -17,7 +18,8 @@ export default function App() {
   const [loadingCabinets, setLoadingCabinets] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Dossier | null>(null);
-  const [nav, setNav] = useState<'dashboard' | 'portefeuille'>('dashboard');
+  const [nav, setNav] = useState<'dashboard' | 'portefeuille' | 'cabinet'>('dashboard');
+  const refreshMe = async () => { try { setUser(await api.me()); } catch { /* ignore */ } };
   const [showGuide, setShowGuide] = useState(false);
   const [dashKey, setDashKey] = useState(0); // force refresh du dashboard après démo
 
@@ -97,6 +99,7 @@ export default function App() {
           {([
             { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
             { id: 'portefeuille', label: 'Portefeuille', icon: FolderKanban },
+            { id: 'cabinet', label: 'Cabinet & sécurité', icon: Building2 },
           ] as const).map((item) => {
             const active = !selected && nav === item.id;
             return (
@@ -133,7 +136,9 @@ export default function App() {
             ? <DossierView dossier={selected} onBack={() => setSelected(null)} />
             : nav === 'dashboard'
               ? <CabinetDashboard refresh={dashKey} cabinetName={cabinet.name} onOpen={openDossierById} onDemo={onDemoCreated} />
-              : <Dossiers cabinet={cabinet} onOpen={setSelected} />}
+              : nav === 'cabinet'
+                ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} />
+                : <Dossiers cabinet={cabinet} onOpen={setSelected} />}
         </div>
       </main>
 
