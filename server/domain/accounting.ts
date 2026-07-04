@@ -179,11 +179,11 @@ export async function setupDossierDefaults(
 }
 
 export async function listAccounts(
-  c: Client, dossierId: string, opts: { search?: string; classNo?: number; limit?: number } = {},
+  c: Client, dossierId: string, opts: { search?: string; classNo?: number; limit?: number; includeInactive?: boolean } = {},
 ): Promise<any[]> {
   const params: any[] = [dossierId];
-  let sql = `select id, account_code, label, class_no, account_type, normal_side, is_collective, is_postable
-             from accounts where dossier_id = $1 and is_active = true`;
+  let sql = `select id, account_code, label, class_no, account_type, normal_side, is_collective, is_postable, is_active
+             from accounts where dossier_id = $1${opts.includeInactive ? '' : ' and is_active = true'}`;
   if (opts.classNo) { params.push(opts.classNo); sql += ` and class_no = $${params.length}`; }
   if (opts.search) {
     params.push(`%${opts.search}%`);
@@ -193,6 +193,58 @@ export async function listAccounts(
   params.push(opts.limit ?? 100); sql += ` limit $${params.length}`;
   const { rows } = await c.query(sql, params);
   return rows;
+}
+
+// --- Édition du plan comptable ----------------------------------------------
+
+// Dérive type/sens d'un compte à partir de sa classe (SYSCOHADA).
+function deriveAccountMeta(code: string): { classNo: number; type: string; side: string } {
+  const classNo = Number(code[0]);
+  switch (classNo) {
+    case 1: return { classNo, type: 'equity', side: 'credit' };
+    case 2: return { classNo, type: 'asset', side: 'debit' };
+    case 3: return { classNo, type: 'asset', side: 'debit' };
+    case 4: return { classNo, type: 'liability', side: 'credit' };
+    case 5: return { classNo, type: 'asset', side: 'debit' };
+    case 6: return { classNo, type: 'expense', side: 'debit' };
+    case 7: return { classNo, type: 'income', side: 'credit' };
+    case 8: return { classNo, type: 'income', side: 'credit' };
+    default: return { classNo: classNo || 9, type: 'analytic', side: 'debit' };
+  }
+}
+
+export async function createAccount(
+  c: Client, dossierId: string, input: { accountCode: string; label: string; isCollective?: boolean },
+): Promise<{ id: string }> {
+  const code = String(input.accountCode ?? '').trim();
+  if (!/^\d{2,}$/.test(code)) throw new Error('Code de compte invalide (au moins 2 chiffres).');
+  if (!input.label?.trim()) throw new Error('Intitulé requis.');
+  const { rows: ex } = await c.query('select 1 from accounts where dossier_id=$1 and account_code=$2', [dossierId, code]);
+  if (ex[0]) throw new Error(`Le compte ${code} existe déjà.`);
+  const d = deriveAccountMeta(code);
+  const { rows } = await c.query(
+    `insert into accounts(dossier_id, account_code, label, class_no, account_type, normal_side, is_collective, is_postable)
+     values ($1,$2,$3,$4,$5::account_type,$6::account_nature,$7,true) returning id`,
+    [dossierId, code, input.label.trim(), d.classNo, d.type, d.side, !!input.isCollective || /^(40|41|42)/.test(code)],
+  );
+  return { id: rows[0].id };
+}
+
+export async function updateAccount(
+  c: Client, dossierId: string, id: string, patch: { label?: string; isActive?: boolean },
+): Promise<void> {
+  const sets: string[] = []; const params: any[] = [dossierId, id];
+  if (patch.label != null) { params.push(patch.label.trim()); sets.push(`label=$${params.length}`); }
+  if (patch.isActive != null) { params.push(patch.isActive); sets.push(`is_active=$${params.length}`); }
+  if (sets.length === 0) return;
+  await c.query(`update accounts set ${sets.join(', ')} where dossier_id=$1 and id=$2`, params);
+}
+
+export async function deleteAccount(c: Client, dossierId: string, id: string): Promise<void> {
+  const { rows } = await c.query(
+    'select count(*)::int n from entry_lines where dossier_id=$1 and account_id=$2', [dossierId, id]);
+  if (rows[0].n > 0) throw new Error('Compte mouvementé : désactivez-le plutôt que de le supprimer.');
+  await c.query('delete from accounts where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 
 // --- Le cœur : passer une écriture (atomique, équilibrée) --------------------

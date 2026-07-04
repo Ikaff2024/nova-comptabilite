@@ -180,7 +180,22 @@ export function createApi() {
     const userId = requireUser(req);
     const classNo = req.query.class ? Number(req.query.class) : undefined;
     const search = (req.query.q as string) || undefined;
-    res.json(await withUser(userId, (c) => acc.listAccounts(c, req.params.id, { classNo, search })));
+    const includeInactive = req.query.all === '1';
+    res.json(await withUser(userId, (c) => acc.listAccounts(c, req.params.id, { classNo, search, includeInactive })));
+  }));
+  app.post('/api/dossiers/:id/accounts', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => acc.createAccount(c, req.params.id, req.body ?? {})));
+  }));
+  app.patch('/api/dossiers/:id/accounts/:accId', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => acc.updateAccount(c, req.params.id, req.params.accId, req.body ?? {}));
+    res.status(204).end();
+  }));
+  app.delete('/api/dossiers/:id/accounts/:accId', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => acc.deleteAccount(c, req.params.id, req.params.accId));
+    res.status(204).end();
   }));
 
   app.get('/api/dossiers/:id/fiscal-years', h(async (req, res) => {

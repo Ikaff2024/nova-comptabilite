@@ -46,7 +46,7 @@ export interface Dossier {
 }
 export interface Account {
   id: string; account_code: string; label: string; class_no: number;
-  account_type: string; normal_side: string; is_collective: boolean; is_postable: boolean;
+  account_type: string; normal_side: string; is_collective: boolean; is_postable: boolean; is_active?: boolean;
 }
 export interface FiscalYear { id: string; label: string; start_date: string; end_date: string; status: string; }
 export interface Journal { id: string; code: string; label: string; type: string; }
@@ -218,10 +218,18 @@ export const api = {
   dossiers: () => req<Dossier[]>('/api/dossiers'),
   createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string }) =>
     req<{ id: string; accounts: number }>('/api/dossiers', { method: 'POST', body: JSON.stringify(input) }),
-  accounts: (dossierId: string, q?: string) =>
-    req<Account[]>(`/api/dossiers/${dossierId}/accounts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  accounts: (dossierId: string, q?: string, all?: boolean) =>
+    req<Account[]>(`/api/dossiers/${dossierId}/accounts?${q ? `q=${encodeURIComponent(q)}&` : ''}${all ? 'all=1' : ''}`),
+  createAccount: (dossierId: string, body: { accountCode: string; label: string; isCollective?: boolean }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/accounts`, { method: 'POST', body: JSON.stringify(body) }),
+  updateAccount: (dossierId: string, accId: string, body: { label?: string; isActive?: boolean }) =>
+    req<void>(`/api/dossiers/${dossierId}/accounts/${accId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteAccount: (dossierId: string, accId: string) =>
+    req<void>(`/api/dossiers/${dossierId}/accounts/${accId}`, { method: 'DELETE' }),
   fiscalYears: (dossierId: string) => req<FiscalYear[]>(`/api/dossiers/${dossierId}/fiscal-years`),
   journals: (dossierId: string) => req<Journal[]>(`/api/dossiers/${dossierId}/journals`),
+  createJournal: (dossierId: string, body: { code: string; label: string; type: string }) =>
+    req<{ journalId: string }>(`/api/dossiers/${dossierId}/journals`, { method: 'POST', body: JSON.stringify(body) }),
   setupDossier: (dossierId: string) =>
     req<{ fiscalYears: FiscalYear[]; journals: Journal[] }>(`/api/dossiers/${dossierId}/setup`, { method: 'POST', body: '{}' }),
   postEntry: (dossierId: string, body: {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2 } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -247,43 +247,74 @@ function PlanTab({ dossierId }: { dossierId: string }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(async () => { setLoading(true); try { setRows(await api.accounts(dossierId, q || undefined)); } finally { setLoading(false); } }, 250);
-    return () => clearTimeout(t);
-  }, [dossierId, q]);
+  const [showAll, setShowAll] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [code, setCode] = useState('');
+  const [label, setLabel] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+
+  const load = async () => { setLoading(true); try { setRows(await api.accounts(dossierId, q || undefined, showAll)); } finally { setLoading(false); } };
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [dossierId, q, showAll]);
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault(); setError(null);
+    try { await api.createAccount(dossierId, { accountCode: code.trim(), label: label.trim() }); setCode(''); setLabel(''); setCreating(false); await load(); }
+    catch (e: any) { setError(e.message); }
+  };
+  const saveLabel = async (a: Account) => { setError(null); try { await api.updateAccount(dossierId, a.id, { label: editLabel.trim() }); setEditId(null); await load(); } catch (e: any) { setError(e.message); } };
+  const toggleActive = async (a: Account) => { setError(null); try { await api.updateAccount(dossierId, a.id, { isActive: !(a.is_active ?? true) }); await load(); } catch (e: any) { setError(e.message); } };
+  const remove = async (a: Account) => { if (!confirm(`Supprimer le compte ${a.account_code} ?`)) return; setError(null); try { await api.deleteAccount(dossierId, a.id); await load(); } catch (e: any) { setError(e.message); } };
 
   return (
     <div className="space-y-4">
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un compte (code ou libellé)…"
-          className="w-full rounded-lg border border-white/10 bg-zinc-900/50 py-2 pl-9 pr-4 text-sm outline-none focus:border-emerald-500/50" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un compte (code ou libellé)…"
+            className="w-full rounded-lg border border-white/10 bg-zinc-900/50 py-2 pl-9 pr-4 text-sm outline-none focus:border-emerald-500/50" />
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-zinc-400"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-emerald-500" /> inclure inactifs</label>
+        <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Nouveau compte</button>
       </div>
+
+      {creating && (
+        <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div><label className="mb-1 block text-xs text-zinc-500">Code</label><input value={code} onChange={(e) => setCode(e.target.value)} placeholder="6288" className="w-28 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
+          <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Intitulé</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Autres frais de télécommunication" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+          <button type="submit" className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">Créer</button>
+        </form>
+      )}
+      {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400">
-            <tr>
-              <th className="px-5 py-3 font-medium">Code</th>
-              <th className="px-5 py-3 font-medium">Intitulé</th>
-              <th className="px-5 py-3 font-medium">Classe</th>
-              <th className="px-5 py-3 font-medium">Type</th>
-            </tr>
+            <tr><th className="px-5 py-3 font-medium">Code</th><th className="px-5 py-3 font-medium">Intitulé</th><th className="px-5 py-3 font-medium">Classe</th><th className="px-5 py-3"></th></tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {loading ? (
-              <tr><td colSpan={4} className="px-5 py-4 text-zinc-400">Recherche…</td></tr>
-            ) : rows.map((a) => (
-              <tr key={a.id} className="hover:bg-white/5">
+            {loading ? <tr><td colSpan={4} className="px-5 py-4 text-zinc-400">Recherche…</td></tr> : rows.map((a) => (
+              <tr key={a.id} className={cn('hover:bg-white/5', a.is_active === false && 'opacity-50')}>
                 <td className="px-5 py-2.5 font-mono text-zinc-300">{a.account_code}</td>
-                <td className="px-5 py-2.5 text-zinc-300">{a.label}</td>
+                <td className="px-5 py-2.5 text-zinc-300">
+                  {editId === a.id
+                    ? <input value={editLabel} autoFocus onChange={(e) => setEditLabel(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveLabel(a)} onBlur={() => saveLabel(a)} className="w-full rounded border border-emerald-500/40 bg-zinc-900/60 px-2 py-1 text-sm outline-none" />
+                    : <span onClick={() => { setEditId(a.id); setEditLabel(a.label); }} className="cursor-text">{a.label}{a.is_active === false && <span className="ml-2 text-xs text-zinc-500">(inactif)</span>}</span>}
+                </td>
                 <td className="px-5 py-2.5 text-zinc-500">{a.class_no}</td>
-                <td className="px-5 py-2.5 text-zinc-500">{a.account_type}</td>
+                <td className="px-5 py-2.5 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => toggleActive(a)} title={a.is_active === false ? 'Réactiver' : 'Désactiver'} className="text-zinc-500 hover:text-amber-400"><Power className="h-4 w-4" /></button>
+                    <button onClick={() => remove(a)} title="Supprimer (si non mouvementé)" className="text-zinc-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {!loading && <p className="text-xs text-zinc-500">{rows.length} compte(s) affiché(s){!q && ' (100 premiers — affinez la recherche)'}.</p>}
+      {!loading && <p className="text-xs text-zinc-500">{rows.length} compte(s){!q && ' (100 premiers — affinez la recherche)'} · cliquez un intitulé pour le renommer.</p>}
     </div>
   );
 }
