@@ -146,6 +146,7 @@ export interface FixedAsset {
   amount: number; residualValue: number; durationYears: number; method: string; depreciationPeriod: 'annual' | 'monthly';
   counterpartyName: string | null; notes: string | null; status: string;
   cumulPosted: number; vnc: number; pending: number; fullyAmortized: boolean;
+  disposalDate: string | null; salePrice: number | null; plusValue: number | null;
 }
 export interface AssetScheduleRow { periodDate: string; label: string; rate: number; dotation: number; cumul: number; vnc: number; posted: boolean; entryId: string | null; }
 export interface FixedAssetDetail {
@@ -301,6 +302,8 @@ export const api = {
     req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/assets/${aid}/depreciate-due`, { method: 'POST', body: JSON.stringify({ upTo }) }),
   depreciateDue: (dossierId: string, upTo?: string) =>
     req<{ count: number; total: number; skipped: number }>(`/api/dossiers/${dossierId}/depreciate-due`, { method: 'POST', body: JSON.stringify({ upTo }) }),
+  disposeAsset: (dossierId: string, aid: string, body: { disposalDate: string; salePrice?: number; cashAccount?: string }) =>
+    req<{ entryId: string; vnc: number; plusValue: number; salePrice: number }>(`/api/dossiers/${dossierId}/assets/${aid}/dispose`, { method: 'POST', body: JSON.stringify(body) }),
   invoices: (dossierId: string, docType?: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices?docType=${docType || 'invoice'}${status ? `&status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
   createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; docType?: string; lines: InvoiceLine[] }) =>

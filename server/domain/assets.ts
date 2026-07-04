@@ -174,7 +174,9 @@ export async function listAssets(c: Client, dossierId: string) {
       amount, residualValue: residual, durationYears: duration, method: a.method, depreciationPeriod: a.depreciation_period,
       counterpartyName: a.counterparty_name, notes: a.notes, status: a.status,
       cumulPosted, vnc: round2(amount - cumulPosted),
-      pending, fullyAmortized: cumulPosted >= round2(amount - residual) - 0.005,
+      pending: a.status === 'disposed' ? 0 : pending, fullyAmortized: cumulPosted >= round2(amount - residual) - 0.005,
+      disposalDate: a.disposal_date, salePrice: a.sale_price != null ? Number(a.sale_price) : null,
+      plusValue: a.plus_value != null ? Number(a.plus_value) : null,
     };
   });
 }
@@ -264,6 +266,66 @@ export async function postAssetDue(
     catch { skipped++; }
   }
   return { count, total, skipped };
+}
+
+// --- Cession / sortie d'immobilisation --------------------------------------
+
+export interface DisposeInput {
+  disposalDate: string;
+  salePrice?: number;      // 0 = mise au rebut
+  cashAccount?: string;    // compte d'encaissement (521 par défaut) ou 485/411
+}
+
+export async function disposeAsset(
+  c: Client, dossierId: string, assetId: string, input: DisposeInput,
+): Promise<{ entryId: string; vnc: number; plusValue: number; salePrice: number }> {
+  const { rows } = await c.query('select * from fixed_assets where dossier_id=$1 and id=$2', [dossierId, assetId]);
+  const a = rows[0];
+  if (!a) throw new Error('Immobilisation introuvable.');
+  if (a.status === 'disposed') throw new Error('Immobilisation déjà cédée.');
+
+  const gross = round2(Number(a.amount));
+  const { rows: dr } = await c.query(
+    'select coalesce(sum(amount),0) as cumul from fixed_asset_depreciations where dossier_id=$1 and fixed_asset_id=$2', [dossierId, assetId]);
+  const cumul = round2(Number(dr[0].cumul));
+  const vnc = round2(gross - cumul);
+  const salePrice = round2(input.salePrice ?? 0);
+  const isIncorp = String(a.asset_account_code).startsWith('21');
+  const vceac = isIncorp ? '811' : '812';   // valeur comptable des cessions (HAO, charge)
+  const pcea = isIncorp ? '821' : '822';    // produits des cessions (HAO, produit)
+  const cash = (input.cashAccount || '521').trim();
+
+  await assertAccountExists(c, dossierId, a.amort_account_code, 'amortissement');
+  await assertAccountExists(c, dossierId, a.asset_account_code, 'immobilisation');
+  await assertAccountExists(c, dossierId, vceac, 'valeur comptable (VCEAC)');
+  await assertAccountExists(c, dossierId, pcea, 'produit de cession (PCEA)');
+  if (salePrice > 0) await assertAccountExists(c, dossierId, cash, 'encaissement');
+
+  const fyId = await fiscalYearForDate(c, dossierId, input.disposalDate);
+  if (!fyId) throw new Error(`Aucun exercice ne couvre le ${input.disposalDate}.`);
+
+  const lines: any[] = [];
+  // Sortie de l'actif : reprise des amortissements + VNC en charge, contre valeur brute.
+  if (cumul > 0) lines.push({ accountCode: a.amort_account_code, debit: cumul, label: `Reprise amort. ${a.label}` });
+  if (vnc > 0) lines.push({ accountCode: vceac, debit: vnc, label: `VCEAC ${a.label}` });
+  lines.push({ accountCode: a.asset_account_code, credit: gross, label: `Sortie ${a.label}` });
+  // Prix de cession.
+  if (salePrice > 0) {
+    lines.push({ accountCode: cash, debit: salePrice, paymentChannel: cash.startsWith('5') ? 'bank' as const : 'none' as const, label: `Cession ${a.label}` });
+    lines.push({ accountCode: pcea, credit: salePrice, label: `PCEA ${a.label}` });
+  }
+
+  const { id: entryId } = await postEntry(c, {
+    dossierId, fiscalYearId: fyId, journalId: await odJournalId(c, dossierId), entryDate: input.disposalDate,
+    description: `Cession ${a.label}${salePrice > 0 ? ` (prix ${salePrice})` : ' (mise au rebut)'}`, source: 'manual', lines,
+  });
+
+  const plusValue = round2(salePrice - vnc);
+  await c.query(
+    "update fixed_assets set status='disposed', disposal_date=$3, sale_price=$4, plus_value=$5, disposal_entry_id=$6 where dossier_id=$1 and id=$2",
+    [dossierId, assetId, input.disposalDate, salePrice, plusValue, entryId]);
+
+  return { entryId, vnc, plusValue, salePrice };
 }
 
 // Dotations dues en lot pour toutes les immos actives, jusqu'à `upTo`.

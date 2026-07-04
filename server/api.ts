@@ -393,6 +393,12 @@ export function createApi() {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => assets.postDepreciationDue(c, req.params.id, req.body?.upTo)));
   }));
+  app.post('/api/dossiers/:id/assets/:aid/dispose', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { disposalDate, salePrice, cashAccount } = req.body ?? {};
+    if (!disposalDate) { const e: any = new Error('disposalDate requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => assets.disposeAsset(c, req.params.id, req.params.aid, { disposalDate, salePrice: Number(salePrice) || 0, cashAccount })));
+  }));
 
   // --- Facturation de vente + FNE --------------------------------------------
   app.get('/api/dossiers/:id/invoices', h(async (req, res) => {

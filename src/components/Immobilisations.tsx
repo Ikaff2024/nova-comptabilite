@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Landmark, CheckCircle2, CalendarClock, ChevronDown, ChevronRight, FileSpreadsheet, Printer } from 'lucide-react';
+import { Loader2, Plus, Trash2, Landmark, CheckCircle2, CalendarClock, ChevronDown, ChevronRight, FileSpreadsheet, Printer, Coins } from 'lucide-react';
 import { api, fmtMoney, type FixedAsset, type FixedAssetDetail } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -9,6 +9,7 @@ export default function Immobilisations({ dossierId, dossierName, currency }: { 
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [disposing, setDisposing] = useState<FixedAsset | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -66,6 +67,10 @@ export default function Immobilisations({ dossierId, dossierName, currency }: { 
       {msg && <p className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> {msg}</p>}
 
       {showForm && <AssetForm dossierId={dossierId} currency={currency} onDone={() => { setShowForm(false); load(); }} onError={setError} />}
+      {disposing && <DisposeForm dossierId={dossierId} asset={disposing} currency={currency}
+        onClose={() => setDisposing(null)}
+        onDone={(r) => { setDisposing(null); setMsg(`Cession comptabilisée — ${r.plusValue >= 0 ? 'plus-value' : 'moins-value'} ${m(r.plusValue)} (VNC ${m(r.vnc)}).`); load(); }}
+        onError={setError} />}
 
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div>
         : assets.length === 0 ? <p className="text-zinc-400">Aucune immobilisation. Créez-en une pour générer son plan d'amortissement.</p>
@@ -85,15 +90,21 @@ export default function Immobilisations({ dossierId, dossierName, currency }: { 
                     <td className="px-4 py-2 text-zinc-200">
                       {a.label}
                       <span className="ml-2 rounded-full bg-white/5 px-2 py-0.5 text-xs text-zinc-400">{a.depreciationPeriod === 'monthly' ? 'mensuel' : 'annuel'}</span>
-                      {a.pending > 0 && <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">{a.pending} dotation(s) en attente</span>}
-                      {a.fullyAmortized && <span className="ml-2 rounded-full bg-zinc-500/15 px-2 py-0.5 text-xs text-zinc-400">amorti</span>}
+                      {a.status !== 'disposed' && a.pending > 0 && <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">{a.pending} dotation(s) en attente</span>}
+                      {a.status !== 'disposed' && a.fullyAmortized && <span className="ml-2 rounded-full bg-zinc-500/15 px-2 py-0.5 text-xs text-zinc-400">amorti</span>}
+                      {a.status === 'disposed' && <span className={cn('ml-2 rounded-full px-2 py-0.5 text-xs', (a.plusValue ?? 0) >= 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300')}>cédée {a.disposalDate} · {(a.plusValue ?? 0) >= 0 ? '+' : ''}{m(a.plusValue ?? 0)}</span>}
                     </td>
                     <td className="px-4 py-2 font-mono text-zinc-400">{a.assetAccountCode}</td>
                     <td className="px-4 py-2 text-right font-mono text-zinc-300">{m(a.amount)}</td>
                     <td className="px-4 py-2 text-right text-zinc-400">{a.durationYears} ans</td>
                     <td className="px-4 py-2 text-right font-mono text-zinc-300">{m(a.cumulPosted)}</td>
                     <td className="px-4 py-2 text-right font-mono text-zinc-100">{m(a.vnc)}</td>
-                    <td className="px-4 py-2 text-right"><button onClick={() => remove(a)} className="text-zinc-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {a.status !== 'disposed' && <button onClick={() => setDisposing(a)} title="Céder / sortir l'immobilisation" className="text-zinc-500 hover:text-amber-400"><Coins className="h-4 w-4" /></button>}
+                        <button onClick={() => remove(a)} className="text-zinc-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    </td>
                   </tr>
                   {open === a.id && <tr><td colSpan={8} className="bg-black/20 px-4 py-3"><AssetSchedule dossierId={dossierId} assetId={a.id} currency={currency} onPosted={load} onError={setError} /></td></tr>}
                 </React.Fragment>
@@ -177,6 +188,45 @@ function AssetSchedule({ dossierId, assetId, currency, onPosted, onError }: { do
 const inputCls = 'w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50';
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="text-xs uppercase text-zinc-400">{label}</label><div className="mt-1">{children}</div></div>;
+}
+
+function DisposeForm({ dossierId, asset, currency, onClose, onDone, onError }: { dossierId: string; asset: FixedAsset; currency: string; onClose: () => void; onDone: (r: { vnc: number; plusValue: number }) => void; onError: (s: string) => void }) {
+  const [disposalDate, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [salePrice, setPrice] = useState('');
+  const [cashAccount, setCash] = useState('521');
+  const [saving, setSaving] = useState(false);
+  const m = (n: number) => fmtMoney(n, currency);
+  const vnc = asset.vnc;
+  const estPV = (Number(salePrice) || 0) - vnc;
+
+  const submit = async () => {
+    setSaving(true); onError('');
+    try { const r = await api.disposeAsset(dossierId, asset.id, { disposalDate, salePrice: Number(salePrice) || 0, cashAccount: cashAccount.trim() }); onDone(r); }
+    catch (e: any) { onError(e.message); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 text-sm font-medium text-zinc-100"><Coins className="h-4 w-4 text-amber-400" /> Céder « {asset.label} »</div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Field label="Date de cession"><input type="date" value={disposalDate} onChange={(e) => setDate(e.target.value)} className={inputCls} /></Field>
+          <Field label={`Prix de cession (${currency})`}><input type="number" value={salePrice} onChange={(e) => setPrice(e.target.value)} placeholder="0 = mise au rebut" className={cn(inputCls, 'font-mono')} /></Field>
+          <Field label="Compte d'encaissement"><input value={cashAccount} onChange={(e) => setCash(e.target.value)} className={cn(inputCls, 'font-mono')} /></Field>
+        </div>
+        <div className="mt-3 space-y-1 rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
+          <div className="flex justify-between"><span className="text-zinc-400">Valeur nette comptable</span><span className="font-mono text-zinc-200">{m(vnc)}</span></div>
+          <div className="flex justify-between"><span className="text-zinc-400">Prix de cession</span><span className="font-mono text-zinc-200">{m(Number(salePrice) || 0)}</span></div>
+          <div className="flex justify-between border-t border-white/10 pt-1"><span className="text-zinc-300">{estPV >= 0 ? 'Plus-value' : 'Moins-value'}</span><span className={cn('font-mono font-bold', estPV >= 0 ? 'text-emerald-400' : 'text-rose-400')}>{estPV >= 0 ? '+' : ''}{m(estPV)}</span></div>
+        </div>
+        <p className="mt-2 text-xs text-zinc-500">Écriture : reprise des amortissements ({asset.amortAccountCode}) + VNC en 81x, sortie de la valeur brute ({asset.assetAccountCode}), prix en 82x. Comptabilisez les dotations dues avant de céder pour une VNC exacte.</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+          <button onClick={submit} disabled={saving} className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-sm font-semibold text-zinc-950 hover:bg-amber-400 disabled:opacity-40">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Comptabiliser la cession</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string; currency: string; onDone: () => void; onError: (s: string) => void }) {
