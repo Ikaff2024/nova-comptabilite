@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Loader2, CheckCircle2 } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection } from '../lib/api';
+import { Plus, Trash2, Loader2, CheckCircle2, Save } from 'lucide-react';
+import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate } from '../lib/api';
 
 const CHANNELS = [
   { v: 'none', l: '—' }, { v: 'cash', l: 'Espèces' }, { v: 'bank', l: 'Banque' },
@@ -38,6 +38,24 @@ export default function EntryForm({
   const [ok, setOk] = useState(false);
   const [sections, setSections] = useState<AnalyticSection[]>([]);
   useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
+  const [templates, setTemplates] = useState<EntryTemplate[]>([]);
+  const loadTemplates = () => api.entryTemplates(dossierId).then(setTemplates).catch(() => {});
+  useEffect(() => { loadTemplates(); }, [dossierId]);
+
+  const applyTemplate = (id: string) => {
+    const t = templates.find((x) => x.id === id); if (!t) return;
+    setLines(t.lines.map((l) => ({ _key: ++keySeq, accountCode: l.accountCode ?? '', debit: l.debit, credit: l.credit, label: l.label, paymentChannel: 'none' })));
+    if (t.journalCode) { const j = journals.find((x) => x.code === t.journalCode); if (j) setJournal(j.id); }
+  };
+  const saveTemplate = async () => {
+    const name = window.prompt('Nom du modèle ?'); if (!name?.trim()) return;
+    const journalCode = journals.find((j) => j.id === journal)?.code ?? null;
+    try {
+      await api.createEntryTemplate(dossierId, { name: name.trim(), journalCode, lines: lines.filter((l) => l.accountCode.trim()).map((l) => ({ accountCode: l.accountCode.trim(), label: l.label, debit: Number(l.debit) || undefined, credit: Number(l.credit) || undefined })) });
+      await loadTemplates();
+    } catch (e: any) { setError(e.message); }
+  };
+  const removeTemplate = async (id: string) => { try { await api.deleteEntryTemplate(dossierId, id); await loadTemplates(); } catch { /* ignore */ } };
 
   const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
@@ -71,6 +89,18 @@ export default function EntryForm({
   return (
     <form onSubmit={submit} className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-6">
       {banner}
+      <div className="flex flex-wrap items-center gap-2">
+        <select value="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ''; }} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm text-zinc-300 outline-none focus:border-emerald-500/50">
+          <option value="">Charger un modèle…</option>
+          {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button type="button" onClick={saveTemplate} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10"><Save className="h-4 w-4" /> Enregistrer comme modèle</button>
+        {templates.map((t) => (
+          <span key={t.id} className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-400">
+            {t.name}<button type="button" onClick={() => removeTemplate(t.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-3 w-3" /></button>
+          </span>
+        ))}
+      </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <label className="mb-1.5 block text-xs font-medium text-zinc-400">Exercice</label>

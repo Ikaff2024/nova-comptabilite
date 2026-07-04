@@ -196,6 +196,7 @@ export interface BalanceRow {
 export interface EntryLineInput {
   accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
 }
+export interface EntryTemplate { id: string; name: string; journalCode: string | null; lines: { accountCode: string; label?: string; debit?: number; credit?: number }[]; }
 export interface Obligation { id: string; label: string; periodicity: string; dueDay: number; dueMonth: number | null; active: boolean; nextDue: string | null; daysLeft: number | null; }
 export interface BudgetRow { account_code: string; label: string; classNo: number; budget: number; realise: number; ecart: number; pct: number | null; }
 export interface BudgetReport {
@@ -376,6 +377,10 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  entryTemplates: (dossierId: string) => req<EntryTemplate[]>(`/api/dossiers/${dossierId}/entry-templates`),
+  createEntryTemplate: (dossierId: string, body: { name: string; journalCode?: string | null; lines: { accountCode: string; label?: string; debit?: number; credit?: number }[] }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/entry-templates`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteEntryTemplate: (dossierId: string, tid: string) => req<void>(`/api/dossiers/${dossierId}/entry-templates/${tid}`, { method: 'DELETE' }),
   obligations: (dossierId: string) => req<Obligation[]>(`/api/dossiers/${dossierId}/obligations`),
   createObligation: (dossierId: string, body: { label: string; periodicity: string; dueDay: number; dueMonth?: number | null }) =>
     req<{ id: string }>(`/api/dossiers/${dossierId}/obligations`, { method: 'POST', body: JSON.stringify(body) }),

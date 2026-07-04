@@ -20,6 +20,7 @@ import * as analytic from './domain/analytic.js';
 import * as budget from './domain/budget.js';
 import { postCutoff } from './domain/cutoff.js';
 import * as obligations from './domain/obligations.js';
+import * as entrytemplates from './domain/entrytemplates.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -661,6 +662,22 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  // --- Modèles de saisie -----------------------------------------------------
+  app.get('/api/dossiers/:id/entry-templates', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => entrytemplates.listTemplates(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/entry-templates', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { name, journalCode, lines } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => entrytemplates.createTemplate(c, req.params.id, name, journalCode ?? null, lines ?? [])));
+  }));
+  app.delete('/api/dossiers/:id/entry-templates/:tid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => entrytemplates.deleteTemplate(c, req.params.id, req.params.tid));
+    res.status(204).end();
+  }));
+
   // --- Échéancier des obligations --------------------------------------------
   app.get('/api/dossiers/:id/obligations', h(async (req, res) => {
     const userId = requireUser(req);
