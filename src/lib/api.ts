@@ -39,6 +39,16 @@ export async function fetchDocumentUrl(path: string): Promise<string> {
   return URL.createObjectURL(await res.blob());
 }
 
+// Télécharge un fichier servi par l'API (avec le jeton) sous un nom donné.
+export async function downloadAuthed(path: string, filename: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new Error('Téléchargement impossible');
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 export interface Cabinet { id: string; name: string; country: string; base_currency: string; }
 export interface Dossier {
   id: string; cabinet_id: string; raison_sociale: string; country: string;

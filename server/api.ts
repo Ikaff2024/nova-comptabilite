@@ -15,6 +15,7 @@ import * as importbalance from './domain/importbalance.js';
 import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
+import { fecExport } from './domain/fec.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -655,6 +656,14 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
+  }));
+  app.get('/api/dossiers/:id/fec', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const content = await withUser(userId, (c) => fecExport(c, req.params.id, fy));
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="FEC_${req.params.id.slice(0, 8)}.txt"`);
+    res.send(content);
   }));
   app.get('/api/dossiers/:id/financial-statements-comparative', h(async (req, res) => {
     const userId = requireUser(req);

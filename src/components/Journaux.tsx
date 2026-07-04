@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, FileSpreadsheet, Printer, Lock, CheckCircle2, AlertTriangle, Paperclip } from 'lucide-react';
-import { api, fmtMoney, fetchDocumentUrl, type Journal, type FiscalYear, type JournalLine } from '../lib/api';
+import { Loader2, FileSpreadsheet, Printer, Lock, CheckCircle2, AlertTriangle, Paperclip, FileDown } from 'lucide-react';
+import { api, fmtMoney, fetchDocumentUrl, downloadAuthed, type Journal, type FiscalYear, type JournalLine } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -101,6 +101,7 @@ export default function Journaux({ dossierId, dossierName, currency }: { dossier
         </div>
         <div className="flex gap-2">
           <button onClick={exportCsv} disabled={!entries.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/fec${fy ? `?fiscalYearId=${fy}` : ''}`, `FEC_${dossierName}.txt`.replace(/\s+/g, '-'))} title="Fichier des Écritures Comptables (format standard)" className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileDown className="h-4 w-4" /> FEC</button>
           <button onClick={exportPdf} disabled={!entries.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
         </div>
       </div>
