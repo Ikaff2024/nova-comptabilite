@@ -590,6 +590,11 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  app.get('/api/dossiers/:id/financial-statements-comparative', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => acc.financialStatementsComparative(c, req.params.id, fy)));
+  }));
 
   // 404 pour toute route API inconnue
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ressource introuvable' }));

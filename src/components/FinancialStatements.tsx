@@ -1,23 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type FinancialStatements as FS } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS } from '../lib/api';
 import { cn } from '../lib/utils';
 
 export default function FinancialStatements({
   dossierId, dossierName, fiscalYears, currency,
 }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
   const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
-  const [data, setData] = useState<FS | null>(null);
+  const [cmp, setCmp] = useState<ComparativeFS | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let on = true; setLoading(true);
-    api.financialStatements(dossierId, fy || undefined).then((d) => { if (on) { setData(d); setLoading(false); } });
+    api.financialStatementsComparative(dossierId, fy || undefined).then((d) => { if (on) { setCmp(d); setLoading(false); } });
     return () => { on = false; };
   }, [dossierId, fy]);
 
   const m = (n: number) => fmtMoney(n, currency);
   const fyLabel = fiscalYears.find((f) => f.id === fy)?.label ?? '';
+  const data = cmp?.current ?? null;
+  const prev = cmp?.previous ?? null;
+  const nLabel = cmp?.currentLabel ?? 'N';
+  const n1Label = cmp?.previousLabel ?? null;
 
   const exportPdf = () => { if (data) printStatements(data, dossierName, fyLabel, currency); };
 
@@ -43,17 +47,36 @@ export default function FinancialStatements({
         <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul des états…</div>
       ) : !data ? null : (
         <div className="space-y-6">
-          {/* SIG cascade */}
+          {/* SIG cascade — avec comparatif N‑1 */}
           <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <h3 className="mb-4 font-display text-lg font-semibold">Soldes intermédiaires de gestion</h3>
-            <div className="divide-y divide-white/5">
-              {data.incomeStatement.sig.map((s, i) => (
-                <div key={i} className={cn('flex items-center justify-between py-2', s.strong && 'bg-white/[0.03]')}>
-                  <span className={cn(s.strong ? 'font-semibold text-zinc-100' : 'text-zinc-400')}>{s.label}</span>
-                  <span className={cn('font-mono', s.strong ? 'font-semibold text-emerald-400' : 'text-zinc-300')}>{m(s.amount)}</span>
-                </div>
-              ))}
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-display text-lg font-semibold">Soldes intermédiaires de gestion</h3>
+              {!n1Label && <span className="text-xs text-zinc-500">Pas d'exercice précédent pour comparer</span>}
             </div>
+            <table className="w-full text-sm">
+              {n1Label && (
+                <thead className="text-xs uppercase text-zinc-500"><tr>
+                  <th className="pb-2 text-left font-medium"></th>
+                  <th className="pb-2 text-right font-medium">{nLabel}</th>
+                  <th className="pb-2 text-right font-medium">{n1Label}</th>
+                  <th className="pb-2 text-right font-medium">Var.</th>
+                </tr></thead>
+              )}
+              <tbody className="divide-y divide-white/5">
+                {data.incomeStatement.sig.map((s, i) => {
+                  const p = prev?.incomeStatement.sig[i]?.amount;
+                  const delta = p != null ? s.amount - p : null;
+                  return (
+                    <tr key={i} className={cn(s.strong && 'bg-white/[0.03]')}>
+                      <td className={cn('py-2 pr-2', s.strong ? 'font-semibold text-zinc-100' : 'text-zinc-400')}>{s.label}</td>
+                      <td className={cn('py-2 text-right font-mono', s.strong ? 'font-semibold text-emerald-400' : 'text-zinc-300')}>{m(s.amount)}</td>
+                      {n1Label && <td className="py-2 text-right font-mono text-zinc-500">{p != null ? m(p) : '—'}</td>}
+                      {n1Label && <td className={cn('py-2 text-right font-mono text-xs', delta == null ? 'text-zinc-600' : delta >= 0 ? 'text-emerald-400/80' : 'text-rose-400/80')}>{delta == null ? '—' : `${delta >= 0 ? '+' : ''}${m(delta)}`}</td>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </section>
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -65,7 +88,10 @@ export default function FinancialStatements({
               <div className={cn('mt-4 flex items-center justify-between rounded-xl border px-4 py-3',
                 data.incomeStatement.resultatNet >= 0 ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-rose-500/20 bg-rose-500/10')}>
                 <span className="font-semibold">Résultat net {data.incomeStatement.resultatNet >= 0 ? '(bénéfice)' : '(perte)'}</span>
-                <span className={cn('font-mono font-semibold', data.incomeStatement.resultatNet >= 0 ? 'text-emerald-400' : 'text-rose-400')}>{m(data.incomeStatement.resultatNet)}</span>
+                <span className="flex items-baseline gap-3">
+                  {n1Label && prev && <span className="font-mono text-xs text-zinc-500">{n1Label} : {m(prev.incomeStatement.resultatNet)}</span>}
+                  <span className={cn('font-mono font-semibold', data.incomeStatement.resultatNet >= 0 ? 'text-emerald-400' : 'text-rose-400')}>{m(data.incomeStatement.resultatNet)}</span>
+                </span>
               </div>
             </section>
 

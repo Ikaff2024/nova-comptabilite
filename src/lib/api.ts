@@ -68,6 +68,10 @@ export interface FinancialStatements {
     totalActif: number; totalPassif: number; equilibre: boolean;
   };
 }
+export interface ComparativeFS {
+  currentLabel: string | null; previousLabel: string | null;
+  current: FinancialStatements; previous: FinancialStatements | null;
+}
 export interface MMProposal {
   externalRef: string; date: string; direction: 'in' | 'out'; amount: number;
   counterparty?: string; description: string; channel: string;
@@ -331,6 +335,8 @@ export const api = {
   },
   financialStatements: (dossierId: string, fiscalYearId?: string) =>
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
+    req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
 };
 
 export const OHADA_COUNTRIES: { code: string; name: string }[] = [

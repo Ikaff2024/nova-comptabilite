@@ -654,6 +654,23 @@ export async function financialStatements(c: Client, dossierId: string, fiscalYe
   };
 }
 
+// États financiers avec comparatif N‑1 : calcule l'exercice courant et le précédent.
+export async function financialStatementsComparative(c: Client, dossierId: string, fiscalYearId?: string) {
+  const fys = await listFiscalYears(c, dossierId); // triés par start_date asc
+  let current = fiscalYearId ? fys.find((f: any) => f.id === fiscalYearId) : undefined;
+  if (!current) current = fys.filter((f: any) => f.status !== 'closed')[0] ?? fys[fys.length - 1];
+  const idx = current ? fys.findIndex((f: any) => f.id === current.id) : -1;
+  const prev = idx > 0 ? fys[idx - 1] : null;
+  const currentData = await financialStatements(c, dossierId, current?.id);
+  const previousData = prev ? await financialStatements(c, dossierId, prev.id) : null;
+  return {
+    currentLabel: current?.label ?? null,
+    previousLabel: prev?.label ?? null,
+    current: currentData,
+    previous: previousData,
+  };
+}
+
 // Consultation d'un journal : écritures (avec leurs lignes) d'un journal.
 export async function journalEntries(
   c: Client, dossierId: string, opts: { journal?: string; fiscalYearId?: string } = {},
