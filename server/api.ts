@@ -21,6 +21,7 @@ import * as budget from './domain/budget.js';
 import { postCutoff } from './domain/cutoff.js';
 import * as obligations from './domain/obligations.js';
 import * as entrytemplates from './domain/entrytemplates.js';
+import * as revision from './domain/revision.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -662,6 +663,21 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  // --- Dossier de révision (justification des comptes) -----------------------
+  app.get('/api/dossiers/:id/revision', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || '';
+    if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => revision.revisionReport(c, req.params.id, fy)));
+  }));
+  app.post('/api/dossiers/:id/revision', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { fiscalYearId, accountCode, status, note } = req.body ?? {};
+    if (!fiscalYearId || !accountCode) { const e: any = new Error('fiscalYearId et accountCode requis'); e.status = 400; throw e; }
+    await withUser(userId, (c) => revision.setReview(c, req.params.id, fiscalYearId, accountCode, { status, note }));
+    res.status(204).end();
+  }));
+
   // --- Modèles de saisie -----------------------------------------------------
   app.get('/api/dossiers/:id/entry-templates', h(async (req, res) => {
     const userId = requireUser(req);

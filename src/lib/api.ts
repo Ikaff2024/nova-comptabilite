@@ -196,6 +196,8 @@ export interface BalanceRow {
 export interface EntryLineInput {
   accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
 }
+export interface RevisionAccount { account_code: string; label: string; classNo: number; cycle: string; balance: number; status: string; note: string | null; }
+export interface RevisionReport { accounts: RevisionAccount[]; progress: { total: number; reviewed: number }; }
 export interface EntryTemplate { id: string; name: string; journalCode: string | null; lines: { accountCode: string; label?: string; debit?: number; credit?: number }[]; }
 export interface Obligation { id: string; label: string; periodicity: string; dueDay: number; dueMonth: number | null; active: boolean; nextDue: string | null; daysLeft: number | null; }
 export interface BudgetRow { account_code: string; label: string; classNo: number; budget: number; realise: number; ecart: number; pct: number | null; }
@@ -377,6 +379,9 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  revisionReport: (dossierId: string, fiscalYearId: string) => req<RevisionReport>(`/api/dossiers/${dossierId}/revision?fiscalYearId=${fiscalYearId}`),
+  setReview: (dossierId: string, fiscalYearId: string, accountCode: string, body: { status?: string; note?: string }) =>
+    req<void>(`/api/dossiers/${dossierId}/revision`, { method: 'POST', body: JSON.stringify({ fiscalYearId, accountCode, ...body }) }),
   entryTemplates: (dossierId: string) => req<EntryTemplate[]>(`/api/dossiers/${dossierId}/entry-templates`),
   createEntryTemplate: (dossierId: string, body: { name: string; journalCode?: string | null; lines: { accountCode: string; label?: string; debit?: number; credit?: number }[] }) =>
     req<{ id: string }>(`/api/dossiers/${dossierId}/entry-templates`, { method: 'POST', body: JSON.stringify(body) }),
