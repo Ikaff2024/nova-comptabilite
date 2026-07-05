@@ -23,6 +23,7 @@ import * as obligations from './domain/obligations.js';
 import * as entrytemplates from './domain/entrytemplates.js';
 import * as revision from './domain/revision.js';
 import { cashForecast } from './domain/forecast.js';
+import { creditScore } from './domain/scoring.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -664,6 +665,13 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  // --- Scoring & finance embarquée -------------------------------------------
+  app.get('/api/dossiers/:id/score', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => creditScore(c, req.params.id, fy)));
+  }));
+
   // --- Prévisionnel de trésorerie --------------------------------------------
   app.get('/api/dossiers/:id/cash-forecast', h(async (req, res) => {
     const userId = requireUser(req);

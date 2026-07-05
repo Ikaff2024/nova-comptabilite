@@ -196,6 +196,13 @@ export interface BalanceRow {
 export interface EntryLineInput {
   accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
 }
+export interface CreditScore {
+  score: number; rating: string;
+  axes: { key: string; label: string; score: number; weight: number }[];
+  strengths: string[]; weaknesses: string[];
+  financing: { eligible: boolean; amount: number; note: string };
+  metrics: { tresorerie: number; resultat: number; ca: number; caMensuel: number; creances: number; capitauxPropres: number; dettesFin: number; overdue90: number };
+}
 export interface CashForecast {
   currentCash: number; projectedBalance: number; minBalance: number; minWeek: string; horizonWeeks: number; delayDays: number;
   weeks: { weekStart: string; inflows: number; outflows: number; net: number; balance: number }[];
@@ -385,6 +392,7 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  creditScore: (dossierId: string, fiscalYearId?: string) => req<CreditScore>(`/api/dossiers/${dossierId}/score${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   cashForecast: (dossierId: string, weeks?: number, delay?: number) => req<CashForecast>(`/api/dossiers/${dossierId}/cash-forecast?${weeks ? `weeks=${weeks}&` : ''}${delay != null ? `delay=${delay}` : ''}`),
   revisionReport: (dossierId: string, fiscalYearId: string) => req<RevisionReport>(`/api/dossiers/${dossierId}/revision?fiscalYearId=${fiscalYearId}`),
   setReview: (dossierId: string, fiscalYearId: string, accountCode: string, body: { status?: string; note?: string }) =>
