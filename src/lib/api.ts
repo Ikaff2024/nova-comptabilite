@@ -196,6 +196,12 @@ export interface BalanceRow {
 export interface EntryLineInput {
   accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
 }
+export interface CashForecast {
+  currentCash: number; projectedBalance: number; minBalance: number; minWeek: string; horizonWeeks: number; delayDays: number;
+  weeks: { weekStart: string; inflows: number; outflows: number; net: number; balance: number }[];
+  upcoming: { date: string; label: string; amount: number; kind: string }[];
+  events: { date: string; label: string }[];
+}
 export interface RevisionAccount { account_code: string; label: string; classNo: number; cycle: string; balance: number; status: string; note: string | null; }
 export interface RevisionReport { accounts: RevisionAccount[]; progress: { total: number; reviewed: number }; }
 export interface EntryTemplate { id: string; name: string; journalCode: string | null; lines: { accountCode: string; label?: string; debit?: number; credit?: number }[]; }
@@ -379,6 +385,7 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  cashForecast: (dossierId: string, weeks?: number, delay?: number) => req<CashForecast>(`/api/dossiers/${dossierId}/cash-forecast?${weeks ? `weeks=${weeks}&` : ''}${delay != null ? `delay=${delay}` : ''}`),
   revisionReport: (dossierId: string, fiscalYearId: string) => req<RevisionReport>(`/api/dossiers/${dossierId}/revision?fiscalYearId=${fiscalYearId}`),
   setReview: (dossierId: string, fiscalYearId: string, accountCode: string, body: { status?: string; note?: string }) =>
     req<void>(`/api/dossiers/${dossierId}/revision`, { method: 'POST', body: JSON.stringify({ fiscalYearId, accountCode, ...body }) }),

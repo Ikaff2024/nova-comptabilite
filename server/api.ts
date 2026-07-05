@@ -22,6 +22,7 @@ import { postCutoff } from './domain/cutoff.js';
 import * as obligations from './domain/obligations.js';
 import * as entrytemplates from './domain/entrytemplates.js';
 import * as revision from './domain/revision.js';
+import { cashForecast } from './domain/forecast.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -663,6 +664,14 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
+  // --- Prévisionnel de trésorerie --------------------------------------------
+  app.get('/api/dossiers/:id/cash-forecast', h(async (req, res) => {
+    const userId = requireUser(req);
+    const horizonWeeks = req.query.weeks ? Number(req.query.weeks) : undefined;
+    const delayDays = req.query.delay ? Number(req.query.delay) : undefined;
+    res.json(await withUser(userId, (c) => cashForecast(c, req.params.id, { horizonWeeks, delayDays })));
+  }));
+
   // --- Dossier de révision (justification des comptes) -----------------------
   app.get('/api/dossiers/:id/revision', h(async (req, res) => {
     const userId = requireUser(req);
