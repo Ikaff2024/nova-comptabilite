@@ -34,9 +34,13 @@ L'URL que l'**application** utilisera est celle du rôle **`nova_app`** (pas le 
    |---|---|
    | `DATABASE_URL` | URL Neon du rôle **nova_app** (avec `?sslmode=require`) |
    | `JWT_SECRET` | une longue chaîne aléatoire |
-   | `AI_PROVIDER` | `claude` ou `gemini` |
+   | `AI_PROVIDER` | `claude`, `gemini` ou `openrouter` |
    | `ANTHROPIC_API_KEY` *ou* `GEMINI_API_KEY` | ta clé |
    | (optionnel) `CLAUDE_MODEL` / `GEMINI_MODEL` | sinon défauts |
+   | (optionnel) `OPENROUTER_API_KEY` | active le **fallback automatique** si le fournisseur principal tombe (quota/panne) |
+   | (optionnel) `OPENROUTER_MODEL` | défaut `google/gemini-2.0-flash-001` (modèle vision) |
+
+   > **Fallback IA** : si `OPENROUTER_API_KEY` est présent et que le fournisseur principal échoue, la Capture bascule automatiquement sur OpenRouter. ⚠️ OpenRouter est un intermédiaire — activer « no logging / no training » côté OpenRouter pour les pièces sensibles.
 
    `PORT` est fourni par Railway. `NODE_ENV=production` et `SERVE_STATIC=true` sont déjà dans le Dockerfile.
 4. **Deploy** → Railway expose une URL publique (`https://…up.railway.app`). Ouvre-la : login → onboarding → dashboard.

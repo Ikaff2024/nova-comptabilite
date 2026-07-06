@@ -3,10 +3,13 @@
 // Contrat : l'IA PROPOSE une écriture (compte SYSCOHADA, TVA, tiers). Elle ne
 // valide JAMAIS : la proposition repasse par postEntry (équilibre, immuabilité).
 //
-// Fournisseur abstrait, sélectionnable par AI_PROVIDER (claude | gemini | demo).
-// Par défaut "auto" : Claude si ANTHROPIC_API_KEY, sinon Gemini si GEMINI_API_KEY,
-// sinon mode démo. Pas d'intermédiaire (pas de gateway) : data path minimal,
-// argument confidentialité préservé.
+// Fournisseur abstrait, sélectionnable par AI_PROVIDER (claude | gemini | openrouter | demo).
+// Par défaut "auto" : Claude si ANTHROPIC_API_KEY, sinon Gemini, sinon OpenRouter,
+// sinon mode démo.
+// Résilience : si OPENROUTER_API_KEY est présent, un échec du fournisseur principal
+// bascule automatiquement sur OpenRouter (gateway multi-modèles, compatible OpenAI).
+// ⚠️ Confidentialité : OpenRouter est un intermédiaire — activer « no logging/no
+// training » côté OpenRouter et router vers un modèle à bonne politique de données.
 // ============================================================================
 
 export interface CaptureContext {
@@ -42,6 +45,7 @@ export interface CaptureProposal {
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-001';
 
 const SYSTEM_PROMPT = `Tu es un expert-comptable OHADA (SYSCOHADA révisé, AUDCIF). On te donne l'image d'une pièce (reçu, facture, ticket).
 Extrais une écriture comptable EN PARTIE DOUBLE, équilibrée (somme débits = somme crédits), dans la devise du dossier.
@@ -83,23 +87,35 @@ const RESPONSE_SCHEMA = {
   required: ['description', 'currency', 'lines'],
 };
 
-type Provider = 'claude' | 'gemini' | 'demo';
+type Provider = 'claude' | 'gemini' | 'openrouter' | 'demo';
 
 function selectProvider(): Provider {
   const pref = (process.env.AI_PROVIDER ?? '').toLowerCase();
   if (pref === 'claude') return process.env.ANTHROPIC_API_KEY ? 'claude' : 'demo';
   if (pref === 'gemini') return process.env.GEMINI_API_KEY ? 'gemini' : 'demo';
+  if (pref === 'openrouter') return process.env.OPENROUTER_API_KEY ? 'openrouter' : 'demo';
   if (pref === 'demo') return 'demo';
   if (process.env.ANTHROPIC_API_KEY) return 'claude';
   if (process.env.GEMINI_API_KEY) return 'gemini';
+  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
   return 'demo';
+}
+
+// OpenRouter sert de secours quand il est configuré et n'est pas déjà le principal.
+function fallbackEnabled(primary: Provider): boolean {
+  return !!process.env.OPENROUTER_API_KEY && primary !== 'openrouter' && primary !== 'demo';
+}
+
+function callProvider(provider: Provider, input: { mimeType: string; dataBase64: string; context: CaptureContext }): Promise<any> {
+  if (provider === 'claude') return extractViaClaude(input);
+  if (provider === 'gemini') return extractViaGemini(input);
+  return extractViaOpenRouter(input);
 }
 
 export function aiProvider(): string {
   const p = selectProvider();
-  if (p === 'claude') return `claude:${CLAUDE_MODEL}`;
-  if (p === 'gemini') return `gemini:${GEMINI_MODEL}`;
-  return 'demo';
+  const label = p === 'claude' ? `claude:${CLAUDE_MODEL}` : p === 'gemini' ? `gemini:${GEMINI_MODEL}` : p === 'openrouter' ? `openrouter:${OPENROUTER_MODEL}` : 'demo';
+  return fallbackEnabled(p) ? `${label} (+fallback openrouter)` : label;
 }
 
 const userText = (ctx: CaptureContext) => {
@@ -128,10 +144,54 @@ async function withTimeout(ms: number): Promise<{ signal: AbortSignal; done: () 
 export async function extractDocument(
   input: { mimeType: string; dataBase64: string; context: CaptureContext },
 ): Promise<CaptureProposal> {
-  const provider = selectProvider();
-  if (provider === 'demo') return demoProposal(input.context);
-  const raw = provider === 'claude' ? await extractViaClaude(input) : await extractViaGemini(input);
-  return normalize(raw, input.context);
+  const primary = selectProvider();
+  if (primary === 'demo') return demoProposal(input.context);
+  try {
+    return normalize(await callProvider(primary, input), input.context);
+  } catch (e: any) {
+    if (!fallbackEnabled(primary)) throw e;
+    // Bascule automatique sur OpenRouter (quota/panne du fournisseur principal).
+    const p = normalize(await extractViaOpenRouter(input), input.context);
+    p.warnings = [...(p.warnings ?? []), `Fournisseur principal indisponible (${String(e?.message ?? '').slice(0, 80)}) — bascule automatique sur OpenRouter (${OPENROUTER_MODEL}).`];
+    return p;
+  }
+}
+
+// --- OpenRouter (gateway multi-modèles, API compatible OpenAI) ---------------
+
+async function extractViaOpenRouter(
+  input: { mimeType: string; dataBase64: string; context: CaptureContext },
+): Promise<any> {
+  const key = process.env.OPENROUTER_API_KEY!;
+  const dataUri = `data:${input.mimeType || 'image/jpeg'};base64,${input.dataBase64}`;
+  const body = {
+    model: OPENROUTER_MODEL,
+    response_format: { type: 'json_object' },
+    temperature: 0.1,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT + '\n\nRéponds UNIQUEMENT par un objet JSON strict : { description, entryDate (YYYY-MM-DD), journalCode, counterpartyName, currency, confidence (0-1), lines: [{ accountCode, accountLabel, debit, credit, label }] }.' },
+      { role: 'user', content: [{ type: 'text', text: userText(input.context) }, { type: 'image_url', image_url: { url: dataUri } }] },
+    ],
+  };
+
+  const { signal, done } = await withTimeout(45000);
+  let res: Response;
+  try {
+    res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, 'HTTP-Referer': 'https://nova-comptabilite.app', 'X-Title': 'Nova Comptabilite' },
+      body: JSON.stringify(body), signal,
+    });
+  } finally { done(); }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`OpenRouter indisponible (${res.status}) ${detail.slice(0, 200)}`);
+  }
+  const data: any = await res.json();
+  const text = data?.choices?.[0]?.message?.content ?? '';
+  try { return JSON.parse(text); }
+  catch { throw new Error('Réponse OpenRouter illisible'); }
 }
 
 // --- Claude (Messages API, sortie structurée via tool use) -------------------
