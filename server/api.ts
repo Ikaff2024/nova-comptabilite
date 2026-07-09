@@ -24,6 +24,7 @@ import * as entrytemplates from './domain/entrytemplates.js';
 import * as revision from './domain/revision.js';
 import { cashForecast } from './domain/forecast.js';
 import { creditScore } from './domain/scoring.js';
+import * as financing from './domain/financing.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
 import * as relances from './domain/relances.js';
@@ -670,6 +671,31 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => creditScore(c, req.params.id, fy)));
+  }));
+  app.get('/api/dossiers/:id/financing', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => financing.listRequests(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/financing/request', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => financing.requestAdvance(c, req.params.id, Number(req.body?.amount) || 0)));
+  }));
+  app.post('/api/dossiers/:id/financing/:fid/decide', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => financing.decideRequest(c, req.params.id, req.params.fid, !!req.body?.approve, req.body?.note));
+    res.status(204).end();
+  }));
+  app.post('/api/dossiers/:id/financing/:fid/disburse', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { date, bankAccount } = req.body ?? {};
+    if (!date) { const e: any = new Error('date requise'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => financing.disburse(c, req.params.id, req.params.fid, date, bankAccount || '521')));
+  }));
+  app.post('/api/dossiers/:id/financing/:fid/repay', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { date, amount, interest, bankAccount } = req.body ?? {};
+    if (!date || !amount) { const e: any = new Error('date et amount requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => financing.repay(c, req.params.id, req.params.fid, date, Number(amount), Number(interest) || 0, bankAccount || '521')));
   }));
 
   // --- Prévisionnel de trésorerie --------------------------------------------
