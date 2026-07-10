@@ -9,7 +9,7 @@ import { postEntry, type EntryLineInput } from './accounting.js';
 export type Frequency = 'monthly' | 'quarterly' | 'yearly';
 const STEP: Record<Frequency, number> = { monthly: 1, quarterly: 3, yearly: 12 };
 
-export interface RecurringLine { accountCode: string; debit?: number; credit?: number; label?: string }
+export interface RecurringLine { accountCode: string; debit?: number; credit?: number; label?: string; analyticAxis?: string }
 
 export interface CreateTemplateInput {
   label: string;
@@ -125,7 +125,7 @@ export async function generateDue(
   const done = new Set(occ.map((o: any) => iso(new Date(o.period_date))));
 
   const lines: EntryLineInput[] = (t.lines as RecurringLine[]).map((l) => ({
-    accountCode: l.accountCode, debit: l.debit ?? 0, credit: l.credit ?? 0, label: l.label,
+    accountCode: l.accountCode, debit: l.debit ?? 0, credit: l.credit ?? 0, label: l.label, analyticAxis: l.analyticAxis,
   }));
 
   let count = 0, total = 0, skipped = 0;

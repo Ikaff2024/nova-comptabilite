@@ -133,7 +133,7 @@ export interface ImportBalanceAnalysis {
   totalDebit: number; totalCredit: number; diff: number; balanced: boolean;
   okCount: number; missingCount: number; alreadyImported: boolean;
 }
-export interface RecurringLine { accountCode: string; debit?: number; credit?: number; label?: string }
+export interface RecurringLine { accountCode: string; debit?: number; credit?: number; label?: string; analyticAxis?: string }
 export interface RecurringTemplate {
   id: string; label: string; journalCode: string; frequency: string; frequencyLabel: string;
   dayOfMonth: number; startDate: string; endDate: string | null; counterpartyName: string | null;

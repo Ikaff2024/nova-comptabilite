@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Repeat, CheckCircle2, Play, Power, CalendarClock } from 'lucide-react';
-import { api, fmtMoney, type Journal, type RecurringTemplate, type RecurringLine } from '../lib/api';
+import { api, fmtMoney, type Journal, type RecurringTemplate, type RecurringLine, type AnalyticSection } from '../lib/api';
 import { cn } from '../lib/utils';
 
 const FREQS = [{ v: 'monthly', l: 'Mensuel' }, { v: 'quarterly', l: 'Trimestriel' }, { v: 'yearly', l: 'Annuel' }];
@@ -95,7 +95,10 @@ function TemplateForm({ dossierId, currency, journals, onDone, onError }: { doss
   const [dayOfMonth, setDay] = useState(String(new Date().getUTCDate()));
   const [counterpartyName, setCp] = useState('');
   const [lines, setLines] = useState<RecurringLine[]>([{ accountCode: '', debit: undefined, credit: undefined, label: '' }, { accountCode: '', debit: undefined, credit: undefined, label: '' }]);
+  const [sections, setSections] = useState<AnalyticSection[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
 
   const setLine = (i: number, patch: Partial<RecurringLine>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const addLine = () => setLines((ls) => [...ls, { accountCode: '', debit: undefined, credit: undefined, label: '' }]);
@@ -108,7 +111,7 @@ function TemplateForm({ dossierId, currency, journals, onDone, onError }: { doss
   const submit = async () => {
     setSaving(true); onError('');
     try {
-      const clean = lines.filter((l) => l.accountCode.trim()).map((l) => ({ accountCode: l.accountCode.trim(), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, label: l.label || undefined }));
+      const clean = lines.filter((l) => l.accountCode.trim()).map((l) => ({ accountCode: l.accountCode.trim(), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, label: l.label || undefined, analyticAxis: l.analyticAxis || undefined }));
       await api.createRecurring(dossierId, { label, journalId, frequency, dayOfMonth: Number(dayOfMonth), startDate, endDate: endDate || null, counterpartyName: counterpartyName || undefined, lines: clean });
       onDone();
     } catch (e: any) { onError(e.message); } finally { setSaving(false); }
@@ -131,7 +134,13 @@ function TemplateForm({ dossierId, currency, journals, onDone, onError }: { doss
         {lines.map((l, i) => (
           <div key={i} className="grid grid-cols-12 gap-2">
             <input value={l.accountCode} onChange={(e) => setLine(i, { accountCode: e.target.value })} placeholder="Compte" className={cn(inputCls, 'col-span-2 font-mono')} />
-            <input value={l.label ?? ''} onChange={(e) => setLine(i, { label: e.target.value })} placeholder="Libellé ligne" className={cn(inputCls, 'col-span-5')} />
+            <input value={l.label ?? ''} onChange={(e) => setLine(i, { label: e.target.value })} placeholder="Libellé ligne" className={cn(inputCls, sections.length > 0 ? 'col-span-3' : 'col-span-5')} />
+            {sections.length > 0 && (
+              <select value={l.analyticAxis ?? ''} onChange={(e) => setLine(i, { analyticAxis: e.target.value || undefined })} title="Section analytique" className={cn(inputCls, 'col-span-2')}>
+                <option value="">— analytique —</option>
+                {sections.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.label}</option>)}
+              </select>
+            )}
             <input type="number" value={l.debit ?? ''} onChange={(e) => setLine(i, { debit: e.target.value ? Number(e.target.value) : undefined, credit: undefined })} placeholder="Débit" className={cn(inputCls, 'col-span-2 font-mono')} />
             <input type="number" value={l.credit ?? ''} onChange={(e) => setLine(i, { credit: e.target.value ? Number(e.target.value) : undefined, debit: undefined })} placeholder="Crédit" className={cn(inputCls, 'col-span-2 font-mono')} />
             <button onClick={() => rmLine(i)} className="col-span-1 flex items-center justify-center rounded-lg text-zinc-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>
