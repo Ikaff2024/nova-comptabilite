@@ -125,6 +125,15 @@ export function createApi() {
     res.json({ enabled: false });
   }));
 
+  // --- Cabinet : renommage ---------------------------------------------------
+  app.patch('/api/cabinets/:cid', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { name } = req.body ?? {};
+    if (!name?.trim()) { const e: any = new Error('Nom requis'); e.status = 400; throw e; }
+    await withUser(userId, (c) => users.renameCabinet(c, req.params.cid, String(name)));
+    res.status(204).end();
+  }));
+
   // --- Membres du cabinet (collaborateurs & rôles) ---------------------------
   app.get('/api/cabinets/:cid/members', h(async (req, res) => {
     const userId = requireUser(req);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Users, ShieldCheck, ShieldOff, Plus, Trash2, KeyRound, CheckCircle2 } from 'lucide-react';
+import { Loader2, Users, ShieldCheck, ShieldOff, Plus, Trash2, KeyRound, CheckCircle2, Building2, Pencil } from 'lucide-react';
 import { api, type Cabinet, type AuthUser, type CabinetMember } from '../lib/api';
 import { cn } from '../lib/utils';
 
@@ -10,16 +10,52 @@ const ROLES = [
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.v === r)?.l ?? r;
 
-export default function CabinetSettings({ cabinet, user, onUserRefresh }: { cabinet: Cabinet; user: AuthUser; onUserRefresh: () => void }) {
+export default function CabinetSettings({ cabinet, user, onUserRefresh, onRenamed }: { cabinet: Cabinet; user: AuthUser; onUserRefresh: () => void; onRenamed: () => void }) {
   return (
     <div className="space-y-8">
       <div>
         <h1 className="font-display text-3xl font-bold tracking-tight">Cabinet & sécurité</h1>
-        <p className="mt-1 text-zinc-400">{cabinet.name} — gérez les collaborateurs et votre double authentification.</p>
+        <p className="mt-1 text-zinc-400">Gérez le cabinet, les collaborateurs et votre double authentification.</p>
       </div>
+      <CabinetName cabinet={cabinet} onRenamed={onRenamed} />
       <Members cabinet={cabinet} user={user} />
       <TwoFactor user={user} onUserRefresh={onUserRefresh} />
     </div>
+  );
+}
+
+function CabinetName({ cabinet, onRenamed }: { cabinet: Cabinet; onRenamed: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(cabinet.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setName(cabinet.name); }, [cabinet.name]);
+
+  const save = async () => {
+    if (!name.trim() || name.trim() === cabinet.name) { setEditing(false); return; }
+    setBusy(true); setError(null);
+    try { await api.renameCabinet(cabinet.id, name.trim()); setEditing(false); onRenamed(); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Building2 className="h-4 w-4 text-emerald-400" /> Nom du cabinet</div>
+      {editing ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={name} autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setEditing(false); setName(cabinet.name); } }}
+            className="w-72 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" />
+          <button onClick={save} disabled={busy} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer</button>
+          <button onClick={() => { setEditing(false); setName(cabinet.name); }} className="rounded-lg px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-semibold text-zinc-100">{cabinet.name}</span>
+          <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 text-sm text-emerald-400 hover:text-emerald-300"><Pencil className="h-3.5 w-3.5" /> Modifier</button>
+        </div>
+      )}
+      {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+    </section>
   );
 }
 

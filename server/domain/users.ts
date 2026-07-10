@@ -48,3 +48,7 @@ export async function setMemberRole(c: Client, cabinetId: string, userId: string
 export async function removeMember(c: Client, cabinetId: string, userId: string): Promise<void> {
   await c.query('select cabinet_member_remove($1,$2)', [cabinetId, userId]);
 }
+
+export async function renameCabinet(c: Client, cabinetId: string, name: string): Promise<void> {
+  await c.query('select cabinet_rename($1,$2)', [cabinetId, name]);
+}

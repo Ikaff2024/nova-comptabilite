@@ -137,7 +137,7 @@ export default function App() {
             : nav === 'dashboard'
               ? <CabinetDashboard refresh={dashKey} cabinetName={cabinet.name} onOpen={openDossierById} onDemo={onDemoCreated} />
               : nav === 'cabinet'
-                ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} />
+                ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} onRenamed={loadCabinets} />
                 : <Dossiers cabinet={cabinet} onOpen={setSelected} />}
         </div>
       </main>
