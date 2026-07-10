@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Smartphone, ArrowDownLeft, ArrowUpRight, CheckCircle2, Download } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type MMProposal } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type MMProposal, type AnalyticSection } from '../lib/api';
 
 const PROVIDERS = [
   { v: 'wave', l: 'Wave' }, { v: 'om', l: 'Orange Money' }, { v: 'momo', l: 'MTN MoMo' }, { v: 'moov', l: 'Moov Money' },
 ];
 
-type Row = MMProposal & { include: boolean };
+type Row = MMProposal & { include: boolean; analyticAxis?: string };
 
 export default function MobileMoney({
   dossierId, fiscalYears, currency, onImported,
@@ -23,6 +23,8 @@ export default function MobileMoney({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ imported: number; skipped: number; errors: any[] } | null>(null);
+  const [sections, setSections] = useState<AnalyticSection[]>([]);
+  useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
 
   const analyze = async () => {
     setLoading(true); setError(null); setResult(null);
@@ -43,7 +45,7 @@ export default function MobileMoney({
       const entries = selected.map((r) => ({
         externalRef: r.externalRef, date: r.date, description: r.description,
         direction: r.direction, amount: r.amount, counterAccount: r.counterAccount,
-        channel: r.channel, counterparty: r.counterparty,
+        channel: r.channel, counterparty: r.counterparty, analyticAxis: r.analyticAxis || undefined,
       }));
       const res = await api.mmImport(dossierId, { fiscalYearId: fy, treasuryCode: treasury, entries });
       setResult(res);
@@ -123,6 +125,7 @@ export default function MobileMoney({
                   <th className="px-3 py-3 font-medium">Tiers</th>
                   <th className="px-3 py-3 text-right font-medium">Montant</th>
                   <th className="px-3 py-3 font-medium">Compte contrepartie</th>
+                  {sections.length > 0 && <th className="px-3 py-3 font-medium">Analytique</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -148,6 +151,16 @@ export default function MobileMoney({
                         <span className="text-xs text-zinc-500">{r.counterLabel}</span>
                       </div>
                     </td>
+                    {sections.length > 0 && (
+                      <td className="px-3 py-2">
+                        <select value={r.analyticAxis ?? ''} disabled={r.alreadyImported}
+                          onChange={(e) => setRow(i, { analyticAxis: e.target.value || undefined })}
+                          className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1 text-sm outline-none focus:border-emerald-500/50">
+                          <option value="">—</option>
+                          {sections.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}
+                        </select>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

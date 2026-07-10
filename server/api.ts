@@ -599,9 +599,9 @@ export function createApi() {
   }));
   app.post('/api/dossiers/:id/reconciliation/create', h(async (req, res) => {
     const userId = requireUser(req);
-    const { account, row, counterAccount } = req.body ?? {};
+    const { account, row, counterAccount, counterAxis } = req.body ?? {};
     if (!account || !row || !counterAccount) { const e: any = new Error('account, row, counterAccount requis'); e.status = 400; throw e; }
-    res.status(201).json(await withUser(userId, (c) => bank.createFromStatement(c, req.params.id, account, row, counterAccount)));
+    res.status(201).json(await withUser(userId, (c) => bank.createFromStatement(c, req.params.id, account, row, counterAccount, counterAxis)));
   }));
 
   // --- Lettrage des comptes de tiers -----------------------------------------

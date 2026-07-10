@@ -66,6 +66,7 @@ export interface MMImportEntry {
   counterAccount: string;
   channel: MMProvider;
   counterparty?: string;
+  analyticAxis?: string;
 }
 
 /** Construit l'écriture en partie double d'un mouvement Mobile Money. */
@@ -82,6 +83,7 @@ export function toPostInput(
   const counterLine = {
     accountCode: e.counterAccount,
     label: e.counterparty || e.description,
+    analyticAxis: e.analyticAxis,
     ...(e.direction === 'in' ? { credit: e.amount } : { debit: e.amount }),
   };
   return {

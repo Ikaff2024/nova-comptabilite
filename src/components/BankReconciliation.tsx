@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Landmark, CheckCircle2, AlertTriangle, Printer, Upload, Wand2, FileSpreadsheet, Plus } from 'lucide-react';
-import { api, fmtMoney, type BankAccount, type ReconMove, type StatementMatch } from '../lib/api';
+import { api, fmtMoney, type BankAccount, type ReconMove, type StatementMatch, type AnalyticSection } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -22,10 +22,13 @@ export default function BankReconciliation({ dossierId, dossierName, currency }:
   const [impBusy, setImpBusy] = useState(false);
   const [impMsg, setImpMsg] = useState<string | null>(null);
   const [counter, setCounter] = useState('627');
+  const [counterAxis, setCounterAxis] = useState('');
+  const [sections, setSections] = useState<AnalyticSection[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadAccounts = async () => { const a = await api.bankAccounts(dossierId); setAccounts(a); if (!account && a[0]) setAccount(a[0].account_code); };
   useEffect(() => { loadAccounts(); }, [dossierId]);
+  useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
   const loadMoves = async () => { if (!account) return; setLoading(true); try { const v = await api.reconciliation(dossierId, account); setMoves(v.moves); } finally { setLoading(false); } };
   useEffect(() => { loadMoves(); setMatch(null); }, [account]);
 
@@ -48,7 +51,7 @@ export default function BankReconciliation({ dossierId, dossierName, currency }:
     if (!counter.trim()) { setImpMsg('Indiquez un compte de contrepartie.'); return; }
     setImpBusy(true); setImpMsg(null);
     try {
-      await api.createFromStatement(dossierId, account, row, counter.trim());
+      await api.createFromStatement(dossierId, account, row, counter.trim(), counterAxis || undefined);
       await loadMoves(); await loadAccounts();
       setMatch(await api.matchStatement(dossierId, account, csv));
     } catch (e: any) { setImpMsg(e.message); } finally { setImpBusy(false); }
@@ -130,7 +133,9 @@ export default function BankReconciliation({ dossierId, dossierName, currency }:
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3">
                   <div className="mb-2 flex items-center justify-between text-sm text-amber-300">
                     <span>Lignes du relevé sans écriture — à créer</span>
-                    <span className="flex items-center gap-1.5 text-xs text-zinc-400">Contrepartie <input value={counter} onChange={(e) => setCounter(e.target.value)} className="w-20 rounded border border-white/10 bg-zinc-900/60 px-2 py-1 font-mono text-zinc-200 outline-none" /></span>
+                    <span className="flex items-center gap-1.5 text-xs text-zinc-400">Contrepartie <input value={counter} onChange={(e) => setCounter(e.target.value)} className="w-20 rounded border border-white/10 bg-zinc-900/60 px-2 py-1 font-mono text-zinc-200 outline-none" />
+                      {sections.length > 0 && <select value={counterAxis} onChange={(e) => setCounterAxis(e.target.value)} title="Section analytique" className="rounded border border-white/10 bg-zinc-900/60 px-2 py-1 text-zinc-200 outline-none"><option value="">— analytique —</option>{sections.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}</select>}
+                    </span>
                   </div>
                   <table className="w-full text-left text-sm">
                     <tbody className="divide-y divide-white/5 font-mono">

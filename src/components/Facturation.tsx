@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Plus, Trash2, FileCheck2, Send, Printer, ShieldCheck, ArrowRightLeft, Undo2, FileClock, ReceiptText } from 'lucide-react';
-import { api, fmtMoney, type Invoice, type InvoiceLine } from '../lib/api';
+import { api, fmtMoney, type Invoice, type InvoiceLine, type AnalyticSection } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -33,8 +33,10 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   const [error, setError] = useState<string | null>(null);
   const doc = DOCS.find((d) => d.type === docType)!;
 
+  const [sections, setSections] = useState<AnalyticSection[]>([]);
   const load = async () => { setLoading(true); try { setRows(await api.invoices(dossierId, docType)); } finally { setLoading(false); } };
   useEffect(() => { load(); setCreating(false); }, [dossierId, docType]);
+  useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
 
   const [client, setClient] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -49,7 +51,7 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
     if (!client.trim()) { setError('Client requis'); return; }
     setBusy('create');
     try {
-      await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code })) });
+      await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code, analytic_axis: l.analytic_axis || undefined })) });
       setCreating(false); setClient(''); setDue(''); setLines([blankLine()]); await load();
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
@@ -102,12 +104,15 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
             <div><label className="mb-1 block text-xs text-zinc-500">{docType === 'quote' ? 'Valable jusqu\'au' : 'Échéance'}</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
           </div>
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-zinc-500"><tr><th className="pb-1 pr-2">Désignation</th><th className="pb-1 px-2">Compte</th><th className="pb-1 px-2 text-right">Qté</th><th className="pb-1 px-2 text-right">P.U. HT</th><th className="pb-1 px-2 text-right">TVA</th><th className="pb-1 px-2 text-right">HT</th><th></th></tr></thead>
+            <thead className="text-left text-xs uppercase text-zinc-500"><tr><th className="pb-1 pr-2">Désignation</th><th className="pb-1 px-2">Compte</th>{sections.length > 0 && <th className="pb-1 px-2">Analytique</th>}<th className="pb-1 px-2 text-right">Qté</th><th className="pb-1 px-2 text-right">P.U. HT</th><th className="pb-1 px-2 text-right">TVA</th><th className="pb-1 px-2 text-right">HT</th><th></th></tr></thead>
             <tbody>
               {lines.map((l) => (
                 <tr key={l._k}>
                   <td className="py-1 pr-2"><input value={l.description} onChange={(e) => setLine(l._k, { description: e.target.value })} placeholder="Prestation…" className="w-full min-w-[9rem] rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50" /></td>
                   <td className="py-1 px-2"><input value={l.account_code} onChange={(e) => setLine(l._k, { account_code: e.target.value })} className="w-16 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
+                  {sections.length > 0 && (
+                    <td className="py-1 px-2"><select value={l.analytic_axis ?? ''} onChange={(e) => setLine(l._k, { analytic_axis: e.target.value || null })} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"><option value="">—</option>{sections.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}</select></td>
+                  )}
                   <td className="py-1 px-2"><input type="number" value={l.quantity} onChange={(e) => setLine(l._k, { quantity: Number(e.target.value) })} className="w-16 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-right font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
                   <td className="py-1 px-2"><input type="number" value={l.unit_price} onChange={(e) => setLine(l._k, { unit_price: Number(e.target.value) })} className="w-24 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-right font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
                   <td className="py-1 px-2"><select value={l.vat_rate} onChange={(e) => setLine(l._k, { vat_rate: Number(e.target.value) })} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"><option value={0.18}>18%</option><option value={0.09}>9%</option><option value={0}>0%</option></select></td>

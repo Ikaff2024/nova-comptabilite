@@ -176,7 +176,7 @@ export interface Invoice {
   id: string; number: string | null; client_name: string; invoice_date: string; status: string; doc_type: string;
   total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string; source_document_id?: string | null;
 }
-export interface InvoiceLine { id?: string; line_no?: number; description: string; quantity: number; unit_price: number; vat_rate: number; account_code: string; amount_ht?: number; amount_tva?: number; }
+export interface InvoiceLine { id?: string; line_no?: number; description: string; quantity: number; unit_price: number; vat_rate: number; account_code: string; analytic_axis?: string | null; amount_ht?: number; amount_tva?: number; }
 export interface InvoiceDetail extends Invoice { counterparty_id: string | null; due_date: string | null; entry_id: string | null; fne_qr: string | null; notes: string | null; lines: InvoiceLine[]; }
 export interface JournalLine {
   entry_id: string; entry_date: string; journal_code: string; piece_ref: string | null;
@@ -320,8 +320,8 @@ export const api = {
     req<StatementMatch>(`/api/dossiers/${dossierId}/reconciliation/match`, { method: 'POST', body: JSON.stringify({ account, csv }) }),
   applyPointings: (dossierId: string, entryLineIds: string[]) =>
     req<{ pointed: number }>(`/api/dossiers/${dossierId}/reconciliation/apply`, { method: 'POST', body: JSON.stringify({ entryLineIds }) }),
-  createFromStatement: (dossierId: string, account: string, row: StatementRow, counterAccount: string) =>
-    req<{ entryId: string }>(`/api/dossiers/${dossierId}/reconciliation/create`, { method: 'POST', body: JSON.stringify({ account, row, counterAccount }) }),
+  createFromStatement: (dossierId: string, account: string, row: StatementRow, counterAccount: string, counterAxis?: string) =>
+    req<{ entryId: string }>(`/api/dossiers/${dossierId}/reconciliation/create`, { method: 'POST', body: JSON.stringify({ account, row, counterAccount, counterAxis }) }),
   tiersAccounts: (dossierId: string) => req<TiersAccount[]>(`/api/dossiers/${dossierId}/tiers-accounts`),
   lettrageView: (dossierId: string, account: string) =>
     req<{ open: OpenItem[]; lettered: LetteredItem[] }>(`/api/dossiers/${dossierId}/lettrage?account=${encodeURIComponent(account)}`),

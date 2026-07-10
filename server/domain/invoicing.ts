@@ -10,7 +10,7 @@ import { recordAudit } from './audit.js';
 // ============================================================================
 
 export interface InvoiceLineInput {
-  description: string; quantity: number; unitPrice: number; vatRate: number; accountCode?: string;
+  description: string; quantity: number; unitPrice: number; vatRate: number; accountCode?: string; analyticAxis?: string;
 }
 export type DocType = 'invoice' | 'quote' | 'credit_note';
 export interface CreateInvoiceInput {
@@ -33,9 +33,10 @@ function computeLines(lines: any[]) {
     const unitPrice = Number(l.unitPrice ?? l.unit_price ?? 0);
     const vatRate = Number(l.vatRate ?? l.vat_rate ?? 0);
     const accountCode = l.accountCode || l.account_code || '701';
+    const analyticAxis = l.analyticAxis || l.analytic_axis || null;
     const ht = Number(l.quantity) * unitPrice;
     const tva = ht * vatRate;
-    return { description: l.description, quantity: Number(l.quantity), unitPrice, vatRate, accountCode, amount_ht: ht, amount_tva: tva, line_no: i + 1 };
+    return { description: l.description, quantity: Number(l.quantity), unitPrice, vatRate, accountCode, analyticAxis, amount_ht: ht, amount_tva: tva, line_no: i + 1 };
   });
 }
 
@@ -61,7 +62,7 @@ export async function getInvoice(c: Client, dossierId: string, id: string): Prom
        from invoices where dossier_id=$1 and id=$2`, [dossierId, id]);
   if (!rows[0]) throw new Error('Document introuvable');
   const { rows: lines } = await c.query(
-    `select id, line_no, description, quantity, unit_price, vat_rate, account_code, amount_ht, amount_tva
+    `select id, line_no, description, quantity, unit_price, vat_rate, account_code, analytic_axis, amount_ht, amount_tva
        from invoice_lines where invoice_id=$1 order by line_no`, [id]);
   return {
     ...rows[0],
@@ -85,9 +86,9 @@ export async function createInvoice(c: Client, dossierId: string, input: CreateI
   const id = rows[0].id;
   for (const l of lines) {
     await c.query(
-      `insert into invoice_lines(invoice_id, dossier_id, line_no, description, quantity, unit_price, vat_rate, account_code, amount_ht, amount_tva)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, dossierId, l.line_no, l.description, l.quantity, l.unitPrice, l.vatRate, l.accountCode, l.amount_ht, l.amount_tva],
+      `insert into invoice_lines(invoice_id, dossier_id, line_no, description, quantity, unit_price, vat_rate, account_code, analytic_axis, amount_ht, amount_tva)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, dossierId, l.line_no, l.description, l.quantity, l.unitPrice, l.vatRate, l.accountCode, l.analyticAxis, l.amount_ht, l.amount_tva],
     );
   }
   return { id };
@@ -119,15 +120,23 @@ export async function issueInvoice(c: Client, dossierId: string, id: string): Pr
   if (!jv[0]) throw new Error("Journal des ventes (VE) absent — initialisez le dossier.");
 
   const cpId = inv.counterparty_id ?? await resolveCounterparty(c, dossierId, inv.client_name, 'client');
-  const byAccount = new Map<string, number>();
-  for (const l of inv.lines) byAccount.set(l.account_code, (byAccount.get(l.account_code) ?? 0) + l.amount_ht);
+  // Regroupe le produit par (compte 70x, section analytique) : deux sections
+  // sur un même compte donnent deux lignes d'écriture distinctes, chacune ventilée.
+  const byAccount = new Map<string, { code: string; axis: string | null; ht: number }>();
+  for (const l of inv.lines) {
+    const axis = l.analytic_axis || null;
+    const key = `${l.account_code}|${axis ?? ''}`;
+    const cur = byAccount.get(key) ?? { code: l.account_code, axis, ht: 0 };
+    cur.ht += l.amount_ht;
+    byAccount.set(key, cur);
+  }
 
   // Avoir : sens inverse de la facture (crédit 411, débit 70x, débit 443).
   const entryLines: any[] = [{
     accountCode: '411', counterpartyId: cpId,
     [isCredit ? 'credit' : 'debit']: inv.total_ttc, label: `${DOC_LABEL[docType]} ${number} ${inv.client_name}`,
   }];
-  for (const [code, ht] of byAccount) entryLines.push({ accountCode: code, [isCredit ? 'debit' : 'credit']: ht, label: `${isCredit ? 'Avoir ventes' : 'Ventes'} ${number}` });
+  for (const { code, axis, ht } of byAccount.values()) entryLines.push({ accountCode: code, analyticAxis: axis ?? undefined, [isCredit ? 'debit' : 'credit']: ht, label: `${isCredit ? 'Avoir ventes' : 'Ventes'} ${number}` });
   if (inv.total_tva > 0) entryLines.push({ accountCode: '443', [isCredit ? 'debit' : 'credit']: inv.total_tva, label: `TVA ${isCredit ? 'sur avoir' : 'facturée'} ${number}` });
 
   const { id: entryId } = await postEntry(c, {
@@ -152,7 +161,7 @@ export async function convertQuote(c: Client, dossierId: string, quoteId: string
   const { id } = await createInvoice(c, dossierId, {
     clientName: q.client_name, counterpartyId: q.counterparty_id ?? undefined,
     invoiceDate: new Date().toISOString().slice(0, 10), currency: q.currency, notes: q.notes ?? undefined, docType: 'invoice',
-    lines: q.lines.map((l: any) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unit_price, vatRate: l.vat_rate, accountCode: l.account_code })),
+    lines: q.lines.map((l: any) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unit_price, vatRate: l.vat_rate, accountCode: l.account_code, analyticAxis: l.analytic_axis ?? undefined })),
   });
   await c.query('update invoices set source_document_id=$3 where dossier_id=$1 and id=$2', [dossierId, id, quoteId]);
   await c.query("update invoices set status='converted' where dossier_id=$1 and id=$2", [dossierId, quoteId]);
@@ -168,7 +177,7 @@ export async function creditNoteFromInvoice(c: Client, dossierId: string, invoic
     clientName: inv.client_name, counterpartyId: inv.counterparty_id ?? undefined,
     invoiceDate: new Date().toISOString().slice(0, 10), currency: inv.currency, docType: 'credit_note',
     notes: `Avoir sur facture ${inv.number}`,
-    lines: inv.lines.map((l: any) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unit_price, vatRate: l.vat_rate, accountCode: l.account_code })),
+    lines: inv.lines.map((l: any) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unit_price, vatRate: l.vat_rate, accountCode: l.account_code, analyticAxis: l.analytic_axis ?? undefined })),
   });
   await c.query('update invoices set source_document_id=$3 where dossier_id=$1 and id=$2', [dossierId, id, invoiceId]);
   return { id };

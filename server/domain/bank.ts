@@ -118,7 +118,7 @@ export async function applyPointings(c: Client, dossierId: string, entryLineIds:
 // Crée l'écriture d'une ligne de relevé non rapprochée (banque ↔ compte de contrepartie),
 // puis la pointe automatiquement.
 export async function createFromStatement(
-  c: Client, dossierId: string, accountCode: string, row: StatementRow, counterAccount: string,
+  c: Client, dossierId: string, accountCode: string, row: StatementRow, counterAccount: string, counterAxis?: string,
 ): Promise<{ entryId: string }> {
   const { rows: fy } = await c.query(
     "select id from fiscal_years where dossier_id=$1 and status<>'closed' and $2 between start_date and end_date order by start_date limit 1",
@@ -129,9 +129,10 @@ export async function createFromStatement(
 
   const inflow = row.amount > 0;
   const amount = Math.abs(row.amount);
+  const counter = { accountCode: counterAccount, label: row.label, analyticAxis: counterAxis || undefined };
   const lines = inflow
-    ? [{ accountCode, debit: amount, paymentChannel: 'bank' as const, label: row.label }, { accountCode: counterAccount, credit: amount, label: row.label }]
-    : [{ accountCode: counterAccount, debit: amount, label: row.label }, { accountCode, credit: amount, paymentChannel: 'bank' as const, label: row.label }];
+    ? [{ accountCode, debit: amount, paymentChannel: 'bank' as const, label: row.label }, { ...counter, credit: amount }]
+    : [{ ...counter, debit: amount }, { accountCode, credit: amount, paymentChannel: 'bank' as const, label: row.label }];
 
   const { id: entryId } = await postEntry(c, {
     dossierId, fiscalYearId: fy[0].id, journalId: jb[0].id, entryDate: row.date,
