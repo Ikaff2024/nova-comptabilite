@@ -244,6 +244,7 @@ export const api = {
   login: (email: string, password: string, code?: string) =>
     req<{ token: string; user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password, code }) }),
   me: () => req<AuthUser>('/api/auth/me'),
+  updateMyName: (name: string) => req<void>('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ name }) }),
   setup2fa: () => req<{ secret: string; otpauth: string }>('/api/auth/2fa/setup', { method: 'POST', body: '{}' }),
   enable2fa: (code: string) => req<{ enabled: boolean }>('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
   disable2fa: () => req<{ enabled: boolean }>('/api/auth/2fa/disable', { method: 'POST', body: '{}' }),

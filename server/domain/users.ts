@@ -52,3 +52,8 @@ export async function removeMember(c: Client, cabinetId: string, userId: string)
 export async function renameCabinet(c: Client, cabinetId: string, name: string): Promise<void> {
   await c.query('select cabinet_rename($1,$2)', [cabinetId, name]);
 }
+
+// Nom d'affichage de l'utilisateur courant.
+export async function setMyName(c: Client, name: string): Promise<void> {
+  await c.query('select user_set_name($1)', [name]);
+}

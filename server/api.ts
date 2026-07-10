@@ -100,6 +100,14 @@ export function createApi() {
     res.json({ id: user.id, email: user.email, name: user.name, twoFactorEnabled: user.totp_enabled });
   }));
 
+  app.patch('/api/auth/me', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { name } = req.body ?? {};
+    if (!name?.trim()) { const e: any = new Error('Nom requis'); e.status = 400; throw e; }
+    await withUser(userId, (c) => users.setMyName(c, String(name)));
+    res.status(204).end();
+  }));
+
   // --- Double authentification (2FA TOTP) ------------------------------------
   app.post('/api/auth/2fa/setup', h(async (req, res) => {
     const userId = requireUser(req);
