@@ -237,6 +237,17 @@ export interface AnalyticReport {
   sections: { code: string; label: string; produits: number; charges: number; resultat: number }[];
   totals: { produits: number; charges: number; resultat: number };
 }
+export interface AnalyticDetail {
+  code: string; label: string;
+  lines: { date: string; journal: string; pieceRef: string | null; accountCode: string; accountLabel: string; classNo: number; label: string; debit: number; credit: number; montant: number }[];
+  byAccount: { accountCode: string; accountLabel: string; classNo: number; montant: number; count: number }[];
+  totals: { produits: number; charges: number; resultat: number };
+}
+export interface AnalyticMonthly {
+  months: string[];
+  sections: { code: string; label: string; monthly: number[]; total: number }[];
+  monthTotals: number[];
+}
 export interface ProposedLine {
   accountCode: string; accountLabel?: string; debit?: number; credit?: number; label?: string;
 }
@@ -448,6 +459,8 @@ export const api = {
   createAnalyticSection: (dossierId: string, code: string, label: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/analytic/sections`, { method: 'POST', body: JSON.stringify({ code, label }) }),
   deleteAnalyticSection: (dossierId: string, sid: string) => req<void>(`/api/dossiers/${dossierId}/analytic/sections/${sid}`, { method: 'DELETE' }),
   analyticReport: (dossierId: string, fiscalYearId?: string) => req<AnalyticReport>(`/api/dossiers/${dossierId}/analytic/report${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  analyticDetail: (dossierId: string, section: string, fiscalYearId?: string) => req<AnalyticDetail>(`/api/dossiers/${dossierId}/analytic/detail?section=${encodeURIComponent(section)}${fiscalYearId ? `&fiscalYearId=${fiscalYearId}` : ''}`),
+  analyticMonthly: (dossierId: string, fiscalYearId?: string) => req<AnalyticMonthly>(`/api/dossiers/${dossierId}/analytic/monthly${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
 };
 
 export const OHADA_COUNTRIES: { code: string; name: string }[] = [

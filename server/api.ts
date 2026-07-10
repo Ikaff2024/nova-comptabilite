@@ -860,6 +860,17 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => analytic.analyticReport(c, req.params.id, fy)));
   }));
+  app.get('/api/dossiers/:id/analytic/detail', h(async (req, res) => {
+    const userId = requireUser(req);
+    const section = (req.query.section as string) || '—';
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => analytic.analyticDetail(c, req.params.id, section, fy)));
+  }));
+  app.get('/api/dossiers/:id/analytic/monthly', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => analytic.analyticMonthly(c, req.params.id, fy)));
+  }));
 
   app.get('/api/dossiers/:id/fec', h(async (req, res) => {
     const userId = requireUser(req);

@@ -199,13 +199,13 @@ export async function payPurchase(
 // (une réglée, plusieurs en cours dont des échues, une brouillon).
 export async function seedDemoPurchases(c: Client, dossierId: string): Promise<void> {
   const mk = async (
-    p: { supplier: string; ref?: string; date: string; due: string; account: string; label: string; ht: number; vat?: number },
+    p: { supplier: string; ref?: string; date: string; due: string; account: string; label: string; ht: number; vat?: number; axis?: string },
     action: 'draft' | 'recorded' | 'paid',
     pay?: { date: string; treasury: string },
   ) => {
     const { id } = await createPurchase(c, dossierId, {
       supplierName: p.supplier, supplierRef: p.ref, invoiceDate: p.date, dueDate: p.due,
-      lines: [{ description: p.label, accountCode: p.account, amountHt: p.ht, vatRate: p.vat ?? 0.18 }],
+      lines: [{ description: p.label, accountCode: p.account, analyticAxis: p.axis, amountHt: p.ht, vatRate: p.vat ?? 0.18 }],
     });
     if (action === 'draft') return;
     await recordPurchase(c, dossierId, id);
@@ -213,15 +213,15 @@ export async function seedDemoPurchases(c: Client, dossierId: string): Promise<v
   };
 
   // Réglée (n'apparaît plus dans la balance âgée)
-  await mk({ supplier: 'Grossiste Alibaba Adjamé', ref: 'FA-2026-0182', date: '2026-06-18', due: '2026-07-18', account: '601', label: 'Achat marchandises (lot textile)', ht: 850000 }, 'paid', { date: '2026-07-05', treasury: '521' });
+  await mk({ supplier: 'Grossiste Alibaba Adjamé', ref: 'FA-2026-0182', date: '2026-06-18', due: '2026-07-18', account: '601', label: 'Achat marchandises (lot textile)', ht: 850000, axis: 'COCODY' }, 'paid', { date: '2026-07-05', treasury: '521' });
   // En cours, récentes (0-30 j)
-  await mk({ supplier: 'SODECI', ref: 'SOD-074512', date: '2026-06-28', due: '2026-07-28', account: '605', label: "Consommation d'eau — boutique", ht: 45000 }, 'recorded');
-  await mk({ supplier: 'Orange Côte d’Ivoire', ref: 'OCI-2026-9931', date: '2026-07-02', due: '2026-08-02', account: '628', label: 'Abonnement fibre + mobile', ht: 35000 }, 'recorded');
+  await mk({ supplier: 'SODECI', ref: 'SOD-074512', date: '2026-06-28', due: '2026-07-28', account: '605', label: "Consommation d'eau — boutique", ht: 45000, axis: 'COCODY' }, 'recorded');
+  await mk({ supplier: 'Orange Côte d’Ivoire', ref: 'OCI-2026-9931', date: '2026-07-02', due: '2026-08-02', account: '628', label: 'Abonnement fibre + mobile', ht: 35000, axis: 'YOPOUGON' }, 'recorded');
   // Échues (61-90 j / +90 j) — pour montrer l'ancienneté et l'alerte d'échéance
-  await mk({ supplier: 'CIE', ref: 'CIE-556201', date: '2026-05-10', due: '2026-06-10', account: '605', label: 'Électricité — atelier', ht: 120000 }, 'recorded');
-  await mk({ supplier: 'Imprimerie Attoban', ref: 'IMP-0521', date: '2026-04-15', due: '2026-05-15', account: '605', label: 'Impression supports commerciaux', ht: 75000 }, 'recorded');
+  await mk({ supplier: 'CIE', ref: 'CIE-556201', date: '2026-05-10', due: '2026-06-10', account: '605', label: 'Électricité — atelier', ht: 120000, axis: 'YOPOUGON' }, 'recorded');
+  await mk({ supplier: 'Imprimerie Attoban', ref: 'IMP-0521', date: '2026-04-15', due: '2026-05-15', account: '605', label: 'Impression supports commerciaux', ht: 75000, axis: 'COCODY' }, 'recorded');
   // Loyer exonéré de TVA, échu
-  await mk({ supplier: 'SCI Les Palmiers (Cocody)', date: '2026-07-01', due: '2026-07-05', account: '622', label: 'Loyer boutique — juillet', ht: 250000, vat: 0 }, 'recorded');
+  await mk({ supplier: 'SCI Les Palmiers (Cocody)', date: '2026-07-01', due: '2026-07-05', account: '622', label: 'Loyer boutique — juillet', ht: 250000, vat: 0, axis: 'COCODY' }, 'recorded');
   // Brouillon (illustre l'étape de saisie / comptabilisation)
   await mk({ supplier: 'Quincaillerie Marcory', ref: 'QM-2211', date: '2026-07-08', due: '2026-08-08', account: '605', label: 'Petit équipement + fournitures', ht: 60000 }, 'draft');
 }

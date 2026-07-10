@@ -502,16 +502,29 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   const post = (jc: string, date: string, description: string, source: EntrySource, cp: string, lines: EntryLineInput[]) =>
     postEntry(c, { dossierId: id, fiscalYearId: fy, journalId: J(jc), entryDate: date, description, source, counterpartyName: cp, lines });
 
+  // Sections analytiques de démo (deux points de vente) — pour illustrer les
+  // restitutions par section et la vue mensuelle.
+  await c.query(
+    "insert into analytic_sections(dossier_id, code, label) values ($1,'COCODY','Boutique Cocody'),($1,'YOPOUGON','Boutique Yopougon')",
+    [id]);
+
+  // Ventes ventilées, réparties sur plusieurs mois (saisonnalité par point de vente).
+  await post('VE', '2026-05-08', 'Vente marchandises comptant', 'ocr', 'Client Awa',
+    [{ accountCode: '521', debit: 380000, paymentChannel: 'bank' }, { accountCode: '701', credit: 380000, analyticAxis: 'COCODY' }]);
+  await post('VE', '2026-06-14', 'Prestation de service', 'mobile_money', 'Société TechCorp',
+    [{ accountCode: '521', debit: 300000, paymentChannel: 'om' }, { accountCode: '706', credit: 300000, analyticAxis: 'YOPOUGON' }]);
+  await post('VE', '2026-06-20', 'Vente marchandises comptant', 'ocr', 'Client Kouassi',
+    [{ accountCode: '521', debit: 250000, paymentChannel: 'bank' }, { accountCode: '701', credit: 250000, analyticAxis: 'COCODY' }]);
   await post('VE', '2026-07-02', 'Vente marchandises comptant', 'ocr', 'Client Awa',
-    [{ accountCode: '521', debit: 450000, paymentChannel: 'bank' }, { accountCode: '701', credit: 450000 }]);
+    [{ accountCode: '521', debit: 450000, paymentChannel: 'bank' }, { accountCode: '701', credit: 450000, analyticAxis: 'COCODY' }]);
   await post('VE', '2026-07-05', 'Prestation de service (Orange Money)', 'mobile_money', 'Société TechCorp',
-    [{ accountCode: '521', debit: 200000, paymentChannel: 'om' }, { accountCode: '706', credit: 200000 }]);
+    [{ accountCode: '521', debit: 200000, paymentChannel: 'om' }, { accountCode: '706', credit: 200000, analyticAxis: 'YOPOUGON' }]);
   await post('AC', '2026-07-06', 'Achat marchandises', 'ocr', 'Grossiste Adjamé',
-    [{ accountCode: '601', debit: 180000 }, { accountCode: '401', credit: 180000 }]);
+    [{ accountCode: '601', debit: 180000, analyticAxis: 'COCODY' }, { accountCode: '401', credit: 180000 }]);
   await post('AC', '2026-07-08', 'Facture Orange Internet', 'ocr', 'Orange CI',
-    [{ accountCode: '628', debit: 29661 }, { accountCode: '445', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
+    [{ accountCode: '628', debit: 29661, analyticAxis: 'YOPOUGON' }, { accountCode: '445', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
   await post('AC', '2026-07-10', 'Loyer boutique', 'manual', 'Bailleur Cocody',
-    [{ accountCode: '622', debit: 120000 }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
+    [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY' }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
   await post('OD', '2026-07-28', 'Salaires du mois', 'manual', 'Personnel',
     [{ accountCode: '661', debit: 150000 }, { accountCode: '521', credit: 150000, paymentChannel: 'bank' }]);
   await post('AC', '2026-07-30', 'Frais Mobile Money', 'mobile_money', 'Wave',
