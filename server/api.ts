@@ -785,6 +785,13 @@ export function createApi() {
     await withUser(userId, (c) => budget.setBudget(c, req.params.id, fiscalYearId, accountCode, Number(amount) || 0));
     res.status(204).end();
   }));
+  app.post('/api/dossiers/:id/budget/import', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { fiscalYearId, csv, lines } = req.body ?? {};
+    if (!fiscalYearId) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    const parsed = Array.isArray(lines) ? lines : budget.parseBudgetCsv(String(csv ?? ''));
+    res.json(await withUser(userId, (c) => budget.importBudget(c, req.params.id, fiscalYearId, parsed)));
+  }));
   app.delete('/api/dossiers/:id/budget', h(async (req, res) => {
     const userId = requireUser(req);
     const { fiscalYearId, accountCode } = req.body ?? {};

@@ -5,6 +5,63 @@ import type { Client } from '../db.js';
 // (classes 6 = charges, 7 = produits). Écart et taux de réalisation à la volée.
 // ============================================================================
 
+// --- Import CSV du budget (Compte ; [Libellé] ; Montant) ---------------------
+
+export interface BudgetLineInput { accountCode: string; amount: number }
+
+function num(s: string): number {
+  if (!s) return 0;
+  const cleaned = String(s).replace(/[\s  ']/g, '').replace(/,/g, '.').replace(/[^0-9.\-]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+function splitDelim(line: string): string[] {
+  const d = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+  return line.split(d).map((s) => s.trim().replace(/^"|"$/g, ''));
+}
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+export function parseBudgetCsv(text: string): BudgetLineInput[] {
+  const rows = String(text).split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+  if (rows.length === 0) return [];
+  let map = { code: 0, amount: 1 };
+  let start = 0;
+  const first = splitDelim(rows[0]).map(norm);
+  if (first.some((h) => /compte|code|montant|budget|libell/.test(h))) {
+    start = 1;
+    const find = (...keys: string[]) => first.findIndex((h) => keys.some((k) => h.includes(k)));
+    const code = find('compte', 'code');
+    const amount = find('montant', 'budget');
+    map = { code: code >= 0 ? code : 0, amount: amount >= 0 ? amount : first.length - 1 };
+  }
+  const out: BudgetLineInput[] = [];
+  for (let i = start; i < rows.length; i++) {
+    const cells = splitDelim(rows[i]);
+    const code = (cells[map.code] ?? '').replace(/[^0-9]/g, '');
+    if (!code) continue;
+    const amount = Math.round(num(cells[map.amount]) * 100) / 100;
+    if (amount === 0) continue;
+    out.push({ accountCode: code, amount });
+  }
+  return out;
+}
+
+// Importe (upsert) des lignes de budget. Renvoie le détail des lignes rejetées.
+export async function importBudget(
+  c: Client, dossierId: string, fiscalYearId: string, lines: BudgetLineInput[],
+): Promise<{ imported: number; errors: { accountCode: string; reason: string }[] }> {
+  const errors: { accountCode: string; reason: string }[] = [];
+  let imported = 0;
+  for (const l of lines) {
+    const { rows } = await c.query('select class_no from accounts where dossier_id=$1 and account_code=$2', [dossierId, l.accountCode]);
+    if (!rows[0]) { errors.push({ accountCode: l.accountCode, reason: 'compte absent du plan' }); continue; }
+    if (![6, 7].includes(rows[0].class_no)) { errors.push({ accountCode: l.accountCode, reason: 'budget limité aux classes 6 et 7' }); continue; }
+    await setBudget(c, dossierId, fiscalYearId, l.accountCode, l.amount);
+    imported++;
+  }
+  return { imported, errors };
+}
+
 export async function setBudget(c: Client, dossierId: string, fiscalYearId: string, accountCode: string, amount: number): Promise<void> {
   const code = String(accountCode ?? '').trim();
   if (!/^\d{2,}$/.test(code)) throw new Error('Code de compte invalide.');
@@ -61,11 +118,15 @@ export async function budgetReport(c: Client, dossierId: string, fiscalYearId: s
   }).sort((a, b) => a.account_code.localeCompare(b.account_code));
 
   const sum = (cls: number, k: 'budget' | 'realise') => rows.filter((r) => r.classNo === cls).reduce((s, r) => s + r[k], 0);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const chargesBudget = r2(sum(6, 'budget')), chargesRealise = r2(sum(6, 'realise'));
+  const produitsBudget = r2(sum(7, 'budget')), produitsRealise = r2(sum(7, 'realise'));
   return {
     rows,
     totals: {
-      chargesBudget: sum(6, 'budget'), chargesRealise: sum(6, 'realise'),
-      produitsBudget: sum(7, 'budget'), produitsRealise: sum(7, 'realise'),
+      chargesBudget, chargesRealise, produitsBudget, produitsRealise,
+      resultatBudget: r2(produitsBudget - chargesBudget),
+      resultatRealise: r2(produitsRealise - chargesRealise),
     },
   };
 }

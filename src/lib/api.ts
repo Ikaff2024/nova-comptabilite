@@ -220,7 +220,7 @@ export interface Obligation { id: string; label: string; periodicity: string; du
 export interface BudgetRow { account_code: string; label: string; classNo: number; budget: number; realise: number; ecart: number; pct: number | null; }
 export interface BudgetReport {
   rows: BudgetRow[];
-  totals: { chargesBudget: number; chargesRealise: number; produitsBudget: number; produitsRealise: number };
+  totals: { chargesBudget: number; chargesRealise: number; produitsBudget: number; produitsRealise: number; resultatBudget: number; resultatRealise: number };
 }
 export interface AnalyticSection { id: string; code: string; label: string; }
 export interface AnalyticReport {
@@ -420,6 +420,8 @@ export const api = {
     req<{ entryId: string; reversalId: string | null }>(`/api/dossiers/${dossierId}/cutoff`, { method: 'POST', body: JSON.stringify(body) }),
   budgetReport: (dossierId: string, fiscalYearId: string) => req<BudgetReport>(`/api/dossiers/${dossierId}/budget?fiscalYearId=${fiscalYearId}`),
   setBudget: (dossierId: string, fiscalYearId: string, accountCode: string, amount: number) => req<void>(`/api/dossiers/${dossierId}/budget`, { method: 'POST', body: JSON.stringify({ fiscalYearId, accountCode, amount }) }),
+  importBudget: (dossierId: string, fiscalYearId: string, csv: string) =>
+    req<{ imported: number; errors: { accountCode: string; reason: string }[] }>(`/api/dossiers/${dossierId}/budget/import`, { method: 'POST', body: JSON.stringify({ fiscalYearId, csv }) }),
   deleteBudget: (dossierId: string, fiscalYearId: string, accountCode: string) => req<void>(`/api/dossiers/${dossierId}/budget`, { method: 'DELETE', body: JSON.stringify({ fiscalYearId, accountCode }) }),
   analyticSections: (dossierId: string) => req<AnalyticSection[]>(`/api/dossiers/${dossierId}/analytic/sections`),
   createAnalyticSection: (dossierId: string, code: string, label: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/analytic/sections`, { method: 'POST', body: JSON.stringify({ code, label }) }),
