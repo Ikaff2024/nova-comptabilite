@@ -178,6 +178,16 @@ export interface Invoice {
 }
 export interface InvoiceLine { id?: string; line_no?: number; description: string; quantity: number; unit_price: number; vat_rate: number; account_code: string; analytic_axis?: string | null; amount_ht?: number; amount_tva?: number; }
 export interface InvoiceDetail extends Invoice { counterparty_id: string | null; due_date: string | null; entry_id: string | null; fne_qr: string | null; notes: string | null; lines: InvoiceLine[]; }
+export interface Purchase {
+  id: string; supplier_name: string; supplier_ref: string | null; invoice_date: string; due_date: string | null;
+  status: string; total_ht: number; total_tva: number; total_ttc: number; currency: string; entry_id: string | null; payment_entry_id: string | null;
+}
+export interface PurchaseLine { id?: string; line_no?: number; description: string; account_code: string; analytic_axis?: string | null; amount_ht: number; vat_rate: number; amount_tva?: number; }
+export interface PurchaseDetail extends Purchase { counterparty_id: string | null; notes: string | null; lines: PurchaseLine[]; }
+export interface SupplierAging {
+  counterpartyId: string; name: string; auxCode: string; balance: number;
+  b0_30: number; b31_60: number; b61_90: number; b90_plus: number; oldestAge: number;
+}
 export interface JournalLine {
   entry_id: string; entry_date: string; journal_code: string; piece_ref: string | null;
   entry_description: string; source: string; document_url: string | null; account_code: string; label: string; debit: number; credit: number;
@@ -378,6 +388,16 @@ export const api = {
   deleteInvoice: (dossierId: string, iid: string) => req<void>(`/api/dossiers/${dossierId}/invoices/${iid}`, { method: 'DELETE' }),
   issueInvoice: (dossierId: string, iid: string) => req<{ number: string; entryId: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/issue`, { method: 'POST', body: '{}' }),
   certifyInvoice: (dossierId: string, iid: string) => req<{ reference: string; provider: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/certify`, { method: 'POST', body: '{}' }),
+  // --- Achats fournisseurs ---
+  purchases: (dossierId: string, status?: string) => req<Purchase[]>(`/api/dossiers/${dossierId}/purchases${status ? `?status=${status}` : ''}`),
+  purchase: (dossierId: string, pid: string) => req<PurchaseDetail>(`/api/dossiers/${dossierId}/purchases/${pid}`),
+  createPurchase: (dossierId: string, body: { supplierName: string; supplierRef?: string; invoiceDate: string; dueDate?: string; notes?: string; lines: PurchaseLine[] }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/purchases`, { method: 'POST', body: JSON.stringify(body) }),
+  deletePurchase: (dossierId: string, pid: string) => req<void>(`/api/dossiers/${dossierId}/purchases/${pid}`, { method: 'DELETE' }),
+  recordPurchase: (dossierId: string, pid: string) => req<{ entryId: string }>(`/api/dossiers/${dossierId}/purchases/${pid}/record`, { method: 'POST', body: '{}' }),
+  payPurchase: (dossierId: string, pid: string, body: { paymentDate: string; treasuryCode: string; channel?: string }) =>
+    req<{ entryId: string }>(`/api/dossiers/${dossierId}/purchases/${pid}/pay`, { method: 'POST', body: JSON.stringify(body) }),
+  supplierAging: (dossierId: string, asOf?: string) => req<SupplierAging[]>(`/api/dossiers/${dossierId}/purchases/aging${asOf ? `?asOf=${asOf}` : ''}`),
   journalEntries: (dossierId: string, opts: { journal?: string; fiscalYearId?: string } = {}) => {
     const q = new URLSearchParams();
     if (opts.journal) q.set('journal', opts.journal);

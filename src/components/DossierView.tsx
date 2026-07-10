@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -14,6 +14,7 @@ import Tiers from './Tiers';
 import BankReconciliation from './BankReconciliation';
 import Journaux from './Journaux';
 import Facturation from './Facturation';
+import Achats from './Achats';
 import Fiscalite from './Fiscalite';
 import ImportBalance from './ImportBalance';
 import Immobilisations from './Immobilisations';
@@ -26,7 +27,7 @@ import Revision from './Revision';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'facturation' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'plan' | 'regles' | 'import' | 'audit';
+type Tab = 'synthese' | 'facturation' | 'achats' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'plan' | 'regles' | 'import' | 'audit';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -52,6 +53,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'synthese', label: 'Synthèse', icon: LayoutDashboard },
     { id: 'facturation', label: 'Facturation', icon: ReceiptText },
+    { id: 'achats', label: 'Achats', icon: ShoppingCart },
     { id: 'capture', label: 'Capture IA', icon: ScanLine },
     { id: 'mobilemoney', label: 'Mobile Money', icon: Smartphone },
     { id: 'saisie', label: 'Saisie', icon: PencilLine },
@@ -111,6 +113,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
           <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
             {tab === 'synthese' && <DossierDashboard dossierId={dossier.id} currency={dossier.base_currency} onNavigate={(t) => setTab(t as Tab)} />}
             {tab === 'facturation' && <Facturation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'achats' && <Achats dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'capture' && (
               <Capture dossierId={dossier.id} fiscalYears={fiscalYears} journals={journals}
                 currency={dossier.base_currency} onPosted={() => { /* la balance se recharge à l'ouverture de l'onglet */ }} />

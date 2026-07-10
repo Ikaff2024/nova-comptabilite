@@ -517,6 +517,10 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   await post('AC', '2026-07-30', 'Frais Mobile Money', 'mobile_money', 'Wave',
     [{ accountCode: '631', debit: 1200 }, { accountCode: '521', credit: 1200, paymentChannel: 'wave' }]);
 
+  // Cycle achats fournisseurs : factures de démo (statuts variés + balance âgée).
+  const { seedDemoPurchases } = await import('./purchases.js');
+  await seedDemoPurchases(c, id);
+
   return { dossierId: id };
 }
 

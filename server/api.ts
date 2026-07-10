@@ -10,6 +10,7 @@ import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
 import * as tiers from './domain/tiers.js';
 import * as invoicing from './domain/invoicing.js';
+import * as purchases from './domain/purchases.js';
 import * as tax from './domain/tax.js';
 import * as importbalance from './domain/importbalance.js';
 import * as assets from './domain/assets.js';
@@ -526,6 +527,38 @@ export function createApi() {
   app.post('/api/dossiers/:id/invoices/:iid/certify', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => invoicing.certifyInvoiceFne(c, req.params.id, req.params.iid)));
+  }));
+
+  // --- Cycle achats fournisseurs ---------------------------------------------
+  app.get('/api/dossiers/:id/purchases', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => purchases.listPurchases(c, req.params.id, (req.query.status as string) || undefined)));
+  }));
+  app.post('/api/dossiers/:id/purchases', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => purchases.createPurchase(c, req.params.id, req.body ?? {})));
+  }));
+  app.get('/api/dossiers/:id/purchases/aging', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => purchases.supplierAging(c, req.params.id, (req.query.asOf as string) || undefined)));
+  }));
+  app.get('/api/dossiers/:id/purchases/:pid', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => purchases.getPurchase(c, req.params.id, req.params.pid)));
+  }));
+  app.delete('/api/dossiers/:id/purchases/:pid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => purchases.deletePurchase(c, req.params.id, req.params.pid));
+    res.status(204).end();
+  }));
+  app.post('/api/dossiers/:id/purchases/:pid/record', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => purchases.recordPurchase(c, req.params.id, req.params.pid)));
+  }));
+  app.post('/api/dossiers/:id/purchases/:pid/pay', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { paymentDate, treasuryCode, channel } = req.body ?? {};
+    res.json(await withUser(userId, (c) => purchases.payPurchase(c, req.params.id, req.params.pid, { paymentDate, treasuryCode, channel })));
   }));
 
   // --- Comptabilité auxiliaire (tiers) ---------------------------------------
