@@ -86,8 +86,8 @@ export function createApi() {
   });
 
   app.get('/api/health', async (_req, res) => {
-    try { await pool.query('select 1'); res.json({ ok: true, db: true, service: 'nova-comptabilite-api' }); }
-    catch { res.status(503).json({ ok: false, db: false, service: 'nova-comptabilite-api' }); }
+    try { await pool.query('select 1'); res.json({ ok: true, db: true, agent: agent.agentEnabled(), service: 'nova-comptabilite-api' }); }
+    catch { res.status(503).json({ ok: false, db: false, agent: agent.agentEnabled(), service: 'nova-comptabilite-api' }); }
   });
 
   // --- Authentification -------------------------------------------------------
