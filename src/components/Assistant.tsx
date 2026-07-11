@@ -91,16 +91,44 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   const [listening, setListening] = useState(false);
   const [speakOn, setSpeakOn] = useState(false);
   const recRef = useRef<any>(null);
+  const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const transcriptRef = useRef('');
+  // Effet « machine à écrire » sur la dernière réponse
+  const [typing, setTyping] = useState<{ idx: number; len: number } | null>(null);
 
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [turns, loading]);
   useEffect(() => () => { try { recRef.current?.stop(); } catch { /* ignore */ } if (TTS_OK) window.speechSynthesis.cancel(); }, []);
 
+  // Choisit la voix française la plus naturelle disponible (ex. « Google français »).
+  useEffect(() => {
+    if (!TTS_OK) return;
+    const pick = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const fr = voices.filter((v) => v.lang?.toLowerCase().startsWith('fr'));
+      voiceRef.current = fr.find((v) => /google/i.test(v.name)) || fr.find((v) => /natural|améli|amelie|thomas|audrey|denise/i.test(v.name)) || fr.find((v) => !v.localService) || fr[0] || null;
+    };
+    pick();
+    window.speechSynthesis.onvoiceschanged = pick;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
+
+  // Animation de frappe : révèle progressivement le dernier message de l'assistant.
+  useEffect(() => {
+    if (!typing) return;
+    const full = turns[typing.idx]?.content ?? '';
+    if (typing.len >= full.length) { setTyping(null); return; }
+    const step = Math.max(2, Math.round(full.length / 90)); // ~1,5 s quelle que soit la longueur
+    const id = setTimeout(() => setTyping((t) => (t ? { ...t, len: Math.min(full.length, t.len + step) } : t)), 16);
+    return () => clearTimeout(id);
+  }, [typing, turns]);
+
   const speak = (text: string) => {
     if (!TTS_OK) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(forSpeech(text));
-    u.lang = 'fr-FR'; u.rate = 1.03;
+    u.lang = 'fr-FR'; u.rate = 1.0; u.pitch = 1.0;
+    if (voiceRef.current) u.voice = voiceRef.current;
     window.speechSynthesis.speak(u);
   };
   const toggleSpeak = () => setSpeakOn((s) => { if (s && TTS_OK) window.speechSynthesis.cancel(); return !s; });
@@ -110,11 +138,19 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     if (listening) { try { recRef.current?.stop(); } catch { /* ignore */ } return; }
     const rec = new SpeechRec();
     rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
-    rec.onresult = (e: any) => setInput(Array.from(e.results).map((r: any) => r[0].transcript).join(''));
+    rec.onresult = (e: any) => {
+      const txt = Array.from(e.results).map((r: any) => r[0].transcript).join('');
+      transcriptRef.current = txt; setInput(txt);
+    };
     rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
+    rec.onend = () => {
+      setListening(false);
+      const txt = transcriptRef.current.trim();
+      transcriptRef.current = '';
+      if (txt) ask(txt); // envoi automatique dès qu'on arrête de parler
+    };
     recRef.current = rec;
-    setInput(''); setError(null);
+    transcriptRef.current = ''; setInput(''); setError(null);
     try { rec.start(); setListening(true); } catch { setListening(false); }
   };
 
@@ -130,12 +166,14 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     setError(null);
     try { recRef.current?.stop(); } catch { /* ignore */ }
     if (TTS_OK) window.speechSynthesis.cancel();
+    const baseLen = turns.length; // index de la future réponse assistant = baseLen + 1
     const history: AgentMessage[] = [...turns.map((t) => ({ role: t.role, content: t.content })), { role: 'user', content: q }];
     setTurns((ts) => [...ts, { role: 'user', content: q }]);
     setInput(''); setLoading(true);
     try {
       const r = await api.agentChat(dossierId, history);
       setTurns((ts) => [...ts, { role: 'assistant', content: r.reply, tools: r.toolCalls.map((c) => c.name) }]);
+      setTyping({ idx: baseLen + 1, len: 0 });     // effet machine à écrire
       if (speakOn) speak(r.reply);
     } catch (e: any) {
       setError(e.message);
@@ -211,7 +249,13 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
                   })}
                 </div>
               )}
-              <div className={cn('rounded-2xl px-3.5 py-2.5 text-sm', t.role === 'user' ? 'whitespace-pre-wrap bg-emerald-500 text-zinc-950' : 'bg-zinc-900/70 text-zinc-200')}>{t.role === 'assistant' ? <RichText text={t.content} /> : t.content}</div>
+              <div className={cn('rounded-2xl px-3.5 py-2.5 text-sm', t.role === 'user' ? 'whitespace-pre-wrap bg-emerald-500 text-zinc-950' : 'bg-zinc-900/70 text-zinc-200')}>
+                {t.role === 'assistant'
+                  ? (typing && typing.idx === i
+                      ? <div className="whitespace-pre-wrap">{t.content.slice(0, typing.len)}<span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-emerald-400 align-middle" /></div>
+                      : <RichText text={t.content} />)
+                  : t.content}
+              </div>
             </div>
             {t.role === 'user' && <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10"><User className="h-4 w-4 text-zinc-300" /></div>}
           </div>
