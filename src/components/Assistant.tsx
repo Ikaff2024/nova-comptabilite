@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX } from 'lucide-react';
+import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle } from 'lucide-react';
 import { api, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
 import { cn } from '../lib/utils';
+import WhatsAppLink from './WhatsAppLink';
 
 type Turn = AgentMessage & { tools?: string[] };
 
@@ -95,6 +96,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   const transcriptRef = useRef('');
   // Effet « machine à écrire » sur la dernière réponse
   const [typing, setTyping] = useState<{ idx: number; len: number } | null>(null);
+  const [showWa, setShowWa] = useState(false);
 
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [turns, loading]);
@@ -199,6 +201,10 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           <div className="text-xs text-zinc-500">Pilotez {dossierName} en langage naturel</div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => setShowWa((v) => !v)} title="Relier un numéro WhatsApp"
+            className={cn('flex h-7 w-7 items-center justify-center rounded-lg border', showWa ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200')}>
+            <MessageCircle className="h-4 w-4" />
+          </button>
           {TTS_OK && (
             <button onClick={toggleSpeak} title={speakOn ? 'Couper la lecture vocale' : 'Lire les réponses à voix haute'}
               className={cn('flex h-7 w-7 items-center justify-center rounded-lg border', speakOn ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200')}>
@@ -219,6 +225,8 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           )}
         </div>
       </div>
+
+      {showWa && <div className="border-b border-white/10 p-3"><WhatsAppLink dossierId={dossierId} /></div>}
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
         {turns.length === 0 && (

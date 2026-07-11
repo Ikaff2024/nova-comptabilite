@@ -6,6 +6,9 @@ import * as users from './domain/users.js';
 import { hashPassword, verifyPassword, issueToken, verifyToken, generateTotpSecret, totpUri, verifyTotp } from './auth.js';
 import { extractDocument, aiProvider } from './ai/provider.js';
 import * as agent from './ai/agent.js';
+import * as whatsapp from './whatsapp/provider.js';
+import * as waHandler from './whatsapp/handler.js';
+import * as walinks from './domain/whatsapp.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
@@ -39,7 +42,8 @@ import * as relances from './domain/relances.js';
 
 export function createApi() {
   const app = express();
-  app.use(express.json({ limit: '15mb' })); // images de pièces en base64
+  // Conserve le corps brut (nécessaire à la vérif de signature du webhook WhatsApp).
+  app.use(express.json({ limit: '15mb', verify: (req: any, _res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 
   // --- Auth : identité issue d'un JWT (Authorization: Bearer <token>).
   app.use((req: Request & { userId?: string }, _res, next: NextFunction) => {
@@ -88,6 +92,19 @@ export function createApi() {
   app.get('/api/health', async (_req, res) => {
     try { await pool.query('select 1'); res.json({ ok: true, db: true, agent: agent.agentEnabled(), service: 'nova-comptabilite-api' }); }
     catch { res.status(503).json({ ok: false, db: false, agent: agent.agentEnabled(), service: 'nova-comptabilite-api' }); }
+  });
+
+  // --- Webhook WhatsApp (Meta Cloud API) — non authentifié (appelé par Meta) --
+  app.get('/api/whatsapp/webhook', (req, res) => {
+    if (whatsapp.verifyWebhook(String(req.query['hub.mode'] ?? ''), String(req.query['hub.verify_token'] ?? '')))
+      return res.status(200).send(String(req.query['hub.challenge'] ?? ''));
+    res.sendStatus(403);
+  });
+  app.post('/api/whatsapp/webhook', (req: any, res) => {
+    if (!whatsapp.verifySignature(req.rawBody ?? '', req.header('x-hub-signature-256'))) return res.sendStatus(401);
+    res.sendStatus(200); // accusé rapide exigé par Meta ; traitement en arrière-plan
+    const msgs = whatsapp.parseInbound(req.body);
+    if (msgs.length) waHandler.handleInbound(msgs).catch(() => {});
   });
 
   // --- Authentification -------------------------------------------------------
@@ -945,6 +962,23 @@ export function createApi() {
     await withUser(userId, (c) => agent.setAgentMode(c, req.params.id, mode));
     await withUser(userId, (c) => audit.recordAudit(c, { dossierId: req.params.id, action: 'agent.mode_changed', entity: 'agent', detail: { mode } }));
     res.json({ mode });
+  }));
+
+  // --- Canal WhatsApp : liaison des numéros au dossier -----------------------
+  app.get('/api/dossiers/:id/whatsapp/links', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json({ enabled: whatsapp.whatsappEnabled(), links: await withUser(userId, (c) => walinks.listLinks(c, req.params.id)) });
+  }));
+  app.post('/api/dossiers/:id/whatsapp/links', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { phone, label } = req.body ?? {};
+    if (!phone) { const e: any = new Error('Numéro requis'); e.status = 400; throw e; }
+    res.status(201).json(await withUser(userId, (c) => walinks.createLink(c, req.params.id, userId, phone, label)));
+  }));
+  app.delete('/api/dossiers/:id/whatsapp/links/:lid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => walinks.deleteLink(c, req.params.id, req.params.lid));
+    res.status(204).end();
   }));
   app.post('/api/dossiers/:id/agent/chat', h(async (req, res) => {
     const userId = requireUser(req);

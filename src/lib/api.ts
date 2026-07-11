@@ -484,6 +484,9 @@ export const api = {
   agentStatus: (dossierId: string) => req<AgentStatus>(`/api/dossiers/${dossierId}/agent/status`),
   agentChat: (dossierId: string, messages: AgentMessage[]) => req<AgentResult>(`/api/dossiers/${dossierId}/agent/chat`, { method: 'POST', body: JSON.stringify({ messages }) }),
   setAgentMode: (dossierId: string, mode: AgentMode) => req<{ mode: AgentMode }>(`/api/dossiers/${dossierId}/agent/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
+  whatsappLinks: (dossierId: string) => req<{ enabled: boolean; links: { id: string; phone: string; label: string | null; created_at: string }[] }>(`/api/dossiers/${dossierId}/whatsapp/links`),
+  whatsappLink: (dossierId: string, phone: string, label?: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/whatsapp/links`, { method: 'POST', body: JSON.stringify({ phone, label }) }),
+  whatsappUnlink: (dossierId: string, lid: string) => req<void>(`/api/dossiers/${dossierId}/whatsapp/links/${lid}`, { method: 'DELETE' }),
 };
 
 export const OHADA_COUNTRIES: { code: string; name: string }[] = [
