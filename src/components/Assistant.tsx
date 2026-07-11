@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine } from 'lucide-react';
-import { api, AGENT_WRITE_TOOLS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
+import { api, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
 import { cn } from '../lib/utils';
 
 type Turn = AgentMessage & { tools?: string[] };
@@ -18,6 +18,7 @@ const TOOL_LABELS: Record<string, string> = {
   creances_clients: 'Créances clients', dettes_fournisseurs: 'Dettes fournisseurs',
   previsionnel_tresorerie: 'Prévisionnel', tva: 'TVA', factures_ventes: 'Ventes', factures_achats: 'Achats',
   preparer_facture_vente: 'Brouillon facture vente', preparer_facture_achat: 'Brouillon facture achat',
+  lettrer_automatiquement: 'Lettrage automatique', preparer_relance_client: 'Relance client',
 };
 
 export default function Assistant({ dossierId, dossierName }: { dossierId: string; dossierName: string; currency: string }) {
@@ -33,9 +34,8 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [turns, loading]);
 
-  const toggleMode = async () => {
-    if (!status?.canToggle) return;
-    const next: AgentMode = mode === 'assist' ? 'readonly' : 'assist';
+  const changeMode = async (next: AgentMode) => {
+    if (!status?.canToggle || next === mode) return;
     try { const r = await api.setAgentMode(dossierId, next); setStatus((s) => (s ? { ...s, mode: r.mode } : s)); }
     catch (e: any) { setError(e.message); }
   };
@@ -74,14 +74,17 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           <div className="text-xs text-zinc-500">Pilotez {dossierName} en langage naturel</div>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium', mode === 'assist' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/10 text-zinc-400')}>
-            {mode === 'assist' ? <PencilLine className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            {mode === 'assist' ? 'Assisté (brouillons)' : 'Lecture seule'}
-          </span>
-          {status?.canToggle && (
-            <button onClick={toggleMode} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-300 hover:bg-white/10">
-              {mode === 'assist' ? 'Repasser en lecture seule' : 'Activer le mode assisté'}
-            </button>
+          {status?.canToggle ? (
+            <select value={mode} onChange={(e) => changeMode(e.target.value as AgentMode)} title="Niveau de pouvoir de l'assistant (admin)"
+              className={cn('rounded-lg border px-2.5 py-1 text-xs outline-none', mode === 'readonly' ? 'border-white/10 bg-white/5 text-zinc-300' : 'border-amber-500/30 bg-amber-500/10 text-amber-200')}>
+              <option value="readonly">Lecture seule</option>
+              <option value="assist">Assisté (brouillons)</option>
+              <option value="assist_plus">Assisté + actions</option>
+            </select>
+          ) : (
+            <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium', mode === 'readonly' ? 'bg-white/10 text-zinc-400' : 'bg-amber-500/15 text-amber-300')}>
+              {mode === 'readonly' ? <Lock className="h-3.5 w-3.5" /> : <PencilLine className="h-3.5 w-3.5" />} {AGENT_MODE_LABELS[mode]}
+            </span>
           )}
         </div>
       </div>
@@ -91,7 +94,9 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           <div className="space-y-4">
             <p className="text-sm text-zinc-400">Posez une question sur votre comptabilité. Quelques idées :</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              {(mode === 'assist' ? [...SUGGESTIONS, 'Prépare un brouillon de facture pour le client Awa : 2 jours de conseil à 150 000.'] : SUGGESTIONS).map((s) => (
+              {(mode === 'readonly' ? SUGGESTIONS
+                : mode === 'assist' ? [...SUGGESTIONS, 'Prépare un brouillon de facture pour le client Awa : 2 jours de conseil à 150 000.']
+                : [...SUGGESTIONS, 'Prépare un brouillon de facture pour le client Awa : 2 jours de conseil à 150 000.', 'Lettre automatiquement les règlements des clients.']).map((s) => (
                 <button key={s} onClick={() => ask(s)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left text-sm text-zinc-300 hover:border-emerald-500/40 hover:bg-emerald-500/[0.06]">{s}</button>
               ))}
             </div>
@@ -136,7 +141,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </button>
       </form>
-      <p className="px-4 pb-3 text-center text-[11px] text-zinc-600">{mode === 'assist' ? 'Mode assisté : l\'assistant peut préparer des brouillons — rien n\'est comptabilisé sans votre validation dans les onglets dédiés.' : 'Lecture seule : l\'assistant lit vos données mais ne saisit rien. Vérifiez toujours avant décision.'}</p>
+      <p className="px-4 pb-3 text-center text-[11px] text-zinc-600">{mode === 'readonly' ? 'Lecture seule : l\'assistant lit vos données mais ne saisit rien. Vérifiez toujours avant décision.' : mode === 'assist' ? 'Mode assisté : l\'assistant peut préparer des brouillons — rien n\'est comptabilisé sans votre validation dans les onglets dédiés.' : 'Assisté + actions : brouillons et actions réversibles (lettrage, relances) — jamais d\'écriture au grand livre sans votre validation.'}</p>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type { Client } from '../db.js';
 import * as acc from '../domain/accounting.js';
 import * as analytic from '../domain/analytic.js';
 import * as relances from '../domain/relances.js';
+import * as lettrage from '../domain/lettrage.js';
 import * as purchases from '../domain/purchases.js';
 import * as forecast from '../domain/forecast.js';
 import * as tax from '../domain/tax.js';
@@ -24,7 +25,8 @@ export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export interface AgentToolCall { name: string; input: any }
 export interface AgentResult { reply: string; toolCalls: AgentToolCall[]; model: string; mode: AgentMode }
 
-export type AgentMode = 'readonly' | 'assist';
+export type AgentMode = 'readonly' | 'assist' | 'assist_plus';
+const MODES: AgentMode[] = ['readonly', 'assist', 'assist_plus'];
 
 export function agentEnabled(): boolean {
   return !!process.env.ANTHROPIC_API_KEY;
@@ -33,7 +35,8 @@ export function agentEnabled(): boolean {
 // Mode de l'agent pour un dossier (défaut 'readonly').
 export async function getAgentMode(c: Client, dossierId: string): Promise<AgentMode> {
   const { rows } = await c.query('select agent_mode from dossiers where id=$1', [dossierId]);
-  return (rows[0]?.agent_mode === 'assist' ? 'assist' : 'readonly');
+  const m = rows[0]?.agent_mode;
+  return MODES.includes(m) ? m : 'readonly';
 }
 
 // Bascule du mode — réservée owner/associé (garde en base, fonction SECURITY DEFINER).
@@ -59,7 +62,7 @@ async function dossierContext(c: Client, dossierId: string): Promise<{ text: str
   const text = `DOSSIER : ${d.raison_sociale ?? '—'} — pays ${d.country ?? 'CI'}, devise ${d.base_currency ?? 'XOF'}, référentiel SYSCOHADA révisé (AUDCIF).
 ${fyLine}
 Date du jour : ${today}.`;
-  return { text, fyId: openFy?.id ?? null, currency: d.base_currency ?? 'XOF', mode: d.agent_mode === 'assist' ? 'assist' : 'readonly' };
+  return { text, fyId: openFy?.id ?? null, currency: d.base_currency ?? 'XOF', mode: MODES.includes(d.agent_mode) ? d.agent_mode : 'readonly' };
 }
 
 const SYSTEM_GUARDRAILS = `Tu es l'assistant comptable de Nova, expert du référentiel OHADA (SYSCOHADA révisé, AUDCIF). Tu aides le comptable/dirigeant à PILOTER l'entreprise en langage naturel.
@@ -73,13 +76,20 @@ RÈGLES ABSOLUES :
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.`;
 
-// Note ajoutée UNIQUEMENT en mode assisté (l'admin l'a activé).
+// Note ajoutée en mode assisté (brouillons).
 const ASSIST_NOTE = `
 MODE ASSISTÉ ACTIVÉ : tu peux PRÉPARER des BROUILLONS via les outils "preparer_*" (facture de vente, facture fournisseur). Règles impératives :
 - Un brouillon n'a AUCUN effet comptable tant que l'humain ne l'émet/comptabilise pas dans l'onglet correspondant. Tu ne fais JAMAIS cette validation toi-même.
 - Après avoir créé un brouillon, annonce-le clairement comme un BROUILLON À VALIDER (dans « Facturation » pour une vente, « Achats » pour un achat), et récapitule ce que tu as saisi (tiers, lignes, montants) pour que l'humain vérifie.
 - Ne prépare un brouillon que si la demande est explicite et suffisamment précise. Si un élément manque (montant, tiers, compte), demande-le avant de créer.
 - Tu ne postes/émets/règles/clôtures JAMAIS. Ces actions restent 100 % humaines.`;
+
+// Note supplémentaire pour le palier 'assist_plus' (actions réversibles hors ledger).
+const PLUS_NOTE = `
+ACTIONS RÉVERSIBLES AUTORISÉES (palier assisté+) :
+- "lettrer_automatiquement" : rapproche automatiquement, par tiers, les factures et leurs règlements qui s'annulent (lettrage). C'est RÉVERSIBLE (délettrable) et n'affecte PAS le grand livre. Annonce combien de lettrages/lignes ont été rapprochés.
+- "preparer_relance_client" : produit le texte d'une lettre de relance pour un client en retard (ne l'envoie pas). L'humain décide de l'envoi.
+Ces actions restent hors du grand livre immuable. Tu ne postes/émets/règles/clôtures toujours JAMAIS.`;
 
 // --- Outils de LECTURE (toujours disponibles) --------------------------------
 
@@ -98,10 +108,10 @@ const READ_TOOLS = [
   { name: 'factures_achats', description: 'Liste des factures fournisseurs (optionnellement filtrées par statut : draft, recorded, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
 ];
 
-// --- Outils d'ÉCRITURE (mode assisté uniquement) : créent des BROUILLONS ------
+// --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
 // Aucun n'entre au grand livre : l'humain émet/comptabilise dans l'onglet dédié.
 
-const WRITE_TOOLS = [
+const DRAFT_TOOLS = [
   {
     name: 'preparer_facture_vente',
     description: 'Prépare une facture de VENTE en BROUILLON (à émettre ensuite par l\'humain dans l\'onglet Facturation). N\'a aucun effet comptable tant qu\'elle n\'est pas émise.',
@@ -160,7 +170,24 @@ const WRITE_TOOLS = [
   },
 ];
 
-const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name));
+const DRAFT_TOOL_NAMES = new Set(DRAFT_TOOLS.map((t) => t.name));
+
+// --- Outils RÉVERSIBLES (palier assist_plus uniquement) ----------------------
+// Mutations hors grand livre, annulables (lettrage) ou sans effet comptable (relance).
+
+const REVERSIBLE_TOOLS = [
+  {
+    name: 'lettrer_automatiquement',
+    description: 'Rapproche automatiquement (lettrage), par tiers, les factures et règlements qui s\'annulent sur les comptes de tiers. Réversible, sans effet sur le grand livre. Optionnel : limiter à un compte (ex. 411 clients, 401 fournisseurs).',
+    input_schema: { type: 'object', properties: { compte: { type: 'string', description: 'Compte de tiers à lettrer (optionnel : tous si omis)' } }, required: [] },
+  },
+  {
+    name: 'preparer_relance_client',
+    description: 'Produit le texte d\'une lettre de relance pour un client en retard de paiement (postes ouverts, montant, niveau suggéré). N\'envoie rien : l\'humain décide.',
+    input_schema: { type: 'object', properties: { client: { type: 'string', description: 'Nom du client à relancer' } }, required: ['client'] },
+  },
+];
+const REVERSIBLE_TOOL_NAMES = new Set(REVERSIBLE_TOOLS.map((t) => t.name));
 
 // Tronque une sortie volumineuse pour maîtriser les tokens.
 function cap<T>(rows: T[], n = 60): T[] { return Array.isArray(rows) && rows.length > n ? rows.slice(0, n) : rows; }
@@ -169,9 +196,12 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
   const fy = fyId ?? undefined;
   const today = new Date().toISOString().slice(0, 10);
 
-  // Garde-fou serveur : les outils d'écriture n'existent qu'en mode assisté.
-  if (WRITE_TOOL_NAMES.has(name) && mode !== 'assist') {
+  // Gardes-fous serveur par palier.
+  if (DRAFT_TOOL_NAMES.has(name) && mode === 'readonly') {
     return { error: 'Mode lecture seule : la préparation de brouillons est désactivée pour ce dossier.' };
+  }
+  if (REVERSIBLE_TOOL_NAMES.has(name) && mode !== 'assist_plus') {
+    return { error: 'Action réversible non autorisée : activez le mode « assisté + actions » (réservé aux administrateurs).' };
   }
 
   switch (name) {
@@ -204,6 +234,20 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
         lines: lignes.map((l: any) => ({ description: l.description, accountCode: l.compte || '601', amountHt: Number(l.montant_ht) || 0, vatRate: l.taux_tva != null ? Number(l.taux_tva) : 0.18, analyticAxis: l.section || undefined })),
       });
       return { statut: 'brouillon_cree', type: 'facture_achat', brouillon_id: id, a_valider_dans: 'onglet Achats (bouton Comptabiliser)' };
+    }
+
+    // --- Actions RÉVERSIBLES (palier assist_plus) ---
+    case 'lettrer_automatiquement': {
+      const r = await lettrage.autoLettrage(c, dossierId, input?.compte ? String(input.compte) : undefined);
+      return { statut: 'lettrage_effectue', lettrages: r.groups, lignes_rapprochees: r.linesLettered, reversible: true, note: 'Rapprochement réversible (délettrable dans l\'onglet Tiers), sans effet sur le grand livre.' };
+    }
+    case 'preparer_relance_client': {
+      const nom = String(input?.client ?? '').trim().toLowerCase();
+      const overdue = await relances.overdueClients(c, dossierId);
+      const match = overdue.find((o: any) => String(o.name ?? '').toLowerCase().includes(nom));
+      if (!match) return { error: `Aucun client en retard correspondant à « ${input?.client} ».`, clients_en_retard: overdue.map((o: any) => o.name) };
+      const letter = await relances.relanceLetter(c, dossierId, match.counterpartyId);
+      return { statut: 'relance_preparee', client: match.name, montant_du: letter.total, niveau_suggere: letter.suggestedLevel, postes_ouverts: letter.open, note: 'Lettre préparée — non envoyée. L\'humain décide de l\'envoi.' };
     }
 
     default: return { error: `Outil inconnu : ${name}` };
@@ -240,11 +284,14 @@ export async function runToolForTest(c: Client, dossierId: string, name: string,
 export async function runAgent(c: Client, dossierId: string, history: AgentMessage[]): Promise<AgentResult> {
   if (!agentEnabled()) throw new Error('Assistant IA non configuré (ANTHROPIC_API_KEY absent).');
   const { text: ctx, fyId, mode } = await dossierContext(c, dossierId);
-  const tools = mode === 'assist' ? [...READ_TOOLS, ...WRITE_TOOLS] : READ_TOOLS;
+  const tools = mode === 'assist_plus' ? [...READ_TOOLS, ...DRAFT_TOOLS, ...REVERSIBLE_TOOLS]
+    : mode === 'assist' ? [...READ_TOOLS, ...DRAFT_TOOLS]
+    : READ_TOOLS;
+  const note = mode === 'assist_plus' ? ASSIST_NOTE + PLUS_NOTE : mode === 'assist' ? ASSIST_NOTE : '';
 
-  // system : garde-fous statiques (mis en cache) + note de mode + contexte dossier.
+  // system : garde-fous statiques (mis en cache) + note de palier + contexte dossier.
   const system = [
-    { type: 'text', text: SYSTEM_GUARDRAILS + (mode === 'assist' ? ASSIST_NOTE : ''), cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: SYSTEM_GUARDRAILS + note, cache_control: { type: 'ephemeral' } },
     { type: 'text', text: ctx },
   ];
 

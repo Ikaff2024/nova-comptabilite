@@ -255,10 +255,11 @@ export interface AnalyticMonthly {
   monthTotals: number[];
 }
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
-export type AgentMode = 'readonly' | 'assist';
+export type AgentMode = 'readonly' | 'assist' | 'assist_plus';
 export interface AgentResult { reply: string; toolCalls: { name: string; input: any }[]; model: string; mode: AgentMode }
 export interface AgentStatus { enabled: boolean; mode: AgentMode; canToggle: boolean }
-export const AGENT_WRITE_TOOLS = new Set(['preparer_facture_vente', 'preparer_facture_achat']);
+export const AGENT_WRITE_TOOLS = new Set(['preparer_facture_vente', 'preparer_facture_achat', 'lettrer_automatiquement', 'preparer_relance_client']);
+export const AGENT_MODE_LABELS: Record<AgentMode, string> = { readonly: 'Lecture seule', assist: 'Assisté (brouillons)', assist_plus: 'Assisté + actions' };
 export interface ProposedLine {
   accountCode: string; accountLabel?: string; debit?: number; credit?: number; label?: string;
 }
