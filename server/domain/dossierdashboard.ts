@@ -101,7 +101,7 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
 
   // --- Immobilisations (dotations en attente) ---
   const assets = await listAssets(c, dossierId);
-  const assetsPending = assets.filter((a: any) => a.pendingYears.length > 0).length;
+  const assetsPending = assets.filter((a: any) => (a.pending ?? 0) > 0).length;
   const vncTotal = assets.reduce((s: number, a: any) => s + a.vnc, 0);
 
   // --- Dernières écritures ---

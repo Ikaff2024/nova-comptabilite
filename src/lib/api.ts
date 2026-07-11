@@ -254,6 +254,8 @@ export interface AnalyticMonthly {
   sections: { code: string; label: string; monthly: number[]; total: number }[];
   monthTotals: number[];
 }
+export interface AgentMessage { role: 'user' | 'assistant'; content: string }
+export interface AgentResult { reply: string; toolCalls: { name: string; input: any }[]; model: string }
 export interface ProposedLine {
   accountCode: string; accountLabel?: string; debit?: number; credit?: number; label?: string;
 }
@@ -475,6 +477,8 @@ export const api = {
   analyticReport: (dossierId: string, fiscalYearId?: string) => req<AnalyticReport>(`/api/dossiers/${dossierId}/analytic/report${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   analyticDetail: (dossierId: string, section: string, fiscalYearId?: string) => req<AnalyticDetail>(`/api/dossiers/${dossierId}/analytic/detail?section=${encodeURIComponent(section)}${fiscalYearId ? `&fiscalYearId=${fiscalYearId}` : ''}`),
   analyticMonthly: (dossierId: string, fiscalYearId?: string) => req<AnalyticMonthly>(`/api/dossiers/${dossierId}/analytic/monthly${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  agentStatus: (dossierId: string) => req<{ enabled: boolean }>(`/api/dossiers/${dossierId}/agent/status`),
+  agentChat: (dossierId: string, messages: AgentMessage[]) => req<AgentResult>(`/api/dossiers/${dossierId}/agent/chat`, { method: 'POST', body: JSON.stringify({ messages }) }),
 };
 
 export const OHADA_COUNTRIES: { code: string; name: string }[] = [

@@ -5,6 +5,7 @@ import * as acc from './domain/accounting.js';
 import * as users from './domain/users.js';
 import { hashPassword, verifyPassword, issueToken, verifyToken, generateTotpSecret, totpUri, verifyTotp } from './auth.js';
 import { extractDocument, aiProvider } from './ai/provider.js';
+import * as agent from './ai/agent.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
@@ -926,6 +927,23 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => analytic.analyticMonthly(c, req.params.id, fy)));
+  }));
+
+  // --- Assistant comptable agentique (lecture seule) -------------------------
+  app.get('/api/dossiers/:id/agent/status', h(async (req, res) => {
+    requireUser(req);
+    res.json({ enabled: agent.agentEnabled() });
+  }));
+  app.post('/api/dossiers/:id/agent/chat', h(async (req, res) => {
+    const userId = requireUser(req);
+    const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    if (messages.length === 0) { const e: any = new Error('messages requis'); e.status = 400; throw e; }
+    const out = await withUser(userId, (c) => agent.runAgent(c, req.params.id, messages));
+    await withUser(userId, (c) => audit.recordAudit(c, {
+      dossierId: req.params.id, action: 'agent.query', entity: 'agent',
+      detail: { question: String(messages[messages.length - 1]?.content ?? '').slice(0, 200), tools: out.toolCalls.map((t) => t.name) },
+    }));
+    res.json(out);
   }));
 
   app.get('/api/dossiers/:id/fec', h(async (req, res) => {
