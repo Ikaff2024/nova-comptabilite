@@ -5,6 +5,53 @@ import { cn } from '../lib/utils';
 
 type Turn = AgentMessage & { tools?: string[] };
 
+// --- Rendu markdown léger (gras, titres, listes, tableaux) — sans dépendance ---
+function inlineMd(s: string): React.ReactNode[] {
+  return s.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
+    p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : <React.Fragment key={i}>{p}</React.Fragment>);
+}
+
+function RichText({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const blocks: React.ReactNode[] = [];
+  let i = 0;
+  const isTable = (l: string) => l.trim().startsWith('|');
+  const isBullet = (l: string) => /^\s*[-•]\s+/.test(l);
+  const isHead = (l: string) => /^#{1,4}\s/.test(l);
+  while (i < lines.length) {
+    const line = lines[i];
+    if (isTable(line)) {
+      const tbl: string[] = [];
+      while (i < lines.length && isTable(lines[i])) { tbl.push(lines[i]); i++; }
+      const rows = tbl.map((r) => r.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+      const hasHeader = rows[1] && rows[1].every((c) => /^:?-{2,}:?$/.test(c));
+      const header = hasHeader ? rows[0] : null;
+      const body = rows.slice(hasHeader ? 2 : 0);
+      blocks.push(
+        <div key={blocks.length} className="my-2 overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            {header && <thead><tr>{header.map((c, j) => <th key={j} className="border border-white/10 px-2 py-1 text-left font-semibold text-zinc-200">{inlineMd(c)}</th>)}</tr></thead>}
+            <tbody>{body.map((r, ri) => <tr key={ri}>{r.map((c, ci) => <td key={ci} className="border border-white/10 px-2 py-1 text-zinc-300">{inlineMd(c)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+    if (isBullet(line)) {
+      const items: string[] = [];
+      while (i < lines.length && isBullet(lines[i])) { items.push(lines[i].replace(/^\s*[-•]\s+/, '')); i++; }
+      blocks.push(<ul key={blocks.length} className="my-1 list-disc space-y-0.5 pl-5">{items.map((it, ii) => <li key={ii}>{inlineMd(it)}</li>)}</ul>);
+      continue;
+    }
+    if (isHead(line)) { blocks.push(<div key={blocks.length} className="mb-0.5 mt-2 font-semibold text-zinc-100">{inlineMd(line.replace(/^#{1,4}\s/, ''))}</div>); i++; continue; }
+    if (line.trim() === '') { i++; continue; }
+    const para: string[] = [];
+    while (i < lines.length && lines[i].trim() !== '' && !isTable(lines[i]) && !isBullet(lines[i]) && !isHead(lines[i])) { para.push(lines[i]); i++; }
+    blocks.push(<p key={blocks.length}>{para.map((p, pi) => <React.Fragment key={pi}>{inlineMd(p)}{pi < para.length - 1 ? <br /> : null}</React.Fragment>)}</p>);
+  }
+  return <div className="space-y-1">{blocks}</div>;
+}
+
 const SUGGESTIONS = [
   'Quelle boutique est la plus rentable ce mois-ci ?',
   'Qui me doit de l\'argent depuis plus de 90 jours ?',
@@ -118,7 +165,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
                   })}
                 </div>
               )}
-              <div className={cn('whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm', t.role === 'user' ? 'bg-emerald-500 text-zinc-950' : 'bg-zinc-900/70 text-zinc-200')}>{t.content}</div>
+              <div className={cn('rounded-2xl px-3.5 py-2.5 text-sm', t.role === 'user' ? 'whitespace-pre-wrap bg-emerald-500 text-zinc-950' : 'bg-zinc-900/70 text-zinc-200')}>{t.role === 'assistant' ? <RichText text={t.content} /> : t.content}</div>
             </div>
             {t.role === 'user' && <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10"><User className="h-4 w-4 text-zinc-300" /></div>}
           </div>
