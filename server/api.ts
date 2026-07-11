@@ -28,6 +28,7 @@ import { creditScore } from './domain/scoring.js';
 import * as financing from './domain/financing.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
+import * as portal from './domain/portal.js';
 import * as relances from './domain/relances.js';
 
 // ============================================================================
@@ -58,6 +59,30 @@ export function createApi() {
     if (!req.userId) { const e: any = new Error('Authentification requise'); e.status = 401; throw e; }
     return req.userId as string;
   };
+
+  // --- Garde-fou de capacités du portail client ------------------------------
+  // Un utilisateur au rôle restreint ('client'/'lecture') sur un dossier ne peut
+  // que CONSULTER (GET, déjà borné à son dossier par la RLS) et DÉPOSER une pièce
+  // (POST /documents). Toute autre écriture est refusée (allowlist, deny par
+  // défaut). Le rôle est calculé côté base (dossier_role_for) à chaque requête.
+  // Seul un POST /documents (dépôt de pièce) est autorisé en écriture pour un
+  // rôle restreint ; tout le reste des écritures est refusé.
+  const clientCanWrite = (method: string, subPath: string): boolean =>
+    method === 'POST' && subPath === '/documents';
+  app.use('/api/dossiers/:id', (req: any, res: Response, next: NextFunction) => {
+    if (!req.userId) return next();                                   // requireUser renverra 401
+    if (req.method === 'GET' || req.method === 'HEAD') return next(); // lecture bornée par la RLS
+    const dossierId = req.params.id;
+    if (!dossierId) return next();
+    withUser(req.userId, (c) => portal.myDossierRole(c, dossierId))
+      .then((role) => {
+        if (portal.isRestricted(role) && !clientCanWrite(req.method, req.path)) {
+          return res.status(403).json({ error: 'Accès restreint : votre profil client ne permet pas cette action.', code: 'CLIENT_FORBIDDEN' });
+        }
+        next();
+      })
+      .catch(next);
+  });
 
   app.get('/api/health', async (_req, res) => {
     try { await pool.query('select 1'); res.json({ ok: true, db: true, service: 'nova-comptabilite-api' }); }
@@ -398,7 +423,32 @@ export function createApi() {
     res.json(await withUser(userId, (c) => importbalance.commitBalanceImport(c, req.params.id, parsed, { fiscalYearId, date, description, createMissing: !!createMissing })));
   }));
 
+  // --- Portail client : rôle effectif + gestion des accès --------------------
+  app.get('/api/dossiers/:id/my-role', h(async (req, res) => {
+    const userId = requireUser(req);
+    const role = await withUser(userId, (c) => portal.myDossierRole(c, req.params.id));
+    res.json({ role });
+  }));
+  app.get('/api/dossiers/:id/clients', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => portal.listClients(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/clients', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { email } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => portal.grantClient(c, req.params.id, email)));
+  }));
+  app.delete('/api/dossiers/:id/clients/:uid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => portal.revokeClient(c, req.params.id, req.params.uid));
+    res.status(204).end();
+  }));
+
   // --- Pièces justificatives (conservation / GED) ----------------------------
+  app.get('/api/dossiers/:id/documents', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => documents.listDocuments(c, req.params.id)));
+  }));
   app.post('/api/dossiers/:id/documents', h(async (req, res) => {
     const userId = requireUser(req);
     const { mimeType, dataBase64, filename, entryId } = req.body ?? {};

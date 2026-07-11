@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -15,6 +15,7 @@ import BankReconciliation from './BankReconciliation';
 import Journaux from './Journaux';
 import Facturation from './Facturation';
 import Achats from './Achats';
+import ClientAccess from './ClientAccess';
 import Fiscalite from './Fiscalite';
 import ImportBalance from './ImportBalance';
 import Immobilisations from './Immobilisations';
@@ -27,7 +28,7 @@ import Revision from './Revision';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'facturation' | 'achats' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'plan' | 'regles' | 'import' | 'audit';
+type Tab = 'synthese' | 'facturation' | 'achats' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -75,6 +76,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'plan', label: 'Plan comptable', icon: BookOpen },
     { id: 'import', label: 'Import balance', icon: Upload },
     { id: 'audit', label: 'Audit', icon: History },
+    { id: 'portail', label: 'Portail client', icon: UserRound },
   ];
 
   return (
@@ -144,6 +146,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'import' && <ImportBalance dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'recurrences' && <Recurring dossierId={dossier.id} currency={dossier.base_currency} journals={journals} />}
             {tab === 'audit' && <AuditTrail dossierId={dossier.id} />}
+            {tab === 'portail' && <ClientAccess dossierId={dossier.id} />}
           </motion.div>
         </>
       )}

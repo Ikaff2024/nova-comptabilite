@@ -6,6 +6,7 @@ import Auth from './components/Auth';
 import Onboarding from './components/Onboarding';
 import Dossiers from './components/Dossiers';
 import DossierView from './components/DossierView';
+import ClientPortal from './components/ClientPortal';
 import CabinetDashboard from './components/CabinetDashboard';
 import CabinetSettings from './components/CabinetSettings';
 import WelcomeGuide from './components/WelcomeGuide';
@@ -133,7 +134,9 @@ export default function App() {
       <main className="flex-1 overflow-y-auto overflow-x-hidden p-8 lg:p-12">
         <div className="mx-auto max-w-7xl">
           {selected
-            ? <DossierView dossier={selected} onBack={() => setSelected(null)} />
+            ? (selected.role === 'client' || selected.role === 'lecture')
+              ? <ClientPortal dossier={selected} onBack={() => setSelected(null)} />
+              : <DossierView dossier={selected} onBack={() => setSelected(null)} />
             : nav === 'dashboard'
               ? <CabinetDashboard refresh={dashKey} cabinetName={cabinet.name} onOpen={openDossierById} onDemo={onDemoCreated} />
               : nav === 'cabinet'

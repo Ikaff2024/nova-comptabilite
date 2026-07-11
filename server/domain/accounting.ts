@@ -79,7 +79,9 @@ export async function listCabinets(c: Client): Promise<any[]> {
 
 export async function listDossiers(c: Client): Promise<any[]> {
   const { rows } = await c.query(
-    'select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, is_active from dossiers order by raison_sociale',
+    `select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, is_active,
+            dossier_role_for(id) as role
+       from dossiers order by raison_sociale`,
   );
   return rows;
 }
@@ -533,6 +535,19 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   // Cycle achats fournisseurs : factures de démo (statuts variés + balance âgée).
   const { seedDemoPurchases } = await import('./purchases.js');
   await seedDemoPurchases(c, id);
+
+  // Portail client : compte client de démonstration (idempotent) + accès à CE
+  // dossier. Permet de se connecter côté « espace client ».
+  //   Identifiants démo : client-demo@nova.ci / ClientDemo2026
+  try {
+    const clientEmail = 'client-demo@nova.ci';
+    const { rows: ex } = await c.query('select id from get_user_for_login($1)', [clientEmail]);
+    if (!ex[0]) {
+      const { hashPassword } = await import('../auth.js');
+      await c.query('select register_user($1,$2,$3)', [clientEmail, hashPassword('ClientDemo2026'), 'Client Démo (Éburnéa)']);
+    }
+    await c.query('select dossier_client_grant($1,$2)', [id, clientEmail]);
+  } catch { /* seed du portail best-effort */ }
 
   return { dossierId: id };
 }

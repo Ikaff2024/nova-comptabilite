@@ -44,6 +44,17 @@ export async function saveDocument(
   return { id, url: `/api/dossiers/${dossierId}/documents/${id}`, storage: mode, size: buf.length };
 }
 
+// Liste des pièces d'un dossier (métadonnées, sans le binaire).
+export async function listDocuments(c: Client, dossierId: string): Promise<any[]> {
+  const { rows } = await c.query(
+    `select id, filename, mime_type, size_bytes, entry_id, to_char(created_at,'YYYY-MM-DD HH24:MI') as created_at
+       from documents where dossier_id=$1 order by created_at desc`, [dossierId]);
+  return rows.map((r: any) => ({
+    id: r.id, filename: r.filename, mimeType: r.mime_type, size: Number(r.size_bytes),
+    entryId: r.entry_id, createdAt: r.created_at, url: `/api/dossiers/${dossierId}/documents/${r.id}`,
+  }));
+}
+
 export async function getDocument(
   c: Client, dossierId: string, id: string,
 ): Promise<{ mime: string; filename: string | null; buffer: Buffer }> {

@@ -53,7 +53,10 @@ export interface Cabinet { id: string; name: string; country: string; base_curre
 export interface Dossier {
   id: string; cabinet_id: string; raison_sociale: string; country: string;
   base_currency: string; accounting_system: string; is_active: boolean;
+  role?: string | null; // rôle du demandeur : 'staff' | 'client' | 'lecture' | …
 }
+export interface DossierClient { userId: string; email: string; name: string | null; role: string; createdAt: string; }
+export interface DossierDocument { id: string; filename: string | null; mimeType: string; size: number; entryId: string | null; createdAt: string; url: string; }
 export interface Account {
   id: string; account_code: string; label: string; class_no: number;
   account_type: string; normal_side: string; is_collective: boolean; is_postable: boolean; is_active?: boolean;
@@ -302,6 +305,12 @@ export const api = {
   }) => req<{ id: string }>(`/api/dossiers/${dossierId}/entries`, { method: 'POST', body: JSON.stringify(body) }),
   uploadDocument: (dossierId: string, body: { mimeType: string; dataBase64: string; filename?: string; entryId?: string }) =>
     req<{ id: string; url: string; storage: string; size: number }>(`/api/dossiers/${dossierId}/documents`, { method: 'POST', body: JSON.stringify(body) }),
+  documents: (dossierId: string) => req<DossierDocument[]>(`/api/dossiers/${dossierId}/documents`),
+  // --- Portail client ---
+  myRole: (dossierId: string) => req<{ role: string | null }>(`/api/dossiers/${dossierId}/my-role`),
+  dossierClients: (dossierId: string) => req<DossierClient[]>(`/api/dossiers/${dossierId}/clients`),
+  grantClient: (dossierId: string, email: string) => req<{ userId: string }>(`/api/dossiers/${dossierId}/clients`, { method: 'POST', body: JSON.stringify({ email }) }),
+  revokeClient: (dossierId: string, uid: string) => req<void>(`/api/dossiers/${dossierId}/clients/${uid}`, { method: 'DELETE' }),
   capture: (dossierId: string, mimeType: string, dataBase64: string) =>
     req<{ provider: string; proposal: CaptureProposal }>(`/api/dossiers/${dossierId}/capture`, {
       method: 'POST', body: JSON.stringify({ mimeType, dataBase64 }),
