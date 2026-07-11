@@ -10,10 +10,15 @@ type Turn = AgentMessage & { tools?: string[] };
 const SpeechRec: any = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
 const STT_OK = !!SpeechRec;
 const TTS_OK = typeof window !== 'undefined' && 'speechSynthesis' in window;
-// Rend le texte plus naturel à lire (retire markdown, transforme les tableaux en énoncés).
+// Rend le texte plus naturel à lire : retire le markdown, recolle les
+// séparateurs de milliers (1 200 000 -> 1200000, lu « un million deux cent
+// mille »), et remplace devise/symboles par des mots.
 const forSpeech = (s: string) => s
   .replace(/\*\*/g, '').replace(/^#{1,4}\s+/gm, '').replace(/^\s*[-•]\s+/gm, '')
-  .replace(/\|/g, ', ').replace(/[_`>]/g, '').replace(/\n{2,}/g, '. ').replace(/[ \t]{2,}/g, ' ').trim();
+  .replace(/\|/g, ', ').replace(/[_`>]/g, '')
+  .replace(/\d{1,3}(?:[   ]\d{3})+/g, (m) => m.replace(/[   ]/g, '')) // milliers
+  .replace(/\bX[AO]F\b/g, ' francs CFA').replace(/%/g, ' pour cent')
+  .replace(/\n{2,}/g, '. ').replace(/[ \t]{2,}/g, ' ').trim();
 
 // --- Rendu markdown léger (gras, titres, listes, tableaux) — sans dépendance ---
 function inlineMd(s: string): React.ReactNode[] {
