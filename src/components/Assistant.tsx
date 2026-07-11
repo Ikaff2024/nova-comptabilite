@@ -1,9 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine } from 'lucide-react';
+import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX } from 'lucide-react';
 import { api, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
 import { cn } from '../lib/utils';
 
 type Turn = AgentMessage & { tools?: string[] };
+
+// --- Vocal : dictée (STT) + lecture (TTS) via l'API navigateur, sans dépendance ---
+const SpeechRec: any = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
+const STT_OK = !!SpeechRec;
+const TTS_OK = typeof window !== 'undefined' && 'speechSynthesis' in window;
+// Rend le texte plus naturel à lire (retire markdown, transforme les tableaux en énoncés).
+const forSpeech = (s: string) => s
+  .replace(/\*\*/g, '').replace(/^#{1,4}\s+/gm, '').replace(/^\s*[-•]\s+/gm, '')
+  .replace(/\|/g, ', ').replace(/[_`>]/g, '').replace(/\n{2,}/g, '. ').replace(/[ \t]{2,}/g, ' ').trim();
 
 // --- Rendu markdown léger (gras, titres, listes, tableaux) — sans dépendance ---
 function inlineMd(s: string): React.ReactNode[] {
@@ -78,8 +87,36 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   const enabled = status?.enabled ?? null;
   const mode: AgentMode = status?.mode ?? 'readonly';
 
+  // Vocal
+  const [listening, setListening] = useState(false);
+  const [speakOn, setSpeakOn] = useState(false);
+  const recRef = useRef<any>(null);
+
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [turns, loading]);
+  useEffect(() => () => { try { recRef.current?.stop(); } catch { /* ignore */ } if (TTS_OK) window.speechSynthesis.cancel(); }, []);
+
+  const speak = (text: string) => {
+    if (!TTS_OK) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(forSpeech(text));
+    u.lang = 'fr-FR'; u.rate = 1.03;
+    window.speechSynthesis.speak(u);
+  };
+  const toggleSpeak = () => setSpeakOn((s) => { if (s && TTS_OK) window.speechSynthesis.cancel(); return !s; });
+
+  const toggleMic = () => {
+    if (!STT_OK) return;
+    if (listening) { try { recRef.current?.stop(); } catch { /* ignore */ } return; }
+    const rec = new SpeechRec();
+    rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    rec.onresult = (e: any) => setInput(Array.from(e.results).map((r: any) => r[0].transcript).join(''));
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recRef.current = rec;
+    setInput(''); setError(null);
+    try { rec.start(); setListening(true); } catch { setListening(false); }
+  };
 
   const changeMode = async (next: AgentMode) => {
     if (!status?.canToggle || next === mode) return;
@@ -91,12 +128,15 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     const q = question.trim();
     if (!q || loading) return;
     setError(null);
+    try { recRef.current?.stop(); } catch { /* ignore */ }
+    if (TTS_OK) window.speechSynthesis.cancel();
     const history: AgentMessage[] = [...turns.map((t) => ({ role: t.role, content: t.content })), { role: 'user', content: q }];
     setTurns((ts) => [...ts, { role: 'user', content: q }]);
     setInput(''); setLoading(true);
     try {
       const r = await api.agentChat(dossierId, history);
       setTurns((ts) => [...ts, { role: 'assistant', content: r.reply, tools: r.toolCalls.map((c) => c.name) }]);
+      if (speakOn) speak(r.reply);
     } catch (e: any) {
       setError(e.message);
       setTurns((ts) => [...ts, { role: 'assistant', content: 'Désolé, je n\'ai pas pu répondre. ' + (e.message ?? '') }]);
@@ -121,6 +161,12 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           <div className="text-xs text-zinc-500">Pilotez {dossierName} en langage naturel</div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {TTS_OK && (
+            <button onClick={toggleSpeak} title={speakOn ? 'Couper la lecture vocale' : 'Lire les réponses à voix haute'}
+              className={cn('flex h-7 w-7 items-center justify-center rounded-lg border', speakOn ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200')}>
+              {speakOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </button>
+          )}
           {status?.canToggle ? (
             <select value={mode} onChange={(e) => changeMode(e.target.value as AgentMode)} title="Niveau de pouvoir de l'assistant (admin)"
               className={cn('rounded-lg border px-2.5 py-1 text-xs outline-none', mode === 'readonly' ? 'border-white/10 bg-white/5 text-zinc-300' : 'border-amber-500/30 bg-amber-500/10 text-amber-200')}>
@@ -182,8 +228,14 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
 
       <form onSubmit={(e) => { e.preventDefault(); ask(input); }} className="flex items-center gap-2 border-t border-white/10 p-3">
         <input value={input} onChange={(e) => setInput(e.target.value)} disabled={enabled === null || loading}
-          placeholder="Posez votre question…"
+          placeholder={listening ? 'Parlez… je vous écoute' : 'Posez votre question…'}
           className="flex-1 rounded-xl border border-white/10 bg-zinc-900/60 px-4 py-2.5 text-sm outline-none focus:border-emerald-500/50 disabled:opacity-50" />
+        {STT_OK && (
+          <button type="button" onClick={toggleMic} disabled={loading} title={listening ? 'Arrêter la dictée' : 'Dicter votre question'}
+            className={cn('flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-40', listening ? 'animate-pulse border-rose-500/50 bg-rose-500/20 text-rose-300' : 'border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10')}>
+            <Mic className="h-4 w-4" />
+          </button>
+        )}
         <button type="submit" disabled={!input.trim() || loading} className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </button>
