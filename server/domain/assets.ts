@@ -25,6 +25,9 @@ export interface CreateAssetInput {
   depreciationMethod?: DepreciationMethod;
   counterpartyId?: string;
   notes?: string;
+  // Reprise d'antériorité : cumul déjà amorti avant la bascule + date de reprise.
+  repriseCumul?: number;
+  repriseDate?: string;
 }
 
 // Coefficient dégressif selon la durée d'utilité (usage OHADA courant).
@@ -78,9 +81,45 @@ function firstFraction(commissioning: string, period: DepreciationPeriod): numbe
 export function computeSchedule(a: {
   amount: number; residualValue: number; durationYears: number; commissioningDate: string;
   depreciationPeriod?: DepreciationPeriod; depreciationMethod?: DepreciationMethod;
+  repriseCumul?: number; repriseDate?: string;
 }): ScheduleRow[] {
   const base = round2(a.amount - a.residualValue);
   if (base <= 0 || a.durationYears <= 0) return [];
+
+  // --- Reprise d'antériorité : n'amortit que le FUTUR, à partir du cumul repris.
+  // Les dotations passées ont déjà été pratiquées (cumul repris via l'à-nouveau) ;
+  // on répartit le reliquat (base - cumul repris) linéairement sur les périodes
+  // postérieures à la date de reprise, sans re-comptabiliser le passé.
+  if (a.repriseCumul && a.repriseCumul > 0 && a.repriseDate) {
+    const period: DepreciationPeriod = a.depreciationPeriod === 'monthly' ? 'monthly' : 'annual';
+    const perStep = period === 'monthly' ? base / (a.durationYears * 12) : base / a.durationYears;
+    const rate = round2(1 / a.durationYears * 100) / 100;
+    const rows: ScheduleRow[] = [];
+    let cumul = round2(Math.min(a.repriseCumul, base));
+    const rd = new Date(a.repriseDate);
+    let year = rd.getUTCFullYear();
+    let mi = rd.getUTCMonth();
+    // Positionne sur la 1re période dont la fin est STRICTEMENT après la date de reprise.
+    if (period === 'annual') {
+      if (a.repriseDate >= `${year}-12-31`) year++;
+    } else {
+      if (a.repriseDate >= `${year}-${pad2(mi + 1)}-${pad2(lastDay(year, mi))}`) { mi++; if (mi > 11) { mi = 0; year++; } }
+    }
+    const maxRows = period === 'monthly' ? 1000 : 100;
+    while (cumul < base - 0.005 && rows.length < maxRows) {
+      let dot = round2(perStep);
+      if (cumul + dot > base) dot = round2(base - cumul);
+      cumul = round2(cumul + dot);
+      if (period === 'monthly') {
+        rows.push({ periodDate: `${year}-${pad2(mi + 1)}-${pad2(lastDay(year, mi))}`, label: `${year}-${pad2(mi + 1)}`, rate, dotation: dot, cumul, vnc: round2(a.amount - cumul) });
+        mi++; if (mi > 11) { mi = 0; year++; }
+      } else {
+        rows.push({ periodDate: `${year}-12-31`, label: String(year), rate, dotation: dot, cumul, vnc: round2(a.amount - cumul) });
+        year++;
+      }
+    }
+    return rows;
+  }
 
   // --- Dégressif (annuel) : taux dégressif, bascule en linéaire quand avantageux ---
   if (a.depreciationMethod === 'degressive') {
@@ -152,13 +191,17 @@ export async function createAsset(c: Client, dossierId: string, input: CreateAss
   await assertAccountExists(c, dossierId, expense, 'dotation');
 
   const method: DepreciationMethod = input.depreciationMethod === 'degressive' ? 'degressive' : 'linear';
+  const base = round2(input.amount - (input.residualValue ?? 0));
+  const repriseCumul = round2(Math.max(0, input.repriseCumul ?? 0));
+  if (repriseCumul > 0 && !input.repriseDate) throw new Error('Date de reprise requise lorsqu\'un cumul amorti est indiqué.');
+  if (repriseCumul > base + 0.01) throw new Error(`Cumul amorti repris (${repriseCumul}) supérieur à la base amortissable (${base}).`);
   const { rows } = await c.query(
     `insert into fixed_assets(dossier_id, label, asset_account_code, amort_account_code, expense_account_code,
-        acquisition_date, commissioning_date, amount, residual_value, duration_years, depreciation_period, method, counterparty_id, notes, created_by)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`,
+        acquisition_date, commissioning_date, amount, residual_value, duration_years, depreciation_period, method, counterparty_id, notes, created_by, reprise_cumul, reprise_date)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) returning id`,
     [dossierId, input.label.trim(), input.assetAccountCode, amort, expense,
      input.acquisitionDate, commissioning, input.amount, input.residualValue ?? 0, input.durationYears, period, method,
-     input.counterpartyId ?? null, input.notes ?? null, userId ?? null],
+     input.counterpartyId ?? null, input.notes ?? null, userId ?? null, repriseCumul, repriseCumul > 0 ? input.repriseDate : null],
   );
   return { id: rows[0].id };
 }
@@ -174,6 +217,7 @@ function scheduleFor(a: any): ScheduleRow[] {
   return computeSchedule({
     amount: Number(a.amount), residualValue: Number(a.residual_value), durationYears: Number(a.duration_years),
     commissioningDate: a.commissioning_date, depreciationPeriod: a.depreciation_period, depreciationMethod: a.method,
+    repriseCumul: a.reprise_cumul != null ? Number(a.reprise_cumul) : 0, repriseDate: a.reprise_date ? isoDate(a.reprise_date) : undefined,
   });
 }
 const isoDate = (d: any) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
@@ -196,9 +240,11 @@ export async function listAssets(c: Client, dossierId: string) {
 
   return assets.map((a: any) => {
     const amount = Number(a.amount), residual = Number(a.residual_value), duration = Number(a.duration_years);
+    const repris = round2(Number(a.reprise_cumul ?? 0));
     const schedule = scheduleFor(a);
     const posted = postedByAsset.get(a.id) ?? new Map<string, number>();
-    const cumulPosted = round2([...posted.values()].reduce((s, v) => s + v, 0));
+    // Le cumul repris (amortissements antérieurs à la bascule) compte comme déjà pratiqué.
+    const cumulPosted = round2(repris + [...posted.values()].reduce((s, v) => s + v, 0));
     const pending = schedule.filter((r) => r.periodDate <= today && !posted.has(r.periodDate)).length;
     return {
       id: a.id, label: a.label,
@@ -206,6 +252,7 @@ export async function listAssets(c: Client, dossierId: string) {
       acquisitionDate: a.acquisition_date, commissioningDate: a.commissioning_date,
       amount, residualValue: residual, durationYears: duration, method: a.method, depreciationPeriod: a.depreciation_period,
       counterpartyName: a.counterparty_name, notes: a.notes, status: a.status,
+      repriseCumul: repris, repriseDate: a.reprise_date ? isoDate(a.reprise_date) : null,
       cumulPosted, vnc: round2(amount - cumulPosted),
       pending: a.status === 'disposed' ? 0 : pending, fullyAmortized: cumulPosted >= round2(amount - residual) - 0.005,
       disposalDate: a.disposal_date, salePrice: a.sale_price != null ? Number(a.sale_price) : null,
@@ -229,7 +276,9 @@ export async function assetDetail(c: Client, dossierId: string, id: string) {
     assetAccountCode: a.asset_account_code, amortAccountCode: a.amort_account_code, expenseAccountCode: a.expense_account_code,
     acquisitionDate: a.acquisition_date, commissioningDate: a.commissioning_date,
     amount: Number(a.amount), residualValue: Number(a.residual_value), durationYears: Number(a.duration_years),
-    method: a.method, depreciationPeriod: a.depreciation_period, notes: a.notes, status: a.status, schedule,
+    method: a.method, depreciationPeriod: a.depreciation_period, notes: a.notes, status: a.status,
+    repriseCumul: round2(Number(a.reprise_cumul ?? 0)), repriseDate: a.reprise_date ? isoDate(a.reprise_date) : null,
+    schedule,
   };
 }
 
@@ -320,7 +369,8 @@ export async function disposeAsset(
   const gross = round2(Number(a.amount));
   const { rows: dr } = await c.query(
     'select coalesce(sum(amount),0) as cumul from fixed_asset_depreciations where dossier_id=$1 and fixed_asset_id=$2', [dossierId, assetId]);
-  const cumul = round2(Number(dr[0].cumul));
+  // Cumul total = amortissements comptabilisés dans Nova + cumul repris (déjà en 28x via l'à-nouveau).
+  const cumul = round2(Number(dr[0].cumul) + Number(a.reprise_cumul ?? 0));
   const vnc = round2(gross - cumul);
   const salePrice = round2(input.salePrice ?? 0);
   const isIncorp = String(a.asset_account_code).startsWith('21');

@@ -538,6 +538,17 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   const { seedDemoPurchases } = await import('./purchases.js');
   await seedDemoPurchases(c, id);
 
+  // Immobilisation reprise (bien acquis avant la bascule, à mi-vie) : illustre la
+  // reprise d'antériorité — cumul déjà amorti + dotations futures uniquement.
+  const { createAsset } = await import('./assets.js');
+  await createAsset(c, id, {
+    label: 'Camionnette de livraison (reprise)', assetAccountCode: '2441',
+    amount: 6000000, residualValue: 0, durationYears: 5,
+    acquisitionDate: '2024-01-01', commissioningDate: '2024-01-01',
+    depreciationPeriod: 'annual', depreciationMethod: 'linear',
+    repriseCumul: 2400000, repriseDate: '2025-12-31',
+  });
+
   // Portail client : compte client de démonstration (idempotent) + accès à CE
   // dossier. Permet de se connecter côté « espace client ».
   //   Identifiants démo : client-demo@nova.ci / ClientDemo2026

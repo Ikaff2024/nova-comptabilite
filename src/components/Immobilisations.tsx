@@ -240,7 +240,13 @@ function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string
   const [commissioningDate, setComm] = useState(today);
   const [depreciationPeriod, setPeriod] = useState<'annual' | 'monthly'>('annual');
   const [depreciationMethod, setMethod] = useState<'linear' | 'degressive'>('linear');
+  const [isReprise, setIsReprise] = useState(false);
+  const [repriseCumul, setRepriseCumul] = useState('');
+  const [repriseDate, setRepriseDate] = useState(today);
   const [saving, setSaving] = useState(false);
+
+  const base = (Number(amount) || 0) - (Number(residualValue) || 0);
+  const vncReprise = base > 0 ? base - (Number(repriseCumul) || 0) : 0;
 
   const submit = async () => {
     setSaving(true); onError('');
@@ -248,6 +254,7 @@ function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string
       await api.createAsset(dossierId, {
         label, assetAccountCode, amount: Number(amount), residualValue: Number(residualValue) || 0,
         durationYears: Number(durationYears), acquisitionDate, commissioningDate, depreciationPeriod, depreciationMethod,
+        ...(isReprise && Number(repriseCumul) > 0 ? { repriseCumul: Number(repriseCumul), repriseDate } : {}),
       });
       onDone();
     } catch (e: any) { onError(e.message); } finally { setSaving(false); }
@@ -266,6 +273,17 @@ function AssetForm({ dossierId, currency, onDone, onError }: { dossierId: string
         <Field label="Date d'acquisition"><input type="date" value={acquisitionDate} onChange={(e) => { setAcq(e.target.value); setComm(e.target.value); }} className={inputCls} /></Field>
         <Field label="Mise en service (début amortissement)"><input type="date" value={commissioningDate} onChange={(e) => setComm(e.target.value)} className={inputCls} /></Field>
       </div>
+      <label className="mt-3 flex items-center gap-2 text-sm text-zinc-300">
+        <input type="checkbox" checked={isReprise} onChange={(e) => setIsReprise(e.target.checked)} className="accent-emerald-500" />
+        Bien déjà en service avant la bascule sur Nova (reprise d'antériorité)
+      </label>
+      {isReprise && (
+        <div className="mt-2 grid gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Amortissements déjà pratiqués (cumul)"><input type="number" value={repriseCumul} onChange={(e) => setRepriseCumul(e.target.value)} placeholder="cumul 28x repris" className={cn(inputCls, 'font-mono')} /></Field>
+          <Field label="Date de reprise (bascule)"><input type="date" value={repriseDate} onChange={(e) => setRepriseDate(e.target.value)} className={inputCls} /></Field>
+          <div className="flex items-end"><p className="text-xs text-zinc-500">VNC à la reprise : <span className="font-mono text-zinc-300">{fmtMoney(vncReprise, currency)}</span>. Les dotations passées ne sont pas re-comptabilisées (déjà dans l'à-nouveau) ; seules les dotations futures seront générées.</p></div>
+        </div>
+      )}
       <p className="mt-2 text-xs text-zinc-500">Les comptes d'amortissement (28x) et de dotation (68x) sont déduits automatiquement du compte d'immobilisation.</p>
       <div className="mt-3 flex justify-end gap-2">
         <button onClick={onDone} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
