@@ -31,6 +31,8 @@ export interface EntryLineInput {
   taxCodeId?: string;
   analyticAxis?: string;
   externalRef?: string;
+  /** Date d'origine de la pièce (reprise d'antériorité) — sert à l'ancienneté. */
+  operationDate?: string;
 }
 
 export interface PostEntryInput {
@@ -319,12 +321,12 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
     }
     await c.query(
       `insert into entry_lines(entry_id, dossier_id, account_id, line_no, amount_debit, amount_credit,
-                               label, payment_channel, counterparty_id, tax_code_id, analytic_axis, external_ref)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                               label, payment_channel, counterparty_id, tax_code_id, analytic_axis, external_ref, operation_date)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         entryId, input.dossierId, acc.id, lineNo++,
         l.debit ?? 0, l.credit ?? 0, l.label ?? null, l.paymentChannel ?? 'none',
-        counterpartyId, l.taxCodeId ?? null, l.analyticAxis ?? null, l.externalRef ?? null,
+        counterpartyId, l.taxCodeId ?? null, l.analyticAxis ?? null, l.externalRef ?? null, l.operationDate ?? null,
       ],
     );
   }

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Wand2, ArrowRight } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type ImportBalanceAnalysis } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type ImportBalanceAnalysis, type TiersOpenItem } from '../lib/api';
 import { cn } from '../lib/utils';
 
 const SAMPLE = `Compte;Libellé;Débit;Crédit
@@ -11,6 +11,12 @@ const SAMPLE = `Compte;Libellé;Débit;Crédit
 521;Banque;2600000;
 571;Caisse;150000;
 120;Report à nouveau;;1150000`;
+
+const SAMPLE_TIERS = `Compte;Tiers;Pièce;Date;Échéance;Débit;Crédit
+411;SARL Ivoire Distrib;FV-2025-0412;2025-11-18;2025-12-18;750000;
+411;Ets Kouamé;FV-2025-0455;2025-12-05;2026-01-05;500000;
+401;Grossiste Adjamé;FA-8821;2025-11-30;2025-12-30;;600000
+401;SODECI;SOD-5567;2025-12-20;2026-01-20;;250000`;
 
 export default function ImportBalance({ dossierId, dossierName, fiscalYears, currency }: {
   dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string;
@@ -26,6 +32,17 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Reprise détaillée des en-cours tiers (optionnel)
+  const [tiersCsv, setTiersCsv] = useState('');
+  const [tiersItems, setTiersItems] = useState<TiersOpenItem[] | null>(null);
+  const [tiersErr, setTiersErr] = useState<string | null>(null);
+  const tiersFileRef = useRef<HTMLInputElement>(null);
+
+  const checkTiers = async () => {
+    setTiersErr(null);
+    try { const r = await api.parseTiersReprise(dossierId, tiersCsv); setTiersItems(r.items); }
+    catch (e: any) { setTiersErr(e.message); setTiersItems(null); }
+  };
 
   const analyze = async () => {
     setAnalyzing(true); setError(null); setDone(null); setAnalysis(null);
@@ -39,9 +56,9 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
     if (!confirm(`Générer l'écriture d'à-nouveaux (reprise) au ${date} ?`)) return;
     setCommitting(true); setError(null); setDone(null);
     try {
-      const r = await api.commitBalanceImport(dossierId, { csv, fiscalYearId, date, createMissing });
-      setDone(`Reprise comptabilisée : ${r.lines} comptes${r.accountsCreated ? `, ${r.accountsCreated} compte(s) créé(s)` : ''}, total ${fmtMoney(r.totalDebit, currency)}.`);
-      setAnalysis(null); setCsv('');
+      const r = await api.commitBalanceImport(dossierId, { csv, fiscalYearId, date, createMissing, tiersCsv: tiersCsv.trim() || undefined });
+      setDone(`Reprise comptabilisée : ${r.lines} lignes${r.tiersItems ? `, dont ${r.tiersItems} en-cours tiers détaillés` : ''}${r.accountsCreated ? `, ${r.accountsCreated} compte(s) créé(s)` : ''}, total ${fmtMoney(r.totalDebit, currency)}.`);
+      setAnalysis(null); setCsv(''); setTiersCsv(''); setTiersItems(null);
     } catch (e: any) { setError(e.message); }
     finally { setCommitting(false); }
   };
@@ -149,6 +166,47 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Reprise détaillée des en-cours tiers (optionnel) */}
+          <div className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-zinc-200">En-cours clients / fournisseurs détaillés <span className="text-xs font-normal text-zinc-500">(optionnel, recommandé)</span></div>
+                <p className="mt-0.5 text-xs text-zinc-500">Reprenez chaque facture ouverte (tiers, pièce, date) au lieu du solde global : le <span className="text-zinc-300">lettrage</span> et la <span className="text-zinc-300">balance âgée</span> fonctionneront sur l'historique. Le total par compte doit égaler la balance.</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setTiersCsv(SAMPLE_TIERS); setTiersItems(null); }} className="text-xs text-zinc-400 hover:text-emerald-400">Exemple</button>
+                <button onClick={() => tiersFileRef.current?.click()} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400"><FileSpreadsheet className="h-3.5 w-3.5" /> Fichier…</button>
+                <input ref={tiersFileRef} type="file" accept=".csv,.txt,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = () => { setTiersCsv(String(r.result ?? '')); setTiersItems(null); }; r.readAsText(f, 'utf-8'); } }} />
+              </div>
+            </div>
+            <textarea value={tiersCsv} onChange={(e) => { setTiersCsv(e.target.value); setTiersItems(null); }} rows={5}
+              placeholder={SAMPLE_TIERS}
+              className="w-full rounded-xl border border-white/10 bg-zinc-900/60 p-3 font-mono text-xs text-zinc-200 outline-none focus:border-emerald-500/50" />
+            {tiersCsv.trim() && <button onClick={checkTiers} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10"><Wand2 className="h-3.5 w-3.5" /> Vérifier le rapprochement</button>}
+            {tiersErr && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-400">{tiersErr}</p>}
+            {tiersItems && (() => {
+              const netOf = (code: string) => { const l = analysis.lines.find((x) => x.accountCode === code); return l ? (l.debit || 0) - (l.credit || 0) : undefined; };
+              const byAcc = new Map<string, number>();
+              for (const it of tiersItems) byAcc.set(it.accountCode, (byAcc.get(it.accountCode) ?? 0) + (it.debit || 0) - (it.credit || 0));
+              return (
+                <div className="space-y-1 text-xs">
+                  <div className="text-zinc-400">{tiersItems.length} en-cours reconnus. Rapprochement par compte :</div>
+                  {[...byAcc.entries()].map(([code, sum]) => {
+                    const net = netOf(code); const okMatch = net !== undefined && Math.abs(sum - net) < 0.01;
+                    return (
+                      <div key={code} className="flex items-center gap-2 font-mono">
+                        <span className="text-zinc-300">{code}</span>
+                        <span className="text-zinc-500">détail {fmtMoney(sum, currency)}</span>
+                        <span className="text-zinc-600">vs balance {net === undefined ? '—' : fmtMoney(net, currency)}</span>
+                        {okMatch ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="flex justify-end">

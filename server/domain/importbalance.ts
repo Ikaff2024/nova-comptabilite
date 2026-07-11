@@ -1,5 +1,5 @@
 import type { Client } from '../db.js';
-import { postEntry, createJournal, type EntryLineInput } from './accounting.js';
+import { postEntry, createJournal, resolveCounterparty, type EntryLineInput } from './accounting.js';
 
 // ============================================================================
 // Import / reprise d'une balance existante (migration depuis un autre logiciel).
@@ -93,6 +93,92 @@ export function parseBalanceCsv(text: string): ImportLineInput[] {
     }
     if (debit === 0 && credit === 0) continue;
     out.push({ accountCode: rawCode, label: label || undefined, debit, credit });
+  }
+  return out;
+}
+
+// --- Reprise détaillée des en-cours tiers ----------------------------------
+// Chaque facture ouverte (client/fournisseur) devient une ligne d'à-nouveaux sur
+// le compte collectif, avec tiers rattaché, date d'origine (pour l'ancienneté)
+// et référence de pièce (pour le lettrage futur). Le total par compte doit
+// coïncider avec la balance.
+
+export interface TiersOpenItem {
+  accountCode: string;   // compte collectif (41x client / 40x fournisseur)
+  tiersName: string;
+  pieceRef?: string;
+  invoiceDate?: string;  // date d'origine (ISO) -> ancienneté
+  dueDate?: string;
+  debit: number;         // créance client
+  credit: number;        // dette fournisseur
+}
+
+// Normalise une date (dd/mm/yyyy, dd-mm-yyyy ou ISO) en 'YYYY-MM-DD' ; sinon null.
+function normDate(s?: string): string | null {
+  if (!s) return null;
+  const t = s.trim();
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if (m) {
+    const y = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/**
+ * Parse un CSV d'en-cours tiers. Colonnes reconnues (en-tête) : compte, tiers,
+ * pièce, date, échéance, débit, crédit (ou montant signé). Sans débit/crédit,
+ * le sens est déduit de la classe : 41x = créance (débit), 40x = dette (crédit).
+ */
+export function parseTiersCsv(text: string): TiersOpenItem[] {
+  const rows = String(text).split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+  if (rows.length === 0) return [];
+  const first = splitDelim(rows[0]).map(norm);
+  const looksHeader = first.some((h) => /compte|code|tiers|client|fournisseur|nom|piece|pièce|facture|date|echeance|échéance|debit|credit|montant|solde/.test(h));
+  let start = 0;
+  let map = { code: 0, tiers: 1, piece: 2, date: 3, due: 4, debit: 5, credit: 6, montant: -1 } as Record<string, number>;
+  if (looksHeader) {
+    start = 1;
+    const find = (...keys: string[]) => first.findIndex((h) => keys.some((k) => h.includes(k)));
+    map = {
+      code: Math.max(find('compte', 'code', 'numero'), 0),
+      tiers: Math.max(find('tiers', 'client', 'fournisseur', 'nom', 'raison'), 1),
+      piece: find('piece', 'pièce', 'facture', 'ref'),
+      date: find('date'),
+      due: find('echeance', 'échéance', 'due'),
+      debit: find('debit'),
+      credit: find('credit'),
+      montant: find('montant', 'solde'),
+    };
+  }
+  const out: TiersOpenItem[] = [];
+  for (let i = start; i < rows.length; i++) {
+    const cells = splitDelim(rows[i]);
+    const code = (cells[map.code] ?? '').replace(/[^0-9A-Za-z]/g, '');
+    if (!code || !/^\d/.test(code)) continue;
+    const tiersName = (cells[map.tiers] ?? '').trim();
+    if (!tiersName) continue;
+    let debit = map.debit >= 0 ? num(cells[map.debit]) : 0;
+    let credit = map.credit >= 0 ? num(cells[map.credit]) : 0;
+    if (debit === 0 && credit === 0) {
+      const amt = map.montant >= 0 ? num(cells[map.montant]) : 0;
+      if (amt !== 0) {
+        const isClient = code.startsWith('41');
+        // Créance client au débit, dette fournisseur au crédit ; montant négatif = avoir.
+        if (isClient) { if (amt >= 0) debit = amt; else credit = -amt; }
+        else { if (amt >= 0) credit = amt; else debit = -amt; }
+      }
+    }
+    if (debit === 0 && credit === 0) continue;
+    out.push({
+      accountCode: code, tiersName,
+      pieceRef: map.piece >= 0 ? (cells[map.piece] ?? '').trim() || undefined : undefined,
+      invoiceDate: map.date >= 0 ? normDate(cells[map.date]) ?? undefined : undefined,
+      dueDate: map.due >= 0 ? normDate(cells[map.due]) ?? undefined : undefined,
+      debit, credit,
+    });
   }
   return out;
 }
@@ -200,11 +286,53 @@ export interface CommitOptions {
   date: string;              // date de l'à-nouveau (ex. '2026-01-01')
   description?: string;
   createMissing?: boolean;   // créer les comptes absents du plan
+  tiersItems?: TiersOpenItem[]; // en-cours tiers détaillés (reprise d'antériorité)
+}
+
+// Éclate les comptes tiers en lignes détaillées (une par facture ouverte), en
+// contrôlant que le total par compte coïncide avec la balance. Résout les tiers
+// et pose la date d'origine (operation_date) pour préserver l'ancienneté.
+async function expandTiers(
+  c: Client, dossierId: string, netLines: AnalyzedLine[], items: TiersOpenItem[], fallbackDate: string,
+): Promise<EntryLineInput[]> {
+  const byAccount = new Map<string, TiersOpenItem[]>();
+  for (const it of items) {
+    if (!byAccount.has(it.accountCode)) byAccount.set(it.accountCode, []);
+    byAccount.get(it.accountCode)!.push(it);
+  }
+  // Contrôle de cohérence : Σ(items) == net balance, compte par compte.
+  const netByCode = new Map(netLines.map((l) => [l.accountCode, Math.round(((l.debit || 0) - (l.credit || 0)) * 100) / 100]));
+  for (const [code, its] of byAccount) {
+    const sum = Math.round(its.reduce((s, i) => s + (i.debit || 0) - (i.credit || 0), 0) * 100) / 100;
+    const net = netByCode.get(code);
+    if (net === undefined) throw new Error(`Compte ${code} présent dans les en-cours tiers mais absent de la balance.`);
+    if (Math.abs(sum - net) > 0.01) throw new Error(`En-cours tiers du compte ${code} (${sum}) ≠ solde de balance (${net}). Corrigez le détail.`);
+  }
+
+  const out: EntryLineInput[] = [];
+  for (const l of netLines) {
+    const its = byAccount.get(l.accountCode);
+    if (!its || its.length === 0) {
+      out.push({ accountCode: l.accountCode, debit: l.debit || 0, credit: l.credit || 0, label: l.label ?? undefined });
+      continue;
+    }
+    // Compte tiers : une ligne par facture ouverte (tiers + date d'origine + pièce).
+    const type = l.accountCode.startsWith('41') ? 'client' : l.accountCode.startsWith('40') ? 'fournisseur' : 'autre';
+    for (const it of its) {
+      const cpId = await resolveCounterparty(c, dossierId, it.tiersName, type as any);
+      out.push({
+        accountCode: it.accountCode, debit: it.debit || 0, credit: it.credit || 0,
+        label: [it.pieceRef, it.tiersName].filter(Boolean).join(' — ') || it.tiersName,
+        counterpartyId: cpId, operationDate: it.invoiceDate || fallbackDate,
+      });
+    }
+  }
+  return out;
 }
 
 export async function commitBalanceImport(
   c: Client, dossierId: string, lines: ImportLineInput[], opts: CommitOptions,
-): Promise<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number }> {
+): Promise<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number; tiersItems: number }> {
   const analysis = await analyzeBalanceImport(c, dossierId, lines, opts.fiscalYearId);
 
   if (analysis.lines.length < 2) throw new Error('Balance vide ou insuffisante (au moins 2 comptes attendus).');
@@ -221,9 +349,10 @@ export async function commitBalanceImport(
   const { rows: jn } = await c.query("select id from journals where dossier_id=$1 and type='a_nouveaux' limit 1", [dossierId]);
   const anJournal = jn[0]?.id ?? await createJournal(c, dossierId, 'AN', 'À-nouveaux', 'a_nouveaux');
 
-  const entryLines: EntryLineInput[] = analysis.lines.map((l) => ({
-    accountCode: l.accountCode, debit: l.debit || 0, credit: l.credit || 0, label: l.label ?? undefined,
-  }));
+  const items = opts.tiersItems ?? [];
+  const entryLines: EntryLineInput[] = items.length > 0
+    ? await expandTiers(c, dossierId, analysis.lines, items, opts.date)
+    : analysis.lines.map((l) => ({ accountCode: l.accountCode, debit: l.debit || 0, credit: l.credit || 0, label: l.label ?? undefined }));
 
   const { id: entryId } = await postEntry(c, {
     dossierId, fiscalYearId: opts.fiscalYearId, journalId: anJournal, entryDate: opts.date,
@@ -231,5 +360,5 @@ export async function commitBalanceImport(
     source: 'opening_balance', lines: entryLines,
   });
 
-  return { entryId, accountsCreated, lines: entryLines.length, totalDebit: analysis.totalDebit };
+  return { entryId, accountsCreated, lines: entryLines.length, totalDebit: analysis.totalDebit, tiersItems: items.length };
 }

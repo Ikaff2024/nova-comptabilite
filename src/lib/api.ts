@@ -136,6 +136,9 @@ export interface ImportBalanceAnalysis {
   totalDebit: number; totalCredit: number; diff: number; balanced: boolean;
   okCount: number; missingCount: number; alreadyImported: boolean;
 }
+export interface TiersOpenItem {
+  accountCode: string; tiersName: string; pieceRef?: string; invoiceDate?: string; dueDate?: string; debit: number; credit: number;
+}
 export interface RecurringLine { accountCode: string; debit?: number; credit?: number; label?: string; analyticAxis?: string }
 export interface RecurringTemplate {
   id: string; label: string; journalCode: string; frequency: string; frequencyLabel: string;
@@ -375,8 +378,10 @@ export const api = {
     req<{ entryId: string } & VatDeclaration>(`/api/dossiers/${dossierId}/vat/liquidate`, { method: 'POST', body: JSON.stringify(body) }),
   analyzeBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId?: string }) =>
     req<ImportBalanceAnalysis>(`/api/dossiers/${dossierId}/import-balance/analyze`, { method: 'POST', body: JSON.stringify(body) }),
-  commitBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId: string; date: string; description?: string; createMissing?: boolean }) =>
-    req<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number }>(`/api/dossiers/${dossierId}/import-balance/commit`, { method: 'POST', body: JSON.stringify(body) }),
+  commitBalanceImport: (dossierId: string, body: { csv?: string; lines?: any[]; fiscalYearId: string; date: string; description?: string; createMissing?: boolean; tiersCsv?: string; tiersItems?: any[] }) =>
+    req<{ entryId: string; accountsCreated: number; lines: number; totalDebit: number; tiersItems: number }>(`/api/dossiers/${dossierId}/import-balance/commit`, { method: 'POST', body: JSON.stringify(body) }),
+  parseTiersReprise: (dossierId: string, tiersCsv: string) =>
+    req<{ count: number; items: TiersOpenItem[] }>(`/api/dossiers/${dossierId}/import-balance/parse-tiers`, { method: 'POST', body: JSON.stringify({ tiersCsv }) }),
   dossierDashboard: (dossierId: string, fiscalYearId?: string) => req<DossierDashboard>(`/api/dossiers/${dossierId}/dashboard${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   recurringTemplates: (dossierId: string) => req<RecurringTemplate[]>(`/api/dossiers/${dossierId}/recurring`),
   createRecurring: (dossierId: string, body: { label: string; journalId: string; frequency: string; dayOfMonth?: number; startDate: string; endDate?: string | null; counterpartyName?: string; lines: RecurringLine[]; notes?: string }) =>

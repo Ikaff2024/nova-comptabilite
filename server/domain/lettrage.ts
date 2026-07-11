@@ -191,7 +191,7 @@ export async function agedBalance(c: Client, dossierId: string, asOf?: string): 
   const { rows } = await c.query(
     `with open as (
        select a.account_code, a.label, (l.amount_debit - l.amount_credit) as net,
-              ($2::date - e.entry_date) as age
+              ($2::date - coalesce(l.operation_date, e.entry_date)) as age
          from entry_lines l
          join entries e on e.id = l.entry_id and e.status='posted'
          join accounts a on a.id = l.account_id and a.class_no = 4

@@ -10,7 +10,7 @@ export async function overdueClients(c: Client, dossierId: string, asOf?: string
   const { rows } = await c.query(
     `with open as (
        select l.counterparty_id, (l.amount_debit - l.amount_credit) as net,
-              ($2::date - e.entry_date) as age
+              ($2::date - coalesce(l.operation_date, e.entry_date)) as age
          from entry_lines l
          join entries e on e.id = l.entry_id and e.status = 'posted'
          join accounts a on a.id = l.account_id and a.account_code like '41%'
@@ -60,7 +60,7 @@ export async function relanceLetter(c: Client, dossierId: string, counterpartyId
     `select to_char(e.entry_date,'YYYY-MM-DD') as date, e.piece_ref,
             coalesce(l.label, e.description) as label,
             (l.amount_debit - l.amount_credit) as net,
-            ($3::date - e.entry_date) as age
+            ($3::date - coalesce(l.operation_date, e.entry_date)) as age
        from entry_lines l
        join entries e on e.id = l.entry_id and e.status = 'posted'
        join accounts a on a.id = l.account_id and a.account_code like '41%'

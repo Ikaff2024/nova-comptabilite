@@ -417,10 +417,16 @@ export function createApi() {
   }));
   app.post('/api/dossiers/:id/import-balance/commit', h(async (req, res) => {
     const userId = requireUser(req);
-    const { csv, lines, fiscalYearId, date, description, createMissing } = req.body ?? {};
+    const { csv, lines, fiscalYearId, date, description, createMissing, tiersCsv, tiersItems } = req.body ?? {};
     if (!fiscalYearId || !date) { const e: any = new Error('fiscalYearId et date requis'); e.status = 400; throw e; }
     const parsed = Array.isArray(lines) ? lines : importbalance.parseBalanceCsv(String(csv ?? ''));
-    res.json(await withUser(userId, (c) => importbalance.commitBalanceImport(c, req.params.id, parsed, { fiscalYearId, date, description, createMissing: !!createMissing })));
+    const items = Array.isArray(tiersItems) ? tiersItems : (tiersCsv ? importbalance.parseTiersCsv(String(tiersCsv)) : undefined);
+    res.json(await withUser(userId, (c) => importbalance.commitBalanceImport(c, req.params.id, parsed, { fiscalYearId, date, description, createMissing: !!createMissing, tiersItems: items })));
+  }));
+  app.post('/api/dossiers/:id/import-balance/parse-tiers', h(async (req, res) => {
+    requireUser(req);
+    const items = importbalance.parseTiersCsv(String(req.body?.tiersCsv ?? ''));
+    res.json({ count: items.length, items });
   }));
 
   // --- Portail client : rôle effectif + gestion des accès --------------------
