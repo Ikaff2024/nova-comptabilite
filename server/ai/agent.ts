@@ -22,17 +22,35 @@ const MAX_STEPS = 6;
 
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export interface AgentToolCall { name: string; input: any }
-export interface AgentResult { reply: string; toolCalls: AgentToolCall[]; model: string }
+export interface AgentResult { reply: string; toolCalls: AgentToolCall[]; model: string; mode: AgentMode }
+
+export type AgentMode = 'readonly' | 'assist';
 
 export function agentEnabled(): boolean {
   return !!process.env.ANTHROPIC_API_KEY;
 }
 
+// Mode de l'agent pour un dossier (défaut 'readonly').
+export async function getAgentMode(c: Client, dossierId: string): Promise<AgentMode> {
+  const { rows } = await c.query('select agent_mode from dossiers where id=$1', [dossierId]);
+  return (rows[0]?.agent_mode === 'assist' ? 'assist' : 'readonly');
+}
+
+// Bascule du mode — réservée owner/associé (garde en base, fonction SECURITY DEFINER).
+export async function setAgentMode(c: Client, dossierId: string, mode: AgentMode): Promise<void> {
+  await c.query('select dossier_set_agent_mode($1,$2)', [dossierId, mode]);
+}
+
+export async function isDossierAdmin(c: Client, dossierId: string): Promise<boolean> {
+  const { rows } = await c.query('select dossier_is_admin($1) as ok', [dossierId]);
+  return rows[0]?.ok === true;
+}
+
 // --- Contexte dossier (mis en cache dans le system prompt) -------------------
 
-async function dossierContext(c: Client, dossierId: string): Promise<{ text: string; fyId: string | null }> {
+async function dossierContext(c: Client, dossierId: string): Promise<{ text: string; fyId: string | null; currency: string; mode: AgentMode }> {
   const { rows } = await c.query(
-    'select raison_sociale, base_currency, country from dossiers where id=$1', [dossierId]);
+    'select raison_sociale, base_currency, country, agent_mode from dossiers where id=$1', [dossierId]);
   const d = rows[0] ?? {};
   const fys = await acc.listFiscalYears(c, dossierId);
   const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1] ?? null;
@@ -41,7 +59,7 @@ async function dossierContext(c: Client, dossierId: string): Promise<{ text: str
   const text = `DOSSIER : ${d.raison_sociale ?? '—'} — pays ${d.country ?? 'CI'}, devise ${d.base_currency ?? 'XOF'}, référentiel SYSCOHADA révisé (AUDCIF).
 ${fyLine}
 Date du jour : ${today}.`;
-  return { text, fyId: openFy?.id ?? null };
+  return { text, fyId: openFy?.id ?? null, currency: d.base_currency ?? 'XOF', mode: d.agent_mode === 'assist' ? 'assist' : 'readonly' };
 }
 
 const SYSTEM_GUARDRAILS = `Tu es l'assistant comptable de Nova, expert du référentiel OHADA (SYSCOHADA révisé, AUDCIF). Tu aides le comptable/dirigeant à PILOTER l'entreprise en langage naturel.
@@ -55,9 +73,17 @@ RÈGLES ABSOLUES :
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.`;
 
-// --- Définition des outils (lecture seule) -----------------------------------
+// Note ajoutée UNIQUEMENT en mode assisté (l'admin l'a activé).
+const ASSIST_NOTE = `
+MODE ASSISTÉ ACTIVÉ : tu peux PRÉPARER des BROUILLONS via les outils "preparer_*" (facture de vente, facture fournisseur). Règles impératives :
+- Un brouillon n'a AUCUN effet comptable tant que l'humain ne l'émet/comptabilise pas dans l'onglet correspondant. Tu ne fais JAMAIS cette validation toi-même.
+- Après avoir créé un brouillon, annonce-le clairement comme un BROUILLON À VALIDER (dans « Facturation » pour une vente, « Achats » pour un achat), et récapitule ce que tu as saisi (tiers, lignes, montants) pour que l'humain vérifie.
+- Ne prépare un brouillon que si la demande est explicite et suffisamment précise. Si un élément manque (montant, tiers, compte), demande-le avant de créer.
+- Tu ne postes/émets/règles/clôtures JAMAIS. Ces actions restent 100 % humaines.`;
 
-const TOOLS = [
+// --- Outils de LECTURE (toujours disponibles) --------------------------------
+
+const READ_TOOLS = [
   { name: 'situation_generale', description: 'Tableau de bord du dossier : trésorerie, résultat, créances/dettes, activité récente. À utiliser pour une vue d\'ensemble.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'balance_generale', description: 'Balance générale (par compte : à-nouveaux, mouvements, soldes). Pour analyser les soldes de comptes.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'grand_livre', description: 'Détail des écritures d\'un compte donné (grand livre). Fournir le code du compte.', input_schema: { type: 'object', properties: { compte: { type: 'string', description: 'Code du compte SYSCOHADA, ex. 411, 521, 601' } }, required: ['compte'] } },
@@ -72,11 +98,82 @@ const TOOLS = [
   { name: 'factures_achats', description: 'Liste des factures fournisseurs (optionnellement filtrées par statut : draft, recorded, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
 ];
 
+// --- Outils d'ÉCRITURE (mode assisté uniquement) : créent des BROUILLONS ------
+// Aucun n'entre au grand livre : l'humain émet/comptabilise dans l'onglet dédié.
+
+const WRITE_TOOLS = [
+  {
+    name: 'preparer_facture_vente',
+    description: 'Prépare une facture de VENTE en BROUILLON (à émettre ensuite par l\'humain dans l\'onglet Facturation). N\'a aucun effet comptable tant qu\'elle n\'est pas émise.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        client: { type: 'string', description: 'Nom du client' },
+        date: { type: 'string', description: 'Date de facture YYYY-MM-DD (défaut : aujourd\'hui)' },
+        echeance: { type: 'string', description: 'Date d\'échéance YYYY-MM-DD (optionnel)' },
+        lignes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string' },
+              quantite: { type: 'number' },
+              prix_unitaire: { type: 'number' },
+              taux_tva: { type: 'number', description: 'ex. 0.18 pour 18% (défaut 0.18)' },
+              compte: { type: 'string', description: 'Compte de produit classe 7 (défaut 706)' },
+              section: { type: 'string', description: 'Code section analytique (optionnel)' },
+            },
+            required: ['description', 'quantite', 'prix_unitaire'],
+          },
+        },
+      },
+      required: ['client', 'lignes'],
+    },
+  },
+  {
+    name: 'preparer_facture_achat',
+    description: 'Prépare une facture FOURNISSEUR en BROUILLON (à comptabiliser ensuite par l\'humain dans l\'onglet Achats). N\'a aucun effet comptable tant qu\'elle n\'est pas comptabilisée.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fournisseur: { type: 'string' },
+        reference: { type: 'string', description: 'N° de facture du fournisseur (optionnel)' },
+        date: { type: 'string', description: 'YYYY-MM-DD (défaut aujourd\'hui)' },
+        echeance: { type: 'string', description: 'YYYY-MM-DD (optionnel)' },
+        lignes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string' },
+              compte: { type: 'string', description: 'Compte de charge/immo (défaut 601)' },
+              montant_ht: { type: 'number' },
+              taux_tva: { type: 'number', description: 'ex. 0.18 (défaut 0.18)' },
+              section: { type: 'string', description: 'Code section analytique (optionnel)' },
+            },
+            required: ['description', 'montant_ht'],
+          },
+        },
+      },
+      required: ['fournisseur', 'lignes'],
+    },
+  },
+];
+
+const WRITE_TOOL_NAMES = new Set(WRITE_TOOLS.map((t) => t.name));
+
 // Tronque une sortie volumineuse pour maîtriser les tokens.
 function cap<T>(rows: T[], n = 60): T[] { return Array.isArray(rows) && rows.length > n ? rows.slice(0, n) : rows; }
 
-async function executeTool(c: Client, dossierId: string, fyId: string | null, name: string, input: any): Promise<any> {
+async function executeTool(c: Client, dossierId: string, fyId: string | null, name: string, input: any, mode: AgentMode): Promise<any> {
   const fy = fyId ?? undefined;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Garde-fou serveur : les outils d'écriture n'existent qu'en mode assisté.
+  if (WRITE_TOOL_NAMES.has(name) && mode !== 'assist') {
+    return { error: 'Mode lecture seule : la préparation de brouillons est désactivée pour ce dossier.' };
+  }
+
   switch (name) {
     case 'situation_generale': return await dash.dossierDashboard(c, dossierId, fy);
     case 'balance_generale': return cap(await acc.trialBalance(c, dossierId, fy), 120);
@@ -90,6 +187,25 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'tva': return await tax.vatDeclaration(c, dossierId, String(input?.debut ?? ''), String(input?.fin ?? ''));
     case 'factures_ventes': return cap(await invoicing.listInvoices(c, dossierId, input?.statut, 'invoice'), 50);
     case 'factures_achats': return cap(await purchases.listPurchases(c, dossierId, input?.statut), 50);
+
+    // --- Écriture : BROUILLONS (mode assisté) ---
+    case 'preparer_facture_vente': {
+      const lignes = Array.isArray(input?.lignes) ? input.lignes : [];
+      const { id } = await invoicing.createInvoice(c, dossierId, {
+        clientName: String(input?.client ?? '').trim(), invoiceDate: input?.date || today, dueDate: input?.echeance || undefined, docType: 'invoice',
+        lines: lignes.map((l: any) => ({ description: l.description, quantity: Number(l.quantite) || 1, unit_price: Number(l.prix_unitaire) || 0, vat_rate: l.taux_tva != null ? Number(l.taux_tva) : 0.18, account_code: l.compte || '706', analytic_axis: l.section || undefined })),
+      });
+      return { statut: 'brouillon_cree', type: 'facture_vente', brouillon_id: id, a_valider_dans: 'onglet Facturation (bouton Émettre)' };
+    }
+    case 'preparer_facture_achat': {
+      const lignes = Array.isArray(input?.lignes) ? input.lignes : [];
+      const { id } = await purchases.createPurchase(c, dossierId, {
+        supplierName: String(input?.fournisseur ?? '').trim(), supplierRef: input?.reference || undefined, invoiceDate: input?.date || today, dueDate: input?.echeance || undefined,
+        lines: lignes.map((l: any) => ({ description: l.description, accountCode: l.compte || '601', amountHt: Number(l.montant_ht) || 0, vatRate: l.taux_tva != null ? Number(l.taux_tva) : 0.18, analyticAxis: l.section || undefined })),
+      });
+      return { statut: 'brouillon_cree', type: 'facture_achat', brouillon_id: id, a_valider_dans: 'onglet Achats (bouton Comptabiliser)' };
+    }
+
     default: return { error: `Outil inconnu : ${name}` };
   }
 }
@@ -117,17 +233,18 @@ async function callClaude(body: any): Promise<any> {
 
 // Exécute un outil isolément (pour vérification déterministe, sans appel LLM).
 export async function runToolForTest(c: Client, dossierId: string, name: string, input: any = {}): Promise<any> {
-  const { fyId } = await dossierContext(c, dossierId);
-  return executeTool(c, dossierId, fyId, name, input);
+  const { fyId, mode } = await dossierContext(c, dossierId);
+  return executeTool(c, dossierId, fyId, name, input, mode);
 }
 
 export async function runAgent(c: Client, dossierId: string, history: AgentMessage[]): Promise<AgentResult> {
   if (!agentEnabled()) throw new Error('Assistant IA non configuré (ANTHROPIC_API_KEY absent).');
-  const { text: ctx, fyId } = await dossierContext(c, dossierId);
+  const { text: ctx, fyId, mode } = await dossierContext(c, dossierId);
+  const tools = mode === 'assist' ? [...READ_TOOLS, ...WRITE_TOOLS] : READ_TOOLS;
 
-  // system : garde-fous statiques (mis en cache) + contexte dossier.
+  // system : garde-fous statiques (mis en cache) + note de mode + contexte dossier.
   const system = [
-    { type: 'text', text: SYSTEM_GUARDRAILS, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: SYSTEM_GUARDRAILS + (mode === 'assist' ? ASSIST_NOTE : ''), cache_control: { type: 'ephemeral' } },
     { type: 'text', text: ctx },
   ];
 
@@ -137,7 +254,7 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
   const toolCalls: AgentToolCall[] = [];
   for (let step = 0; step < MAX_STEPS; step++) {
     const data = await callClaude({
-      model: AGENT_MODEL, max_tokens: 2048, system, tools: TOOLS, messages,
+      model: AGENT_MODEL, max_tokens: 2048, system, tools, messages,
     });
     const content: any[] = data.content ?? [];
     messages.push({ role: 'assistant', content });
@@ -148,7 +265,7 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
         if (block.type !== 'tool_use') continue;
         toolCalls.push({ name: block.name, input: block.input });
         let result: any;
-        try { result = await executeTool(c, dossierId, fyId, block.name, block.input); }
+        try { result = await executeTool(c, dossierId, fyId, block.name, block.input, mode); }
         catch (e: any) { result = { error: String(e?.message ?? e).slice(0, 200) }; }
         toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
       }
@@ -158,7 +275,7 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
 
     // Réponse finale : concatène les blocs texte.
     const reply = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model: AGENT_MODEL };
+    return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model: AGENT_MODEL, mode };
   }
-  return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model: AGENT_MODEL };
+  return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model: AGENT_MODEL, mode };
 }

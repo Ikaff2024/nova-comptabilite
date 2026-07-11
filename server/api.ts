@@ -931,8 +931,20 @@ export function createApi() {
 
   // --- Assistant comptable agentique (lecture seule) -------------------------
   app.get('/api/dossiers/:id/agent/status', h(async (req, res) => {
-    requireUser(req);
-    res.json({ enabled: agent.agentEnabled() });
+    const userId = requireUser(req);
+    const { mode, canToggle } = await withUser(userId, async (c) => ({
+      mode: await agent.getAgentMode(c, req.params.id),
+      canToggle: await agent.isDossierAdmin(c, req.params.id),
+    }));
+    res.json({ enabled: agent.agentEnabled(), mode, canToggle });
+  }));
+  app.post('/api/dossiers/:id/agent/mode', h(async (req, res) => {
+    const userId = requireUser(req);
+    const mode = req.body?.mode;
+    if (mode !== 'readonly' && mode !== 'assist') { const e: any = new Error('mode invalide (readonly|assist)'); e.status = 400; throw e; }
+    await withUser(userId, (c) => agent.setAgentMode(c, req.params.id, mode));
+    await withUser(userId, (c) => audit.recordAudit(c, { dossierId: req.params.id, action: 'agent.mode_changed', entity: 'agent', detail: { mode } }));
+    res.json({ mode });
   }));
   app.post('/api/dossiers/:id/agent/chat', h(async (req, res) => {
     const userId = requireUser(req);
