@@ -191,8 +191,8 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   if (enabled === false) {
     return (
       <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-6 text-sm text-amber-200">
-        <div className="mb-2 flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4" /> Assistant IA non activé</div>
-        L'assistant nécessite une clé <span className="font-mono">ANTHROPIC_API_KEY</span> côté serveur. Ajoutez-la dans les variables d'environnement pour l'activer.
+        <div className="mb-2 flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4" /> Lexa n'est pas encore activée</div>
+        Lexa nécessite une clé <span className="font-mono">ANTHROPIC_API_KEY</span> côté serveur. Ajoutez-la dans les variables d'environnement pour l'activer.
       </div>
     );
   }
@@ -202,8 +202,8 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
       <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15"><Sparkles className="h-4.5 w-4.5 text-emerald-400" /></div>
         <div>
-          <div className="text-sm font-semibold text-zinc-100">Assistant comptable</div>
-          <div className="text-xs text-zinc-500">Pilotez {dossierName} en langage naturel</div>
+          <div className="text-sm font-semibold text-zinc-100">Lexa</div>
+          <div className="text-xs text-zinc-500">Votre comptable IA — {dossierName}</div>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <button onClick={() => setShowWa((v) => !v)} title="Relier un numéro WhatsApp"
@@ -297,7 +297,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </button>
       </form>
-      <p className="px-4 pb-3 text-center text-[11px] text-zinc-600">{mode === 'readonly' ? 'Lecture seule : l\'assistant lit vos données mais ne saisit rien. Vérifiez toujours avant décision.' : mode === 'assist' ? 'Mode assisté : l\'assistant peut préparer des brouillons — rien n\'est comptabilisé sans votre validation dans les onglets dédiés.' : 'Assisté + actions : brouillons et actions réversibles (lettrage, relances) — jamais d\'écriture au grand livre sans votre validation.'}</p>
+      <p className="px-4 pb-3 text-center text-[11px] text-zinc-600">{mode === 'readonly' ? 'Lecture seule : Lexa lit vos données mais ne saisit rien. Vérifiez toujours avant décision.' : mode === 'assist' ? 'Mode assisté : Lexa peut préparer des brouillons — rien n\'est comptabilisé sans votre validation dans les onglets dédiés.' : 'Assisté + actions : brouillons et actions réversibles (lettrage, relances) — jamais d\'écriture au grand livre sans votre validation.'}</p>
     </div>
   );
 }

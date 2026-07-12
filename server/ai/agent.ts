@@ -51,21 +51,37 @@ export async function isDossierAdmin(c: Client, dossierId: string): Promise<bool
 
 // --- Contexte dossier (mis en cache dans le system prompt) -------------------
 
+const ROLE_FR: Record<string, string> = { owner: 'propriétaire', associe: 'associé(e)', collaborateur: 'collaborateur(trice)', comptable: 'comptable', client: 'client', lecture: 'accès lecture' };
+
 async function dossierContext(c: Client, dossierId: string): Promise<{ text: string; fyId: string | null; currency: string; mode: AgentMode }> {
   const { rows } = await c.query(
-    'select raison_sociale, base_currency, country, agent_mode from dossiers where id=$1', [dossierId]);
+    'select raison_sociale, base_currency, country, agent_mode, cabinet_id from dossiers where id=$1', [dossierId]);
   const d = rows[0] ?? {};
   const fys = await acc.listFiscalYears(c, dossierId);
   const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1] ?? null;
   const today = new Date().toISOString().slice(0, 10);
   const fyLine = openFy ? `Exercice courant : « ${openFy.label} » (${openFy.start_date} → ${openFy.end_date}), statut ${openFy.status}.` : 'Aucun exercice défini.';
-  const text = `DOSSIER : ${d.raison_sociale ?? '—'} — pays ${d.country ?? 'CI'}, devise ${d.base_currency ?? 'XOF'}, référentiel SYSCOHADA révisé (AUDCIF).
+
+  // Équipe du cabinet + personne avec qui Lexa échange (pour un comportement de collaboratrice).
+  let team: any[] = []; let me: any = null;
+  try { const { rows: t } = await c.query('select * from cabinet_members_list($1)', [d.cabinet_id]); team = t; } catch { /* ignore */ }
+  try { const { rows: u } = await c.query('select * from get_user(app_current_user_id())'); me = u[0]; } catch { /* ignore */ }
+  const teamLine = team.length
+    ? `Équipe du cabinet/entreprise : ${team.map((m) => `${m.name || (m.email ? String(m.email).split('@')[0] : 'membre')} (${ROLE_FR[m.role] ?? m.role})`).join(', ')}.`
+    : '';
+  const meName = me?.name || (me?.email ? String(me.email).split('@')[0] : null);
+  const myRole = team.find((m) => me && (m.email === me.email))?.role;
+  const meLine = meName ? `Tu échanges en ce moment avec ${meName}${myRole ? ` (${ROLE_FR[myRole] ?? myRole})` : ''} — adresse-toi à cette personne par son nom.` : '';
+
+  const text = `ENTREPRISE : ${d.raison_sociale ?? '—'} — pays ${d.country ?? 'CI'}, devise ${d.base_currency ?? 'XOF'}, référentiel SYSCOHADA révisé (AUDCIF). Tu es LEUR comptable IA (Lexa), pas un outil générique.
 ${fyLine}
+${teamLine}
+${meLine}
 Date du jour : ${today}.`;
   return { text, fyId: openFy?.id ?? null, currency: d.base_currency ?? 'XOF', mode: MODES.includes(d.agent_mode) ? d.agent_mode : 'readonly' };
 }
 
-const SYSTEM_GUARDRAILS = `Tu es l'assistant comptable de Nova, expert du référentiel OHADA (SYSCOHADA révisé, AUDCIF). Tu aides le comptable/dirigeant à PILOTER l'entreprise en langage naturel.
+const SYSTEM_GUARDRAILS = `Tu es **Lexa**, la comptable IA de Nova — une véritable collaboratrice de l'entreprise du dossier, experte du référentiel OHADA (SYSCOHADA révisé, AUDCIF). Tu n'es pas un chatbot générique : tu connais l'entreprise, son équipe et la personne avec qui tu échanges (voir le contexte). Adresse-toi aux gens par leur nom, avec le ton d'une collègue de confiance : professionnelle, chaleureuse, concise.
 
 RÈGLES ABSOLUES :
 1. Tu es en LECTURE SEULE. Tu ne crées, ne modifies et ne postes JAMAIS d'écriture. Si on te le demande, explique que la saisie se fait dans les onglets dédiés (l'utilisateur valide toujours).

@@ -54,7 +54,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
 
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'synthese', label: 'Synthèse', icon: LayoutDashboard },
-    { id: 'assistant', label: 'Assistant', icon: Sparkles },
+    { id: 'assistant', label: 'Lexa', icon: Sparkles },
     { id: 'facturation', label: 'Facturation', icon: ReceiptText },
     { id: 'achats', label: 'Achats', icon: ShoppingCart },
     { id: 'capture', label: 'Capture IA', icon: ScanLine },
