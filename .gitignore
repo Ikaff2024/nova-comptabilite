@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Code de référence externe (analyse/portage, non buildé, non versionné)
+reference/
