@@ -516,6 +516,9 @@ export const api = {
   whatsappLinks: (dossierId: string) => req<{ enabled: boolean; links: { id: string; phone: string; label: string | null; created_at: string }[] }>(`/api/dossiers/${dossierId}/whatsapp/links`),
   whatsappLink: (dossierId: string, phone: string, label?: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/whatsapp/links`, { method: 'POST', body: JSON.stringify({ phone, label }) }),
   whatsappUnlink: (dossierId: string, lid: string) => req<void>(`/api/dossiers/${dossierId}/whatsapp/links/${lid}`, { method: 'DELETE' }),
+  telegramLinks: (dossierId: string) => req<{ enabled: boolean; links: { id: string; code: string; label: string | null; linked: boolean; created_at: string }[] }>(`/api/dossiers/${dossierId}/telegram/links`),
+  telegramLink: (dossierId: string, label?: string) => req<{ code: string }>(`/api/dossiers/${dossierId}/telegram/links`, { method: 'POST', body: JSON.stringify({ label }) }),
+  telegramUnlink: (dossierId: string, lid: string) => req<void>(`/api/dossiers/${dossierId}/telegram/links/${lid}`, { method: 'DELETE' }),
   // --- Paie ---
   payrollEmployees: (dossierId: string) => req<PayrollEmployee[]>(`/api/dossiers/${dossierId}/payroll/employees`),
   createPayrollEmployee: (dossierId: string, body: Partial<PayrollEmployee>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/employees`, { method: 'POST', body: JSON.stringify(body) }),
