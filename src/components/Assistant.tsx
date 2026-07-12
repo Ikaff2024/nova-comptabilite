@@ -15,11 +15,16 @@ const TTS_OK = typeof window !== 'undefined' && 'speechSynthesis' in window;
 // séparateurs de milliers (1 200 000 -> 1200000, lu « un million deux cent
 // mille »), et remplace devise/symboles par des mots.
 const forSpeech = (s: string) => s
-  .replace(/\*\*/g, '').replace(/^#{1,4}\s+/gm, '').replace(/^\s*[-•]\s+/gm, '')
+  .replace(/\*\*/g, '').replace(/^#{1,4}\s+/gm, '')
+  .replace(/^\s*[-•*]\s+/gm, '')                 // puces
+  .replace(/^\s*\d+[.)]\s+/gm, '')               // listes numérotées (« 1. » lu « un point »)
   .replace(/\|/g, ', ').replace(/[_`>]/g, '')
+  .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{2190}-\u{21FF}]/gu, '') // emojis/symboles
   .replace(/\d{1,3}(?:[   ]\d{3})+/g, (m) => m.replace(/[   ]/g, '')) // milliers
   .replace(/\bX[AO]F\b/g, ' francs CFA').replace(/%/g, ' pour cent')
-  .replace(/\n{2,}/g, '. ').replace(/[ \t]{2,}/g, ' ').trim();
+  .replace(/\n+/g, '. ')                          // chaque ligne = une phrase → pause naturelle
+  .replace(/(\.\s*){2,}/g, '. ')                  // pas de points enchaînés
+  .replace(/[ \t]{2,}/g, ' ').trim();
 
 // --- Rendu markdown léger (gras, titres, listes, tableaux) — sans dépendance ---
 function inlineMd(s: string): React.ReactNode[] {
