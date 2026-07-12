@@ -102,7 +102,7 @@ const ROLE_FR: Record<string, string> = { owner: 'propriétaire', associe: 'asso
 
 async function dossierContext(c: Client, dossierId: string): Promise<{ text: string; fyId: string | null; currency: string; mode: AgentMode }> {
   const { rows } = await c.query(
-    'select raison_sociale, base_currency, country, agent_mode, cabinet_id from dossiers where id=$1', [dossierId]);
+    'select raison_sociale, base_currency, country, agent_mode, cabinet_id, accounting_system, forme_juridique, regime_fiscal, tax_id, rccm, bank_name, rib from dossiers where id=$1', [dossierId]);
   const d = rows[0] ?? {};
   const fys = await acc.listFiscalYears(c, dossierId);
   const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1] ?? null;
@@ -127,7 +127,26 @@ async function dossierContext(c: Client, dossierId: string): Promise<{ text: str
     if (mem.length) memText = `\n\nCE QUE TU AS APPRIS SUR CETTE ENTREPRISE (ta mémoire — tiens-en compte) :\n${mem.map((r: any) => `- ${r.content}`).join('\n')}`;
   } catch { /* ignore */ }
 
+  // Identité fiscale/légale + obligations dérivées du régime (culture comptable).
+  const REGIME_FR: Record<string, string> = { reel_normal: 'réel normal', reel_simplifie: 'réel simplifié', synthetique: 'impôt synthétique' };
+  const OBLIG: Record<string, string> = {
+    reel_normal: 'assujettie à la TVA (déclaration mensuelle), acomptes d\'IS, DSF (états financiers) système normal en fin d\'exercice.',
+    reel_simplifie: 'assujettie à la TVA (déclaration mensuelle), IS/BIC au réel simplifié, DSF système normal en fin d\'exercice.',
+    synthetique: 'relève de l\'impôt synthétique (pas de TVA à collecter) ; obligations déclaratives allégées.',
+  };
+  const idBits: string[] = [];
+  if (d.forme_juridique) idBits.push(`forme ${d.forme_juridique}`);
+  if (d.regime_fiscal) idBits.push(`régime fiscal ${REGIME_FR[d.regime_fiscal] ?? d.regime_fiscal}`);
+  idBits.push(`système comptable SYSCOHADA ${d.accounting_system === 'smt' ? 'minimal de trésorerie (SMT)' : 'normal'}`);
+  if (d.tax_id) idBits.push(`NCC/IFU ${d.tax_id}`);
+  if (d.rccm) idBits.push(`RCCM ${d.rccm}`);
+  if (d.bank_name || d.rib) idBits.push(`banque ${d.bank_name ?? '—'}${d.rib ? `, RIB ${d.rib}` : ''}`);
+  const idLine = idBits.length ? `IDENTITÉ FISCALE : ${idBits.join(' ; ')}.` : '';
+  const obligLine = d.regime_fiscal && OBLIG[d.regime_fiscal] ? `OBLIGATIONS : l'entreprise est ${OBLIG[d.regime_fiscal]}` : '';
+
   const text = `ENTREPRISE : ${d.raison_sociale ?? '—'} — pays ${d.country ?? 'CI'}, devise ${d.base_currency ?? 'XOF'}, référentiel SYSCOHADA révisé (AUDCIF). Tu es LEUR comptable IA (Lexa), pas un outil générique.
+${idLine}
+${obligLine}
 ${fyLine}
 ${teamLine}
 ${meLine}
@@ -145,6 +164,7 @@ RÈGLES ABSOLUES :
 5. Raisonne comme un expert-comptable OHADA : classes 1-9, partie double, TVA, lettrage, analytique, immobilisations, balance âgée.
 6. ALTITUDE : pour un diagnostic (ex. « pourquoi le résultat baisse ? »), structure ta réponse en CONSTAT (le chiffre) → CAUSE (d'où il vient, comptes/périodes) → RECOMMANDATION (action concrète), puis propose d'approfondir. Distingue toujours clairement un constat, une recommandation et une action à valider.
 7. ADAPTE-TOI À L'INTERLOCUTEUR (voir son profil dans le contexte) : à un dirigeant/non-comptable, va à l'essentiel en langage clair et cache le jargon (donne le compte entre parenthèses si utile) ; à un comptable/DAF/expert-comptable, sois technique et précis (codes de comptes, mécanismes). En cas de doute, reste simple et propose d'entrer dans le détail.
+8. IDENTITÉ FISCALE : tu connais la forme juridique, le régime fiscal, le NCC/IFU, le RCCM et la banque du dossier (voir contexte). Raisonne selon le régime (ex. n'évoque la TVA à collecter que si l'entreprise y est assujettie ; sous l'impôt synthétique, il n'y a pas de TVA), rappelle les obligations et échéances pertinentes, et cite ces références (NCC, RCCM…) quand c'est utile (déclarations, courriers officiels).
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
 
