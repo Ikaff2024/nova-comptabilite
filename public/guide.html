@@ -105,6 +105,10 @@
     <a href="#import">16 · Import de balance (reprise)</a>
     <a class="pillar">Sécurité</a>
     <a href="#audit">17 · Piste d'audit</a>
+    <a class="pillar">Assistant &amp; canaux</a>
+    <a href="#lexa">18 · Lexa, votre comptable IA</a>
+    <a href="#paie">19 · Paie</a>
+    <a href="#canaux">20 · WhatsApp &amp; Telegram</a>
   </nav>
 
   <!-- ===================== CONTENU ===================== -->
@@ -142,6 +146,8 @@
         <ol start="16"><li>Import de balance (reprise depuis un autre logiciel)</li></ol></div>
       <div class="pillar-row"><b>🔒 Sécurité — traçabilité &amp; confiance</b>
         <ol start="17"><li>Piste d'audit (journal inaltérable des actions)</li></ol></div>
+      <div class="pillar-row"><b>🤖 Assistant &amp; canaux — Lexa, votre comptable IA</b>
+        <ol start="18"><li>Lexa (dialogue, voix, niveaux de pouvoir)</li><li>Paie (bulletins &amp; comptabilisation)</li><li>WhatsApp &amp; Telegram (parler à Lexa hors de l'app)</li></ol></div>
     </div>
 
     <!-- ============ 1 DÉMARRAGE ============ -->
@@ -533,6 +539,77 @@
         </ul></div>
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
         <div class="warn">Une trace vous semble erronée ? On ne corrige jamais l'audit : on corrige l'opération sous-jacente (ex. contre-passer une écriture), et la correction est elle-même tracée.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 18 LEXA ============ -->
+    <section class="fiche" id="lexa">
+      <h2>18 · Lexa, votre comptable IA <span class="tag">Assistant</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        <strong>Lexa</strong> est une comptable IA qui connaît votre dossier : elle lit votre compta en temps réel et répond en langage clair. « Où en est ma trésorerie ? », « Pourquoi le résultat baisse ? », « Quelles créances de plus de 90 jours ? » — elle va chercher les chiffres réels (jamais inventés) et cite ses sources (compte, tiers, période). Elle s'adapte à votre profil : à l'essentiel pour un dirigeant, technique pour un comptable.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Tout membre du dossier. Seuls le propriétaire/associé règlent son <strong>niveau de pouvoir</strong>.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Lexa</strong> du dossier. Posez votre question (texte) ou appuyez sur le <strong>micro</strong> pour dicter — l'envoi est automatique à la fin de la phrase.</li>
+          <li>Activez le <strong>haut-parleur</strong> pour qu'elle lise ses réponses à voix haute.</li>
+          <li>Réglez le <strong>niveau de pouvoir</strong> (admin) : <strong>Lecture seule</strong> (elle lit, ne saisit rien), <strong>Assisté</strong> (elle prépare des brouillons à valider), <strong>Assisté + actions</strong> (opérations réversibles comme le lettrage ou une relance).</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Lexa <strong>apprend</strong> vos habitudes par entreprise (préférences, tiers récurrents, corrections) et <strong>se souvient</strong> des échanges passés — cliquez l'icône <strong>cerveau</strong> pour voir/gérer sa mémoire.</li>
+          <li>Elle est <strong>proactive</strong> : dites-lui simplement « bonjour » et elle propose un point du jour (brouillons à valider, TVA, créances en souffrance…).</li>
+          <li>Même en <strong>Assisté</strong>, rien n'est comptabilisé sans votre validation dans l'onglet concerné.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Lexa affiche « non activée » ? Le service IA n'est pas encore configuré côté serveur (clé d'accès). La voix trop synthétique ? Une voix naturelle s'active si le canal vocal serveur est configuré, sinon Lexa utilise la voix du navigateur.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 19 PAIE ============ -->
+    <section class="fiche" id="paie">
+      <h2>19 · Paie <span class="tag">Assistant</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Gérer les <strong>salariés</strong>, calculer les <strong>bulletins</strong> selon les règles ivoiriennes (CNPS, IUS/ITS, CMU, heures supplémentaires, absences, avances, solde de tout compte) et <strong>comptabiliser</strong> la paie d'un clic en écriture d'OD équilibrée.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Gestionnaire de paie, comptable, chef d'entreprise.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Paie</strong> : créez vos <strong>salariés</strong> (identité, salaire de base, situation).</li>
+          <li>Choisissez la <strong>période</strong>, saisissez les variables du mois (heures sup, absences, primes), puis <strong>Calculer</strong>.</li>
+          <li>Ouvrez un <strong>bulletin</strong> pour le détail ; imprimez-le, ainsi que les <strong>déclarations</strong> (CNPS, DGI).</li>
+          <li><strong>Comptabiliser</strong> : Nova génère l'OD de paie (charges 66x, net à payer 42x, CNPS 43x, État 44x).</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Le moteur de calcul est <strong>déterministe et testé</strong> : à variables égales, un bulletin donne toujours le même résultat.</li>
+          <li>L'écriture comptable est <strong>toujours équilibrée</strong> par construction (net = brut − retenues ; coût = brut + charges patronales).</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">Un montant vous surprend ? Ouvrez le bulletin : chaque ligne (cotisation, base, taux) y est détaillée pour vérification.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 20 CANAUX ============ -->
+    <section class="fiche" id="canaux">
+      <h2>20 · WhatsApp &amp; Telegram <span class="tag">Assistant</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Parler à <strong>Lexa hors de l'application</strong>, depuis WhatsApp ou Telegram. Vous posez vos questions comptables depuis votre téléphone, comme à une collègue, et Lexa répond dans votre périmètre. Elle peut aussi vous <strong>pousser un point du jour</strong> automatiquement.</div>
+      <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
+        Les personnes du dossier dont vous reliez le numéro/compte.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Dans l'onglet <strong>Lexa</strong>, ouvrez le panneau <strong>WhatsApp</strong> (icône bulle) ou <strong>Telegram</strong> (icône avion).</li>
+          <li><strong>WhatsApp</strong> : reliez un numéro au format international sans « + ». <strong>Telegram</strong> : générez un <strong>code</strong> et envoyez-le au bot Nova depuis le compte à relier.</li>
+          <li>Une fois relié (statut « ✅ relié »), écrivez à Lexa depuis la messagerie : elle répond avec vos chiffres réels.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Chaque lien reste <strong>cantonné à votre périmètre</strong> : Lexa ne répond que sur les dossiers auxquels vous avez accès.</li>
+          <li>Lexa garde la <strong>continuité</strong> de la conversation : elle se souvient de vos échanges d'un message à l'autre.</li>
+        </ul></div>
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">« Canal non configuré » ? Le raccordement serveur (compte WhatsApp Business / bot Telegram) n'est pas encore actif. Une fois activé, vos codes et numéros reliés fonctionnent immédiatement.</div></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
