@@ -83,6 +83,17 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'portail', label: 'Portail client', icon: UserRound },
   ];
 
+  // Regroupement des modules par nature (menu latéral).
+  const meta = Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<Tab, { id: Tab; label: string; icon: any }>;
+  const groups: { label: string; items: Tab[] }[] = [
+    { label: 'Pilotage', items: ['synthese', 'assistant', 'previsionnel', 'scoring', 'analytique', 'budget'] },
+    { label: 'Saisie', items: ['capture', 'facturation', 'achats', 'paie', 'mobilemoney', 'saisie', 'recurrences'] },
+    { label: 'Comptabilité', items: ['balance', 'grandlivre', 'journaux', 'revision', 'plan'] },
+    { label: 'Tiers & trésorerie', items: ['tiers', 'banque', 'immos'] },
+    { label: 'États & déclarations', items: ['etats', 'fiscalite'] },
+    { label: 'Paramètres & accès', items: ['regles', 'import', 'audit', 'portail'] },
+  ];
+
   return (
     <div className="space-y-8">
       <div>
@@ -105,18 +116,28 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
           </button>
         </div>
       ) : (
-        <>
-          <div className="flex flex-wrap gap-x-2 gap-y-1 border-b border-white/10">
-            {tabs.map((t) => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={cn('flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
-                  tab === t.id ? 'border-emerald-400 text-white' : 'border-transparent text-zinc-400 hover:text-zinc-200')}>
-                <t.icon className="h-4 w-4" /> {t.label}
-              </button>
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <nav className="space-y-5 lg:sticky lg:top-4 lg:w-56 lg:shrink-0 lg:self-start">
+            {groups.map((g) => (
+              <div key={g.label}>
+                <div className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{g.label}</div>
+                <div className="space-y-0.5">
+                  {g.items.map((id) => {
+                    const t = meta[id];
+                    return (
+                      <button key={id} onClick={() => setTab(id)}
+                        className={cn('flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                          tab === id ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200')}>
+                        <t.icon className="h-4 w-4 shrink-0" /> {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
-          </div>
+          </nav>
 
-          <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+          <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="min-w-0 flex-1">
             {tab === 'synthese' && <DossierDashboard dossierId={dossier.id} currency={dossier.base_currency} onNavigate={(t) => setTab(t as Tab)} />}
             {tab === 'facturation' && <Facturation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'achats' && <Achats dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
@@ -154,7 +175,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'audit' && <AuditTrail dossierId={dossier.id} />}
             {tab === 'portail' && <ClientAccess dossierId={dossier.id} />}
           </motion.div>
-        </>
+        </div>
       )}
     </div>
   );
