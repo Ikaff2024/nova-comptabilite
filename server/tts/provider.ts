@@ -24,6 +24,9 @@ export function cleanForTts(s: string): string {
     .replace(/^\s*[-•*]\s+/gm, '').replace(/^\s*\d+[.)]\s+/gm, '')
     .replace(/\|/g, ', ').replace(/[_`>]/g, '')
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{2190}-\u{21FF}]/gu, '')
+    // Sigles prononcés comme des mots : évite l'épellation lettre par lettre.
+    // (Ceux qui se disent en lettres — TVA, CNPS, DGI, DSF… — restent tels quels.)
+    .replace(/\bSYSCOHADA\b/gi, 'Sisco-ada').replace(/\bOHADA\b/gi, 'Oada').replace(/\bAUDCIF\b/gi, 'Od-cif')
     .replace(/\bXOF\b/g, 'francs CFA').replace(/\bXAF\b/g, 'francs CFA').replace(/%/g, ' pour cent')
     .replace(/\n+/g, '. ').replace(/(\.\s*){2,}/g, '. ').replace(/[ \t]{2,}/g, ' ')
     .trim().slice(0, 2500); // borne le coût par requête
