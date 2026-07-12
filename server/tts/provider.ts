@@ -6,8 +6,9 @@
 // ============================================================================
 
 const apiKey = () => process.env.ELEVENLABS_API_KEY ?? '';
-// Voix par défaut : « Rachel » (féminine, calme). Surchargée par ELEVENLABS_VOICE_ID.
-const voiceId = () => process.env.ELEVENLABS_VOICE_ID ?? '21m00Tcm4TlvDq8ikWAM';
+// Voix par défaut : « Sarah » (féminine, posée, rassurante) — voix « premade »
+// accessible même en offre gratuite. Surchargée par ELEVENLABS_VOICE_ID.
+const voiceId = () => process.env.ELEVENLABS_VOICE_ID ?? 'EXAVITQu4vr4xnSDxMaL';
 const modelId = () => process.env.ELEVENLABS_MODEL ?? 'eleven_multilingual_v2';
 
 export function ttsEnabled(): boolean {
