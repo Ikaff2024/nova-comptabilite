@@ -18,8 +18,26 @@ import * as dash from '../domain/dossierdashboard.js';
 // Boucle tool-use maison sur l'API Messages d'Anthropic (cohérent avec provider.ts).
 // ============================================================================
 
-const AGENT_MODEL = process.env.AGENT_MODEL ?? 'claude-opus-4-8';
+// Routage à deux niveaux : modèle rapide/économique pour la navigation et les
+// questions simples ; modèle profond pour l'analyse (résultat, clôture,
+// diagnostic, incohérences). Coupe fortement le coût sans perdre en qualité
+// là où elle compte. AGENT_ROUTING=0 force le modèle profond partout.
+const MODEL_DEEP = process.env.AGENT_MODEL ?? 'claude-opus-4-8';
+const MODEL_FAST = process.env.AGENT_MODEL_FAST ?? 'claude-haiku-4-5';
+const ROUTING = (process.env.AGENT_ROUTING ?? '1') !== '0';
 const MAX_STEPS = 6;
+
+// Intentions d'analyse → modèle profond. Sinon (lecture/navigation) → rapide.
+const DEEP_HINTS = /pourquoi|analys|diagnos|cl[oô]tur|incoh[ée]ren|[ée]cart|compar|pr[ée]vision|optimis|conseil|recommand|rentab|marge|fiscal|redress|justifi|baisse|hausse|[ée]volu|tendance|anomal|strat[ée]g/i;
+
+function pickModel(history: AgentMessage[]): string {
+  if (!ROUTING) return MODEL_DEEP;
+  const lastUser = [...history].reverse().find((m) => m.role === 'user');
+  const text = (lastUser?.content ?? '').trim();
+  if (text.length > 240) return MODEL_DEEP;     // demande étoffée
+  if (DEEP_HINTS.test(text)) return MODEL_DEEP; // intention d'analyse
+  return MODEL_FAST;                            // navigation / lecture simple
+}
 
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export interface AgentToolCall { name: string; input: any }
@@ -125,6 +143,8 @@ RÈGLES ABSOLUES :
 3. Cite tes sources : mentionne le compte (code + intitulé), le tiers, l'écriture ou la période d'où vient chaque chiffre.
 4. Réponds en français, de façon concise et actionnable. Formate les montants avec la devise du dossier. Pour une synthèse, va droit au but (résultat d'abord, détail ensuite).
 5. Raisonne comme un expert-comptable OHADA : classes 1-9, partie double, TVA, lettrage, analytique, immobilisations, balance âgée.
+6. ALTITUDE : pour un diagnostic (ex. « pourquoi le résultat baisse ? »), structure ta réponse en CONSTAT (le chiffre) → CAUSE (d'où il vient, comptes/périodes) → RECOMMANDATION (action concrète), puis propose d'approfondir. Distingue toujours clairement un constat, une recommandation et une action à valider.
+7. ADAPTE-TOI À L'INTERLOCUTEUR (voir son profil dans le contexte) : à un dirigeant/non-comptable, va à l'essentiel en langage clair et cache le jargon (donne le compte entre parenthèses si utile) ; à un comptable/DAF/expert-comptable, sois technique et précis (codes de comptes, mécanismes). En cas de doute, reste simple et propose d'entrer dans le détail.
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
 
@@ -359,10 +379,11 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
   // Conversation. Le contenu utilisateur/assistant est du texte simple.
   const messages: any[] = history.slice(-16).map((m) => ({ role: m.role, content: m.content }));
 
+  const model = pickModel(history);
   const toolCalls: AgentToolCall[] = [];
   for (let step = 0; step < MAX_STEPS; step++) {
     const data = await callClaude({
-      model: AGENT_MODEL, max_tokens: 2048, system, tools, messages,
+      model, max_tokens: 2048, system, tools, messages,
     });
     const content: any[] = data.content ?? [];
     messages.push({ role: 'assistant', content });
@@ -383,7 +404,7 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
 
     // Réponse finale : concatène les blocs texte.
     const reply = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model: AGENT_MODEL, mode };
+    return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model, mode };
   }
-  return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model: AGENT_MODEL, mode };
+  return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model, mode };
 }
