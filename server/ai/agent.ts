@@ -49,6 +49,22 @@ export async function isDossierAdmin(c: Client, dossierId: string): Promise<bool
   return rows[0]?.ok === true;
 }
 
+// --- Mémoire de Lexa (auto-apprentissage par dossier) ------------------------
+export async function listMemories(c: Client, dossierId: string): Promise<any[]> {
+  const { rows } = await c.query(
+    "select id, content, source, to_char(created_at,'YYYY-MM-DD') as created_at from lexa_memory where dossier_id=$1 order by created_at desc", [dossierId]);
+  return rows;
+}
+export async function addMemory(c: Client, dossierId: string, content: string, source = 'lexa'): Promise<{ id: string }> {
+  const t = String(content ?? '').trim();
+  if (!t) throw new Error('Contenu vide.');
+  const { rows } = await c.query('insert into lexa_memory(dossier_id, content, source) values ($1,$2,$3) returning id', [dossierId, t.slice(0, 500), source]);
+  return { id: rows[0].id };
+}
+export async function deleteMemory(c: Client, dossierId: string, id: string): Promise<void> {
+  await c.query('delete from lexa_memory where dossier_id=$1 and id=$2', [dossierId, id]);
+}
+
 // --- Contexte dossier (mis en cache dans le system prompt) -------------------
 
 const ROLE_FR: Record<string, string> = { owner: 'propriétaire', associe: 'associé(e)', collaborateur: 'collaborateur(trice)', comptable: 'comptable', client: 'client', lecture: 'accès lecture' };
@@ -73,11 +89,18 @@ async function dossierContext(c: Client, dossierId: string): Promise<{ text: str
   const myRole = team.find((m) => me && (m.email === me.email))?.role;
   const meLine = meName ? `Tu échanges en ce moment avec ${meName}${myRole ? ` (${ROLE_FR[myRole] ?? myRole})` : ''} — adresse-toi à cette personne par son nom.` : '';
 
+  // Mémoire de Lexa : faits appris sur cette entreprise (injectés en contexte).
+  let memText = '';
+  try {
+    const { rows: mem } = await c.query('select content from lexa_memory where dossier_id=$1 order by created_at desc limit 40', [dossierId]);
+    if (mem.length) memText = `\n\nCE QUE TU AS APPRIS SUR CETTE ENTREPRISE (ta mémoire — tiens-en compte) :\n${mem.map((r: any) => `- ${r.content}`).join('\n')}`;
+  } catch { /* ignore */ }
+
   const text = `ENTREPRISE : ${d.raison_sociale ?? '—'} — pays ${d.country ?? 'CI'}, devise ${d.base_currency ?? 'XOF'}, référentiel SYSCOHADA révisé (AUDCIF). Tu es LEUR comptable IA (Lexa), pas un outil générique.
 ${fyLine}
 ${teamLine}
 ${meLine}
-Date du jour : ${today}.`;
+Date du jour : ${today}.${memText}`;
   return { text, fyId: openFy?.id ?? null, currency: d.base_currency ?? 'XOF', mode: MODES.includes(d.agent_mode) ? d.agent_mode : 'readonly' };
 }
 
@@ -90,7 +113,9 @@ RÈGLES ABSOLUES :
 4. Réponds en français, de façon concise et actionnable. Formate les montants avec la devise du dossier. Pour une synthèse, va droit au but (résultat d'abord, détail ensuite).
 5. Raisonne comme un expert-comptable OHADA : classes 1-9, partie double, TVA, lettrage, analytique, immobilisations, balance âgée.
 
-Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.`;
+Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
+
+MÉMOIRE (auto-apprentissage) : tu as une mémoire propre à cette entreprise. Quand tu apprends un fait DURABLE et utile — une préférence de codification, une spécificité de l'activité, une correction qu'on te donne, le nom/rôle d'un interlocuteur clé, une habitude de l'entreprise — enregistre-le avec l'outil « memoriser » pour t'en souvenir aux prochaines sessions et t'améliorer. N'enregistre jamais d'information sensible (mots de passe, données personnelles inutiles) ni éphémère. Tiens compte de ta mémoire (fournie dans le contexte) dans tes réponses.`;
 
 // Note ajoutée en mode assisté (brouillons).
 const ASSIST_NOTE = `
@@ -122,6 +147,7 @@ const READ_TOOLS = [
   { name: 'tva', description: 'Situation de TVA (collectée, déductible, à payer/crédit) sur une période. Fournir les dates de début et fin (YYYY-MM-DD).', input_schema: { type: 'object', properties: { debut: { type: 'string', description: 'YYYY-MM-DD' }, fin: { type: 'string', description: 'YYYY-MM-DD' } }, required: ['debut', 'fin'] } },
   { name: 'factures_ventes', description: 'Liste des factures de vente (optionnellement filtrées par statut : draft, issued, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
   { name: 'factures_achats', description: 'Liste des factures fournisseurs (optionnellement filtrées par statut : draft, recorded, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
+  { name: 'memoriser', description: 'Enregistre dans ta mémoire un fait DURABLE et utile sur cette entreprise (préférence, spécificité, correction, interlocuteur clé) pour t\'en souvenir plus tard. À utiliser quand tu apprends quelque chose d\'important à retenir.', input_schema: { type: 'object', properties: { fait: { type: 'string', description: 'Le fait à retenir, formulé de façon concise et durable' } }, required: ['fait'] } },
 ];
 
 // --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
@@ -233,6 +259,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'tva': return await tax.vatDeclaration(c, dossierId, String(input?.debut ?? ''), String(input?.fin ?? ''));
     case 'factures_ventes': return cap(await invoicing.listInvoices(c, dossierId, input?.statut, 'invoice'), 50);
     case 'factures_achats': return cap(await purchases.listPurchases(c, dossierId, input?.statut), 50);
+    case 'memoriser': { await addMemory(c, dossierId, String(input?.fait ?? ''), 'lexa'); return { statut: 'memorise', note: 'Fait enregistré dans ta mémoire pour les prochaines sessions.' }; }
 
     // --- Écriture : BROUILLONS (mode assisté) ---
     case 'preparer_facture_vente': {

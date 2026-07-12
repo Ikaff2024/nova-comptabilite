@@ -965,6 +965,22 @@ export function createApi() {
     res.json({ mode });
   }));
 
+  // --- Mémoire de Lexa (auto-apprentissage) ----------------------------------
+  app.get('/api/dossiers/:id/lexa/memory', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => agent.listMemories(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/lexa/memory', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { content } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => agent.addMemory(c, req.params.id, content, 'user')));
+  }));
+  app.delete('/api/dossiers/:id/lexa/memory/:mid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => agent.deleteMemory(c, req.params.id, req.params.mid));
+    res.status(204).end();
+  }));
+
   // --- Canal WhatsApp : liaison des numéros au dossier -----------------------
   app.get('/api/dossiers/:id/whatsapp/links', h(async (req, res) => {
     const userId = requireUser(req);
