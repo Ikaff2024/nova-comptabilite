@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText } from 'lucide-react';
-import { api, fmtMoney, type PayrollEmployee, type Payslip } from '../lib/api';
+import { api, fmtMoney, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -27,6 +27,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [sub, setSub] = useState<'paie' | 'absences' | 'avances'>('paie');
 
   // Formulaire salarié
   const [showForm, setShowForm] = useState(false);
@@ -120,6 +121,16 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
     <div className="space-y-6">
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
+      <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
+        {([['paie', 'Bulletins & salariés'], ['absences', 'Absences'], ['avances', 'Avances & prêts']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setSub(k)}
+            className={cn('rounded-lg px-3.5 py-1.5 font-medium transition-colors', sub === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {sub === 'paie' && (<>
       {/* --- Paie du mois --- */}
       <section className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -231,6 +242,10 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
           </div>
         )}
       </section>
+      </>)}
+
+      {sub === 'absences' && <AbsencesPanel dossierId={dossierId} employees={employees} currency={currency} />}
+      {sub === 'avances' && <AdvancesPanel dossierId={dossierId} employees={employees} currency={currency} />}
     </div>
   );
 }
@@ -273,5 +288,160 @@ function Bulletin({ calc, m }: { calc: any; m: (n: number) => string }) {
         <Row label="Coût employeur" value={calc.totalCoutEmployeur} strong />
       </div>
     </div>
+  );
+}
+
+// --- Registre des absences -------------------------------------------------
+function AbsencesPanel({ dossierId, employees, currency }: { dossierId: string; employees: PayrollEmployee[]; currency: string }) {
+  const [rows, setRows] = useState<PayrollAbsence[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const empty = { employeeId: '', dateDebut: today, dateFin: today, jours: 1, paye: false, justifiee: false, motif: '' };
+  const [f, setForm] = useState<any>(empty);
+  const setF = (p: any) => setForm((x: any) => ({ ...x, ...p }));
+
+  const load = async () => { setLoading(true); try { setRows(await api.payrollAbsences(dossierId)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [dossierId]);
+
+  const add = async () => {
+    if (!f.employeeId) { setErr('Choisissez un salarié.'); return; }
+    setBusy(true); setErr(null);
+    try { await api.createAbsence(dossierId, { ...f, jours: Number(f.jours) || 0 }); setForm(empty); setShowForm(false); await load(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const del = async (id: string) => { setErr(null); try { await api.deleteAbsence(dossierId, id); await load(); } catch (e: any) { setErr(e.message); } };
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium text-zinc-200">Absences ({rows.length})</div>
+        <button onClick={() => { setForm(empty); setShowForm((v) => !v); }} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Absence</button>
+      </div>
+      <p className="text-xs text-zinc-500">Les absences <strong>non payées</strong> sont automatiquement déduites au prorata lors du prochain calcul de paie.</p>
+      {err && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{err}</p>}
+
+      {showForm && (
+        <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="lg:col-span-2"><label className="mb-1 block text-xs text-zinc-500">Salarié</label>
+            <select value={f.employeeId} onChange={(e) => setF({ employeeId: e.target.value })} className={inputCls}>
+              <option value="">— choisir —</option>{employees.map((e) => <option key={e.id} value={e.id}>{e.matricule} — {e.nom} {e.prenoms}</option>)}
+            </select></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Du</label><input type="date" value={f.dateDebut} onChange={(e) => setF({ dateDebut: e.target.value })} className={inputCls} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Au</label><input type="date" value={f.dateFin} onChange={(e) => setF({ dateFin: e.target.value })} className={inputCls} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Jours ouvrables</label><input type="number" value={f.jours} onChange={(e) => setF({ jours: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Motif</label><input value={f.motif} onChange={(e) => setF({ motif: e.target.value })} placeholder="Maladie, congé…" className={inputCls} /></div>
+          <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={f.paye} onChange={(e) => setF({ paye: e.target.checked })} className="accent-emerald-500" /> Payée (maintenue au salaire)</label>
+          <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={f.justifiee} onChange={(e) => setF({ justifiee: e.target.checked })} className="accent-emerald-500" /> Justifiée</label>
+          <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2">
+            <button onClick={() => setShowForm(false)} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+            <button onClick={add} disabled={busy} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : rows.length === 0 ? <p className="text-sm text-zinc-500">Aucune absence enregistrée.</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-2.5 font-medium">Salarié</th><th className="px-4 py-2.5 font-medium">Période</th><th className="px-4 py-2.5 text-right font-medium">Jours</th><th className="px-4 py-2.5 font-medium">Statut</th><th className="px-4 py-2.5 font-medium">Motif</th><th className="px-4 py-2.5"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5">
+              {rows.map((a) => (
+                <tr key={a.id} className="hover:bg-white/5">
+                  <td className="px-4 py-2.5 text-zinc-200">{a.nom} {a.prenoms}</td>
+                  <td className="px-4 py-2.5 font-mono text-zinc-400">{a.dateDebut} → {a.dateFin}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{a.jours}</td>
+                  <td className="px-4 py-2.5"><span className={cn('rounded-full px-2 py-0.5 text-xs', a.paye ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300')}>{a.paye ? 'Payée' : 'Non payée'}</span>{a.justifiee && <span className="ml-1 text-xs text-zinc-500">justifiée</span>}</td>
+                  <td className="px-4 py-2.5 text-zinc-400">{a.motif || '—'}</td>
+                  <td className="px-4 py-2.5 text-right"><button onClick={() => del(a.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// --- Avances & prêts sur salaire -------------------------------------------
+function AdvancesPanel({ dossierId, employees, currency }: { dossierId: string; employees: PayrollEmployee[]; currency: string }) {
+  const m = (n: number) => fmtMoney(n, currency);
+  const now = new Date();
+  const [rows, setRows] = useState<PayrollAdvance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const empty = { employeeId: '', type: 'avance', montantTotal: 0, mensualite: 0, startYear: now.getUTCFullYear(), startMonth: now.getUTCMonth(), motif: '' };
+  const [f, setForm] = useState<any>(empty);
+  const setF = (p: any) => setForm((x: any) => ({ ...x, ...p }));
+
+  const load = async () => { setLoading(true); try { setRows(await api.payrollAdvances(dossierId)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [dossierId]);
+
+  const add = async () => {
+    if (!f.employeeId) { setErr('Choisissez un salarié.'); return; }
+    if (Number(f.montantTotal) <= 0 || Number(f.mensualite) <= 0) { setErr('Montant et mensualité doivent être positifs.'); return; }
+    setBusy(true); setErr(null);
+    try { await api.createAdvance(dossierId, { ...f, montantTotal: Number(f.montantTotal), mensualite: Number(f.mensualite), startYear: Number(f.startYear), startMonth: Number(f.startMonth) }); setForm(empty); setShowForm(false); await load(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const del = async (id: string) => { setErr(null); try { await api.deleteAdvance(dossierId, id); await load(); } catch (e: any) { setErr(e.message); } };
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium text-zinc-200">Avances & prêts ({rows.length})</div>
+        <button onClick={() => { setForm(empty); setShowForm((v) => !v); }} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Avance / prêt</button>
+      </div>
+      <p className="text-xs text-zinc-500">La <strong>mensualité</strong> est retenue automatiquement sur chaque bulletin, à partir du mois de début, jusqu'au remboursement complet.</p>
+      {err && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{err}</p>}
+
+      {showForm && (
+        <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="lg:col-span-2"><label className="mb-1 block text-xs text-zinc-500">Salarié</label>
+            <select value={f.employeeId} onChange={(e) => setF({ employeeId: e.target.value })} className={inputCls}>
+              <option value="">— choisir —</option>{employees.map((e) => <option key={e.id} value={e.id}>{e.matricule} — {e.nom} {e.prenoms}</option>)}
+            </select></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Type</label><select value={f.type} onChange={(e) => setF({ type: e.target.value })} className={inputCls}><option value="avance">Avance</option><option value="pret">Prêt</option></select></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Motif</label><input value={f.motif} onChange={(e) => setF({ motif: e.target.value })} className={inputCls} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Montant total</label><input type="number" value={f.montantTotal} onChange={(e) => setF({ montantTotal: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Mensualité</label><input type="number" value={f.mensualite} onChange={(e) => setF({ mensualite: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Mois de début</label><select value={f.startMonth} onChange={(e) => setF({ startMonth: Number(e.target.value) })} className={inputCls}>{MONTHS.map((mo, i) => <option key={i} value={i}>{mo}</option>)}</select></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Année</label><input type="number" value={f.startYear} onChange={(e) => setF({ startYear: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+          <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2">
+            <button onClick={() => setShowForm(false)} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+            <button onClick={add} disabled={busy} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : rows.length === 0 ? <p className="text-sm text-zinc-500">Aucune avance ni prêt.</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-2.5 font-medium">Salarié</th><th className="px-4 py-2.5 font-medium">Type</th><th className="px-4 py-2.5 text-right font-medium">Montant</th><th className="px-4 py-2.5 text-right font-medium">Mensualité</th><th className="px-4 py-2.5 font-medium">Début</th><th className="px-4 py-2.5 text-right font-medium">Restant dû</th><th className="px-4 py-2.5"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5">
+              {rows.map((a) => (
+                <tr key={a.id} className="hover:bg-white/5">
+                  <td className="px-4 py-2.5 text-zinc-200">{a.nom} {a.prenoms}</td>
+                  <td className="px-4 py-2.5 text-zinc-400">{a.type === 'pret' ? 'Prêt' : 'Avance'}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(a.montantTotal)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(a.mensualite)}</td>
+                  <td className="px-4 py-2.5 text-zinc-400">{MONTHS[a.startMonth]} {a.startYear}</td>
+                  <td className="px-4 py-2.5 text-right font-mono"><span className={cn(a.restant > 0 ? 'text-amber-300' : 'text-emerald-400')}>{a.restant > 0 ? m(a.restant) : 'Soldé'}</span></td>
+                  <td className="px-4 py-2.5 text-right"><button onClick={() => del(a.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

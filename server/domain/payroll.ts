@@ -1,5 +1,5 @@
 import type { Client } from '../db.js';
-import { calculatePayroll, getMonthName, type Employee, type MonthlyVariables } from '../payroll/core/index.js';
+import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
 
 // ============================================================================
@@ -41,6 +41,14 @@ const CAMEL: Record<string, string> = {
   convention_collective: 'conventionCollective', mode_paiement: 'modePaiement', rib: 'rib', banque: 'banque',
   mobile_money_numero: 'mobileMoneyNumero', mobile_money_operateur: 'mobileMoneyOperateur', actif: 'actif',
 };
+
+// Lignes DB -> types du moteur (camelCase).
+function toAbsence(r: any): Absence {
+  return { id: r.id, employeeId: r.employee_id, dateDebut: iso(r.date_debut), dateFin: iso(r.date_fin), jours: num(r.jours), justifiee: !!r.justifiee, paye: !!r.paye, motif: r.motif ?? undefined, createdAt: iso(r.created_at) };
+}
+function toAdvance(r: any): SalaryAdvance {
+  return { id: r.id, employeeId: r.employee_id, type: r.type, montantTotal: num(r.montant_total), mensualite: num(r.mensualite), startYear: Number(r.start_year), startMonth: Number(r.start_month), motif: r.motif ?? undefined, createdAt: iso(r.created_at) };
+}
 
 export async function listEmployees(c: Client, dossierId: string): Promise<any[]> {
   const { rows } = await c.query('select * from payroll_employees where dossier_id=$1 order by nom, prenoms', [dossierId]);
@@ -89,9 +97,23 @@ export async function runPayroll(
   if (posted[0]) throw new Error('Paie déjà comptabilisée pour cette période : contre-passez l\'écriture avant de recalculer.');
 
   const { rows: emps } = await c.query('select * from payroll_employees where dossier_id=$1 and actif order by nom', [dossierId]);
+
+  // Registres RH → variables dérivées du mois (absences non payées, échéance d'avance).
+  const { rows: absRows } = await c.query('select * from payroll_absences where dossier_id=$1', [dossierId]);
+  const { rows: advRows } = await c.query('select * from payroll_advances where dossier_id=$1', [dossierId]);
+  const absByEmp = new Map<string, Absence[]>();
+  for (const r of absRows) { const a = toAbsence(r); (absByEmp.get(a.employeeId) ?? absByEmp.set(a.employeeId, []).get(a.employeeId)!).push(a); }
+  const advByEmp = new Map<string, SalaryAdvance[]>();
+  for (const r of advRows) { const a = toAdvance(r); (advByEmp.get(a.employeeId) ?? advByEmp.set(a.employeeId, []).get(a.employeeId)!).push(a); }
+
   let totalBrut = 0, totalNet = 0, totalCout = 0, count = 0;
   for (const e of emps) {
-    const v = zeroVars(e.id, year, month, varsMap[e.id] ?? {});
+    const derived: Partial<MonthlyVariables> = {
+      joursAbsence: unpaidAbsenceDaysInMonth(absByEmp.get(e.id) ?? [], year, month),
+      remboursementAvance: advanceDeductionForMonth(advByEmp.get(e.id) ?? [], year, month),
+    };
+    // Les variables manuelles éventuelles (heures sup, primes…) priment sur le dérivé.
+    const v = zeroVars(e.id, year, month, { ...derived, ...(varsMap[e.id] ?? {}) });
     const calc = calculatePayroll(toEmployee(e), v, 'CI');
     await c.query(
       `insert into payroll_payslips(dossier_id, employee_id, period_year, period_month, variables, calculation)
@@ -115,6 +137,57 @@ export async function listPayslips(c: Client, dossierId: string, year: number, m
     brut: r.calculation.salaireBrutTotal, net: r.calculation.salaireNetPaye, cout: r.calculation.totalCoutEmployeur,
     calculation: r.calculation, comptabilise: !!r.entry_id, entryId: r.entry_id,
   }));
+}
+
+// --- Registre des absences -------------------------------------------------
+export async function listAbsences(c: Client, dossierId: string): Promise<any[]> {
+  const { rows } = await c.query(
+    `select a.*, e.nom, e.prenoms, e.matricule from payroll_absences a
+       join payroll_employees e on e.id=a.employee_id
+      where a.dossier_id=$1 order by a.date_debut desc`, [dossierId]);
+  return rows.map((r: any) => ({
+    id: r.id, employeeId: r.employee_id, nom: r.nom, prenoms: r.prenoms, matricule: r.matricule,
+    dateDebut: iso(r.date_debut), dateFin: iso(r.date_fin), jours: num(r.jours), justifiee: !!r.justifiee, paye: !!r.paye, motif: r.motif ?? null,
+  }));
+}
+export async function createAbsence(c: Client, dossierId: string, input: any): Promise<{ id: string }> {
+  const { rows } = await c.query(
+    `insert into payroll_absences(dossier_id, employee_id, date_debut, date_fin, jours, justifiee, paye, motif)
+     values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+    [dossierId, input.employeeId, input.dateDebut, input.dateFin, num(input.jours), !!input.justifiee, !!input.paye, input.motif || null]);
+  return { id: rows[0].id };
+}
+export async function deleteAbsence(c: Client, dossierId: string, id: string): Promise<void> {
+  await c.query('delete from payroll_absences where dossier_id=$1 and id=$2', [dossierId, id]);
+}
+
+// --- Avances & prêts sur salaire -------------------------------------------
+export async function listAdvances(c: Client, dossierId: string): Promise<any[]> {
+  const now = new Date();
+  const y = now.getUTCFullYear(); const m = now.getUTCMonth();
+  const { rows } = await c.query(
+    `select a.*, e.nom, e.prenoms, e.matricule from payroll_advances a
+       join payroll_employees e on e.id=a.employee_id
+      where a.dossier_id=$1 order by a.created_at desc`, [dossierId]);
+  return rows.map((r: any) => {
+    const adv = toAdvance(r);
+    return {
+      id: r.id, employeeId: r.employee_id, nom: r.nom, prenoms: r.prenoms, matricule: r.matricule,
+      type: adv.type, montantTotal: adv.montantTotal, mensualite: adv.mensualite,
+      startYear: adv.startYear, startMonth: adv.startMonth, motif: adv.motif ?? null,
+      restant: Math.round(advanceRemaining(adv, y, m)), // restant dû au mois courant
+    };
+  });
+}
+export async function createAdvance(c: Client, dossierId: string, input: any): Promise<{ id: string }> {
+  const { rows } = await c.query(
+    `insert into payroll_advances(dossier_id, employee_id, type, montant_total, mensualite, start_year, start_month, motif)
+     values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+    [dossierId, input.employeeId, input.type === 'pret' ? 'pret' : 'avance', num(input.montantTotal), num(input.mensualite), Number(input.startYear), Number(input.startMonth), input.motif || null]);
+  return { id: rows[0].id };
+}
+export async function deleteAdvance(c: Client, dossierId: string, id: string): Promise<void> {
+  await c.query('delete from payroll_advances where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 
 // Comptabilise l'OD de paie de la période (une seule fois).

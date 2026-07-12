@@ -1094,6 +1094,34 @@ export function createApi() {
     const { year, month, entryDate } = req.body ?? {};
     res.json(await withUser(userId, (c) => payroll.postPayroll(c, req.params.id, Number(year), Number(month), entryDate || undefined)));
   }));
+  // RH : absences
+  app.get('/api/dossiers/:id/payroll/absences', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => payroll.listAbsences(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/payroll/absences', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => payroll.createAbsence(c, req.params.id, req.body ?? {})));
+  }));
+  app.delete('/api/dossiers/:id/payroll/absences/:aid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => payroll.deleteAbsence(c, req.params.id, req.params.aid));
+    res.status(204).end();
+  }));
+  // RH : avances & prêts
+  app.get('/api/dossiers/:id/payroll/advances', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => payroll.listAdvances(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/payroll/advances', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => payroll.createAdvance(c, req.params.id, req.body ?? {})));
+  }));
+  app.delete('/api/dossiers/:id/payroll/advances/:aid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => payroll.deleteAdvance(c, req.params.id, req.params.aid));
+    res.status(204).end();
+  }));
   app.post('/api/dossiers/:id/agent/chat', h(async (req, res) => {
     const userId = requireUser(req);
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];

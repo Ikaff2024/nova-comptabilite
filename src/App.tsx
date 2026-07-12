@@ -131,8 +131,8 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden p-8 lg:p-12">
-        <div className="mx-auto max-w-7xl">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
+        <div className="mx-auto max-w-[1760px]">
           {selected
             ? (selected.role === 'client' || selected.role === 'lecture')
               ? <ClientPortal dossier={selected} onBack={() => setSelected(null)} />

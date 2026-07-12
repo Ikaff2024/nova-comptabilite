@@ -530,7 +530,18 @@ export const api = {
   payrollPayslips: (dossierId: string, year: number, month: number) => req<Payslip[]>(`/api/dossiers/${dossierId}/payroll/payslips?year=${year}&month=${month}`),
   runPayroll: (dossierId: string, year: number, month: number) => req<PayrollRunResult>(`/api/dossiers/${dossierId}/payroll/run`, { method: 'POST', body: JSON.stringify({ year, month }) }),
   postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
+  // RH : absences
+  payrollAbsences: (dossierId: string) => req<PayrollAbsence[]>(`/api/dossiers/${dossierId}/payroll/absences`),
+  createAbsence: (dossierId: string, input: Partial<PayrollAbsence>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/absences`, { method: 'POST', body: JSON.stringify(input) }),
+  deleteAbsence: (dossierId: string, aid: string) => req<void>(`/api/dossiers/${dossierId}/payroll/absences/${aid}`, { method: 'DELETE' }),
+  // RH : avances & prêts
+  payrollAdvances: (dossierId: string) => req<PayrollAdvance[]>(`/api/dossiers/${dossierId}/payroll/advances`),
+  createAdvance: (dossierId: string, input: Partial<PayrollAdvance>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/advances`, { method: 'POST', body: JSON.stringify(input) }),
+  deleteAdvance: (dossierId: string, aid: string) => req<void>(`/api/dossiers/${dossierId}/payroll/advances/${aid}`, { method: 'DELETE' }),
 };
+
+export interface PayrollAbsence { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; dateDebut: string; dateFin: string; jours: number; justifiee: boolean; paye: boolean; motif: string | null }
+export interface PayrollAdvance { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; type: 'avance' | 'pret'; montantTotal: number; mensualite: number; startYear: number; startMonth: number; motif: string | null; restant: number }
 
 export const OHADA_COUNTRIES: { code: string; name: string }[] = [
   { code: 'CI', name: "Côte d'Ivoire" }, { code: 'SN', name: 'Sénégal' }, { code: 'BJ', name: 'Bénin' },
