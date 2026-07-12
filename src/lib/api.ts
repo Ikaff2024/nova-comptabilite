@@ -257,13 +257,15 @@ export interface AnalyticMonthly {
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export type AgentMode = 'readonly' | 'assist' | 'assist_plus';
 export interface AgentResult { reply: string; toolCalls: { name: string; input: any }[]; model: string; mode: AgentMode }
-export interface AgentStatus { enabled: boolean; mode: AgentMode; canToggle: boolean; tts?: boolean }
+export interface VoiceCatalogItem { id: string; name: string; desc: string }
+export interface VoiceConfig { provider: string; voiceId: string | null; providers: string[]; catalog: Record<string, VoiceCatalogItem[]> }
+export interface AgentStatus { enabled: boolean; mode: AgentMode; canToggle: boolean; tts?: boolean; voice?: VoiceConfig }
 
-// Synthèse vocale serveur (ElevenLabs). Renvoie un Blob audio, ou null si le
-// canal est indisponible (204) — le front bascule alors sur la voix navigateur.
-export async function lexaSpeak(text: string): Promise<Blob | null> {
+// Synthèse vocale serveur (fournisseur/voix du dossier). Renvoie un Blob audio,
+// ou null si indisponible (204) — le front bascule alors sur la voix navigateur.
+export async function lexaSpeak(dossierId: string, text: string): Promise<Blob | null> {
   const token = getToken();
-  const res = await fetch(BASE + '/api/lexa/speak', {
+  const res = await fetch(BASE + `/api/dossiers/${dossierId}/lexa/speak`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ text }),
@@ -519,6 +521,7 @@ export const api = {
   telegramLinks: (dossierId: string) => req<{ enabled: boolean; links: { id: string; code: string; label: string | null; linked: boolean; created_at: string }[] }>(`/api/dossiers/${dossierId}/telegram/links`),
   telegramLink: (dossierId: string, label?: string) => req<{ code: string }>(`/api/dossiers/${dossierId}/telegram/links`, { method: 'POST', body: JSON.stringify({ label }) }),
   telegramUnlink: (dossierId: string, lid: string) => req<void>(`/api/dossiers/${dossierId}/telegram/links/${lid}`, { method: 'DELETE' }),
+  setLexaVoice: (dossierId: string, provider: string, voiceId: string | null) => req<{ provider: string; voiceId: string | null }>(`/api/dossiers/${dossierId}/lexa/voice`, { method: 'PATCH', body: JSON.stringify({ provider, voiceId }) }),
   // --- Paie ---
   payrollEmployees: (dossierId: string) => req<PayrollEmployee[]>(`/api/dossiers/${dossierId}/payroll/employees`),
   createPayrollEmployee: (dossierId: string, body: Partial<PayrollEmployee>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/employees`, { method: 'POST', body: JSON.stringify(body) }),

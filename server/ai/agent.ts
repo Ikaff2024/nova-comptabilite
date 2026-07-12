@@ -67,6 +67,16 @@ export async function isDossierAdmin(c: Client, dossierId: string): Promise<bool
   return rows[0]?.ok === true;
 }
 
+// Réglage de la voix (fournisseur + voix), par dossier. Lecture tolérante au schéma.
+export async function getVoice(c: Client, dossierId: string): Promise<{ provider: string; voiceId: string | null }> {
+  const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const j: any = rows[0]?.j ?? {};
+  return { provider: j.voice_provider ?? 'elevenlabs', voiceId: j.voice_id ?? null };
+}
+export async function setVoice(c: Client, dossierId: string, provider: string | null, voiceId: string | null): Promise<void> {
+  await c.query('select dossier_set_voice($1,$2,$3)', [dossierId, provider, voiceId]);
+}
+
 // --- Mémoire de Lexa (auto-apprentissage par dossier) ------------------------
 export async function listMemories(c: Client, dossierId: string): Promise<any[]> {
   const { rows } = await c.query(

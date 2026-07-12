@@ -970,20 +970,34 @@ export function createApi() {
   // --- Assistant comptable agentique (lecture seule) -------------------------
   app.get('/api/dossiers/:id/agent/status', h(async (req, res) => {
     const userId = requireUser(req);
-    const { mode, canToggle } = await withUser(userId, async (c) => ({
+    const { mode, canToggle, voice } = await withUser(userId, async (c) => ({
       mode: await agent.getAgentMode(c, req.params.id),
       canToggle: await agent.isDossierAdmin(c, req.params.id),
+      voice: await agent.getVoice(c, req.params.id),
     }));
-    res.json({ enabled: agent.agentEnabled(), mode, canToggle, tts: tts.ttsEnabled() });
+    res.json({
+      enabled: agent.agentEnabled(), mode, canToggle, tts: tts.ttsEnabled(),
+      voice: { provider: voice.provider, voiceId: voice.voiceId, providers: tts.providersAvailable(), catalog: tts.VOICE_CATALOG },
+    });
   }));
 
-  // Synthèse vocale serveur (ElevenLabs). Renvoie du MP3 ; 204 si indisponible
+  // Choix de la voix (fournisseur + voix), réservé au propriétaire/associé.
+  app.patch('/api/dossiers/:id/lexa/voice', h(async (req: any, res) => {
+    const userId = requireUser(req);
+    const { provider, voiceId } = req.body ?? {};
+    if (provider != null && provider !== 'elevenlabs' && provider !== 'openai') { const e: any = new Error('Fournisseur invalide'); e.status = 400; throw e; }
+    await withUser(userId, (c) => agent.setVoice(c, req.params.id, provider ?? null, voiceId ?? null));
+    res.json(await withUser(userId, (c) => agent.getVoice(c, req.params.id)));
+  }));
+
+  // Synthèse vocale serveur (fournisseur/voix du dossier). MP3 ; 204 si indisponible
   // (le front bascule alors sur la voix du navigateur).
-  app.post('/api/lexa/speak', h(async (req: any, res) => {
-    requireUser(req);
+  app.post('/api/dossiers/:id/lexa/speak', h(async (req: any, res) => {
+    const userId = requireUser(req);
     const text = String(req.body?.text ?? '');
     if (!text.trim()) { res.status(400).json({ error: 'Texte requis' }); return; }
-    const audio = await tts.synthesize(text);
+    const v = await withUser(userId, (c) => agent.getVoice(c, req.params.id));
+    const audio = await tts.synthesize(text, v.provider as any, v.voiceId || undefined);
     if (!audio) { res.status(204).end(); return; }
     res.setHeader('content-type', 'audio/mpeg');
     res.send(audio);

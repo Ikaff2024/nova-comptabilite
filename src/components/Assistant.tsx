@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain } from 'lucide-react';
+import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain, SlidersHorizontal } from 'lucide-react';
 import { api, lexaSpeak, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
 import { cn } from '../lib/utils';
 import WhatsAppLink from './WhatsAppLink';
 import TelegramLink from './TelegramLink';
+import LexaVoice from './LexaVoice';
 import LexaMemory from './LexaMemory';
 
 type Turn = AgentMessage & { tools?: string[] };
@@ -111,6 +112,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   const [typing, setTyping] = useState<{ idx: number; len: number } | null>(null);
   const [showWa, setShowWa] = useState(false);
   const [showTg, setShowTg] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
   const [showMem, setShowMem] = useState(false);
 
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
@@ -158,7 +160,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     stopSpeaking();
     if (status?.tts) {
       try {
-        const blob = await lexaSpeak(text);
+        const blob = await lexaSpeak(dossierId, text);
         if (blob) {
           const audio = new Audio(URL.createObjectURL(blob));
           audioRef.current = audio;
@@ -256,6 +258,12 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
               {speakOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </button>
           )}
+          {status?.canToggle && status?.voice && (
+            <button onClick={() => setShowVoice((v) => !v)} title="Choisir la voix de Lexa (propriétaire)"
+              className={cn('flex h-7 w-7 items-center justify-center rounded-lg border', showVoice ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200')}>
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+          )}
           {status?.canToggle ? (
             <select value={mode} onChange={(e) => changeMode(e.target.value as AgentMode)} title="Niveau de pouvoir de l'assistant (admin)"
               className={cn('rounded-lg border px-2.5 py-1 text-xs outline-none', mode === 'readonly' ? 'border-white/10 bg-white/5 text-zinc-300' : 'border-amber-500/30 bg-amber-500/10 text-amber-200')}>
@@ -274,6 +282,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
       {showMem && <div className="border-b border-white/10 p-3"><LexaMemory dossierId={dossierId} /></div>}
       {showWa && <div className="border-b border-white/10 p-3"><WhatsAppLink dossierId={dossierId} /></div>}
       {showTg && <div className="border-b border-white/10 p-3"><TelegramLink dossierId={dossierId} /></div>}
+      {showVoice && status?.voice && <div className="border-b border-white/10 p-3"><LexaVoice dossierId={dossierId} voice={status.voice} onChange={(v) => setStatus((s) => (s && s.voice ? { ...s, voice: { ...s.voice, ...v } } : s))} /></div>}
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
         {turns.length === 0 && (
