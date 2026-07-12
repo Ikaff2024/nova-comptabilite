@@ -10,6 +10,7 @@ import * as whatsapp from './whatsapp/provider.js';
 import * as waHandler from './whatsapp/handler.js';
 import * as walinks from './domain/whatsapp.js';
 import * as payroll from './domain/payroll.js';
+import * as watchdog from './ai/watchdog.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
@@ -94,6 +95,13 @@ export function createApi() {
     try { await pool.query('select 1'); res.json({ ok: true, db: true, agent: agent.agentEnabled(), service: 'nova-comptabilite-api' }); }
     catch { res.status(503).json({ ok: false, db: false, agent: agent.agentEnabled(), service: 'nova-comptabilite-api' }); }
   });
+
+  // --- Agent nocturne : digest quotidien (déclenché par un cron externe) ------
+  app.post('/api/cron/watchdog', h(async (req: any, res) => {
+    const secret = process.env.CRON_SECRET;
+    if (!secret || req.header('x-cron-secret') !== secret) { const e: any = new Error('Non autorisé'); e.status = 401; throw e; }
+    res.json(await watchdog.runDailyPush());
+  }));
 
   // --- Webhook WhatsApp (Meta Cloud API) — non authentifié (appelé par Meta) --
   app.get('/api/whatsapp/webhook', (req, res) => {
