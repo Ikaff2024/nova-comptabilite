@@ -101,9 +101,11 @@ export async function saveTurns(c: Client, dossierId: string, userId: string, tu
 const ROLE_FR: Record<string, string> = { owner: 'propriétaire', associe: 'associé(e)', collaborateur: 'collaborateur(trice)', comptable: 'comptable', client: 'client', lecture: 'accès lecture' };
 
 async function dossierContext(c: Client, dossierId: string): Promise<{ text: string; fyId: string | null; currency: string; mode: AgentMode }> {
-  const { rows } = await c.query(
-    'select raison_sociale, base_currency, country, agent_mode, cabinet_id, accounting_system, forme_juridique, regime_fiscal, tax_id, rccm, bank_name, rib from dossiers where id=$1', [dossierId]);
-  const d = rows[0] ?? {};
+  // to_jsonb : lit toutes les colonnes présentes sans coupler ce chemin critique
+  // à une migration précise (les champs du profil fiscal absents = simplement
+  // undefined tant que la migration 0044 n'est pas appliquée — aucune panne).
+  const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const d: any = rows[0]?.j ?? {};
   const fys = await acc.listFiscalYears(c, dossierId);
   const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1] ?? null;
   const today = new Date().toISOString().slice(0, 10);
