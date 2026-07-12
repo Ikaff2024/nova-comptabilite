@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText } from 'lucide-react';
 import { api, fmtMoney, type PayrollEmployee, type Payslip } from '../lib/api';
+import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
 const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
@@ -14,7 +15,7 @@ const emptyForm = (): Partial<PayrollEmployee> => ({
   salaireBase: 0, sursalaire: 0, indemniteTransport: 0, indemniteLogement: 0, autresPrimes: 0,
 });
 
-export default function Paie({ dossierId, currency }: { dossierId: string; dossierName: string; currency: string }) {
+export default function Paie({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
   const m = (n: number) => fmtMoney(n, currency);
   const [employees, setEmployees] = useState<PayrollEmployee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +60,58 @@ export default function Paie({ dossierId, currency }: { dossierId: string; dossi
     try { await api.postPayroll(dossierId, year, month); await loadPayslips(); } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
 
+  const period = `${MONTHS[month]} ${year}`;
+  const psum = (f: (c: any) => number) => Math.round(payslips.reduce((s, p) => s + (f(p.calculation) || 0), 0));
+
+  const printBulletin = (p: Payslip) => {
+    const emp = employees.find((e) => e.id === p.employeeId);
+    const c = p.calculation;
+    const row = (l: string, v: number) => `<tr><td>${l}</td><td class="n">${m(v)}</td></tr>`;
+    const body = `
+      <table style="margin-bottom:12px"><tbody>
+        <tr><td><b>Employeur :</b> ${dossierName.replace(/[&<>]/g, '')}</td><td class="n">Bulletin de paie — ${period}</td></tr>
+        <tr><td><b>Salarié :</b> ${(p.nom + ' ' + p.prenoms).replace(/[&<>]/g, '')} (${p.matricule})</td><td class="n">${emp?.poste ?? ''} · ${emp?.categorie ?? ''}</td></tr>
+      </tbody></table>
+      <table><thead><tr><th>Gains</th><th class="n">Montant</th></tr></thead><tbody>
+        ${row('Salaire de base + sursalaire', c.salaireBase + c.sursalaire)}
+        ${c.primeAnciennete > 0 ? row(`Prime d'ancienneté (${c.tauxAnciennete}%)`, c.primeAnciennete) : ''}
+        ${c.heuresSupMontant > 0 ? row('Heures supplémentaires', c.heuresSupMontant) : ''}
+        ${c.indemniteLogement > 0 ? row('Indemnité de logement', c.indemniteLogement) : ''}
+        ${c.transportExonere > 0 ? row('Indemnité de transport (exonérée)', c.transportExonere) : ''}
+        ${c.autresPrimes > 0 ? row('Autres primes', c.autresPrimes) : ''}
+        <tr class="tot"><td>Salaire brut</td><td class="n">${m(c.salaireBrutTotal)}</td></tr>
+      </tbody></table>
+      <table style="margin-top:10px"><thead><tr><th>Retenues salariales</th><th class="n">Montant</th></tr></thead><tbody>
+        ${row('CNPS (6,3%)', c.cnpsSalarial)}${row('ITS', c.itsSalarial)}${row('Contribution nationale', c.cnSalarial)}${row('IGR', c.igrSalarial)}${row('CMU', c.cmuSalarial)}
+        <tr class="tot"><td>Total retenues</td><td class="n">${m(c.totalRetenuesSalariales)}</td></tr>
+        <tr class="tot"><td>NET À PAYER</td><td class="n">${m(c.salaireNetPaye)}</td></tr>
+      </tbody></table>
+      <table style="margin-top:10px"><thead><tr><th>Charges patronales</th><th class="n">Montant</th></tr></thead><tbody>
+        ${row('CNPS prestations familiales', c.cnpsFamille)}${row('CNPS accident du travail', c.cnpsAccident)}${row('CNPS retraite (patronal)', c.cnpsRetraitePatronal)}${row("Taxe d'apprentissage", c.taxeApprentissage)}${row('Formation continue (FDFP)', c.formationContinue)}
+        <tr class="tot"><td>Total charges patronales</td><td class="n">${m(c.totalChargesPatronales)}</td></tr>
+        <tr class="tot"><td>Coût total employeur</td><td class="n">${m(c.totalCoutEmployeur)}</td></tr>
+      </tbody></table>
+      <p style="margin-top:10px;font-size:11px">Barèmes : ${c.ruleSetLabel ?? c.ruleSetVersion ?? 'CI'}. Édité le ${nowStamp()}.</p>`;
+    printDocument(`Bulletin ${p.nom} ${p.prenoms} — ${period}`, `${dossierName} · ${period}`, body);
+  };
+
+  const printDeclaration = (kind: 'cnps' | 'dgi') => {
+    if (kind === 'cnps') {
+      const cp = (c: any) => c.cnpsFamille + c.cnpsAccident + c.cnpsRetraitePatronal;
+      const body = `<table><thead><tr><th>Mat.</th><th>Salarié</th><th class="n">Brut</th><th class="n">CNPS salarial</th><th class="n">CNPS patronal</th><th class="n">Total</th></tr></thead><tbody>
+        ${payslips.map((p) => `<tr><td>${p.matricule}</td><td>${(p.nom + ' ' + p.prenoms).replace(/[&<>]/g, '')}</td><td class="n">${m(p.calculation.salaireBrutTotal)}</td><td class="n">${m(p.calculation.cnpsSalarial)}</td><td class="n">${m(cp(p.calculation))}</td><td class="n">${m(p.calculation.cnpsSalarial + cp(p.calculation))}</td></tr>`).join('')}
+        <tr class="tot"><td colspan="2">Totaux</td><td class="n">${m(psum((c) => c.salaireBrutTotal))}</td><td class="n">${m(psum((c) => c.cnpsSalarial))}</td><td class="n">${m(psum(cp))}</td><td class="n">${m(psum((c) => c.cnpsSalarial) + psum(cp))}</td></tr>
+        </tbody></table>`;
+      printDocument(`Bordereau CNPS — ${period}`, `${dossierName} · ${period} · à reverser à la CNPS`, body);
+    } else {
+      const body = `<table><thead><tr><th>Mat.</th><th>Salarié</th><th class="n">Brut imposable</th><th class="n">ITS</th><th class="n">CN</th><th class="n">IGR</th><th class="n">CMU</th></tr></thead><tbody>
+        ${payslips.map((p) => { const c = p.calculation; return `<tr><td>${p.matricule}</td><td>${(p.nom + ' ' + p.prenoms).replace(/[&<>]/g, '')}</td><td class="n">${m(c.salaireBrutImposable)}</td><td class="n">${m(c.itsSalarial)}</td><td class="n">${m(c.cnSalarial)}</td><td class="n">${m(c.igrSalarial)}</td><td class="n">${m(c.cmuSalarial)}</td></tr>`; }).join('')}
+        <tr class="tot"><td colspan="2">Totaux</td><td class="n">${m(psum((c) => c.salaireBrutImposable))}</td><td class="n">${m(psum((c) => c.itsSalarial))}</td><td class="n">${m(psum((c) => c.cnSalarial))}</td><td class="n">${m(psum((c) => c.igrSalarial))}</td><td class="n">${m(psum((c) => c.cmuSalarial))}</td></tr>
+        </tbody></table><p style="margin-top:8px;font-size:11px">Impôts sur salaires retenus (IUS/CUE 2024) à déclarer à la DGI.</p>`;
+      printDocument(`Déclaration impôts sur salaires (DGI) — ${period}`, `${dossierName} · ${period}`, body);
+    }
+  };
+
   const totals = payslips.reduce((a, p) => ({ brut: a.brut + p.brut, net: a.net + p.net, cout: a.cout + p.cout }), { brut: 0, net: 0, cout: 0 });
   const comptabilise = payslips.length > 0 && payslips.every((p) => p.comptabilise);
   const activeCount = employees.filter((e) => e.actif).length;
@@ -96,7 +149,12 @@ export default function Paie({ dossierId, currency }: { dossierId: string; dossi
                         <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(p.brut)}</td>
                         <td className="px-4 py-2.5 text-right font-mono font-semibold text-emerald-400">{m(p.net)}</td>
                         <td className="px-4 py-2.5 text-right font-mono text-zinc-400">{m(p.cout)}</td>
-                        <td className="px-4 py-2.5 text-right">{p.comptabilise ? <span className="inline-flex items-center gap-1 text-xs text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> comptabilisé</span> : <span className="text-xs text-zinc-500">brouillon</span>}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {p.comptabilise ? <span className="inline-flex items-center gap-1 text-xs text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> comptabilisé</span> : <span className="text-xs text-zinc-500">brouillon</span>}
+                            <button onClick={(ev) => { ev.stopPropagation(); printBulletin(p); }} title="Imprimer le bulletin" className="text-zinc-500 hover:text-zinc-200"><Printer className="h-4 w-4" /></button>
+                          </div>
+                        </td>
                       </tr>
                       {expanded === p.id && <tr className="bg-black/20"><td colSpan={5} className="px-4 py-3"><Bulletin calc={p.calculation} m={m} /></td></tr>}
                     </React.Fragment>
@@ -110,7 +168,12 @@ export default function Paie({ dossierId, currency }: { dossierId: string; dossi
                 </tr></tfoot>
               </table>
             </div>
-            <div className="flex items-center justify-end gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase text-zinc-500">Déclarations :</span>
+                <button onClick={() => printDeclaration('cnps')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10"><FileText className="h-3.5 w-3.5" /> Bordereau CNPS</button>
+                <button onClick={() => printDeclaration('dgi')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10"><FileText className="h-3.5 w-3.5" /> Impôts sur salaires (DGI)</button>
+              </div>
               {comptabilise ? <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> OD de paie comptabilisée</span>
                 : <button onClick={post} disabled={busy === 'post'} className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">{busy === 'post' ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookCheck className="h-4 w-4" />} Comptabiliser l'OD de paie</button>}
             </div>
