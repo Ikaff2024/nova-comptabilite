@@ -495,6 +495,7 @@ export const api = {
   analyticMonthly: (dossierId: string, fiscalYearId?: string) => req<AnalyticMonthly>(`/api/dossiers/${dossierId}/analytic/monthly${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   agentStatus: (dossierId: string) => req<AgentStatus>(`/api/dossiers/${dossierId}/agent/status`),
   agentChat: (dossierId: string, messages: AgentMessage[]) => req<AgentResult>(`/api/dossiers/${dossierId}/agent/chat`, { method: 'POST', body: JSON.stringify({ messages }) }),
+  agentHistory: (dossierId: string) => req<AgentMessage[]>(`/api/dossiers/${dossierId}/agent/history`),
   setAgentMode: (dossierId: string, mode: AgentMode) => req<{ mode: AgentMode }>(`/api/dossiers/${dossierId}/agent/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
   lexaMemory: (dossierId: string) => req<{ id: string; content: string; source: string; created_at: string }[]>(`/api/dossiers/${dossierId}/lexa/memory`),
   lexaRemember: (dossierId: string, content: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/lexa/memory`, { method: 'POST', body: JSON.stringify({ content }) }),

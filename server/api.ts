@@ -1037,11 +1037,16 @@ export function createApi() {
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
     if (messages.length === 0) { const e: any = new Error('messages requis'); e.status = 400; throw e; }
     const out = await withUser(userId, (c) => agent.runAgent(c, req.params.id, messages));
-    await withUser(userId, (c) => audit.recordAudit(c, {
-      dossierId: req.params.id, action: 'agent.query', entity: 'agent',
-      detail: { question: String(messages[messages.length - 1]?.content ?? '').slice(0, 200), tools: out.toolCalls.map((t) => t.name) },
-    }));
+    const lastUser = String(messages[messages.length - 1]?.content ?? '');
+    await withUser(userId, async (c) => {
+      await agent.saveTurns(c, req.params.id, userId, [{ role: 'user', content: lastUser }, { role: 'assistant', content: out.reply }]);
+      await audit.recordAudit(c, { dossierId: req.params.id, action: 'agent.query', entity: 'agent', detail: { question: lastUser.slice(0, 200), tools: out.toolCalls.map((t) => t.name) } });
+    });
     res.json(out);
+  }));
+  app.get('/api/dossiers/:id/agent/history', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => agent.loadHistory(c, req.params.id, userId, 50)));
   }));
 
   app.get('/api/dossiers/:id/fec', h(async (req, res) => {

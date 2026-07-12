@@ -106,6 +106,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   const [showMem, setShowMem] = useState(false);
 
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
+  useEffect(() => { api.agentHistory(dossierId).then((h) => { if (h.length) setTurns(h.map((x) => ({ role: x.role, content: x.content }))); }).catch(() => {}); }, [dossierId]);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [turns, loading]);
   useEffect(() => () => { try { recRef.current?.stop(); } catch { /* ignore */ } if (TTS_OK) window.speechSynthesis.cancel(); }, []);
 

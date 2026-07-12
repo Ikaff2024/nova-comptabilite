@@ -18,8 +18,14 @@ export async function handleInbound(messages: InboundMessage[]): Promise<void> {
         continue;
       }
       if (m.type === 'text' && m.text?.trim()) {
-        const r = await withUser(link.userId, (c) => agent.runAgent(c, link.dossierId, [{ role: 'user', content: m.text!.trim() }]));
-        await sendText(m.from, r.reply);
+        const text = m.text.trim();
+        const reply = await withUser(link.userId, async (c) => {
+          const history = await agent.loadHistory(c, link.dossierId, link.userId, 12);
+          const r = await agent.runAgent(c, link.dossierId, [...history, { role: 'user', content: text }]);
+          await agent.saveTurns(c, link.dossierId, link.userId, [{ role: 'user', content: text }, { role: 'assistant', content: r.reply }]);
+          return r.reply;
+        });
+        await sendText(m.from, reply);
       } else if (m.type === 'image' || m.type === 'document') {
         await sendText(m.from, '📎 Pièce bien reçue. La comptabilisation par photo arrive très bientôt — en attendant, posez-moi vos questions par écrit, ou utilisez l\'onglet « Capture IA » dans l\'application.');
       } else {

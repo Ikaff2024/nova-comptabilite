@@ -65,6 +65,19 @@ export async function deleteMemory(c: Client, dossierId: string, id: string): Pr
   await c.query('delete from lexa_memory where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 
+// --- Conversations (continuité par dossier + utilisateur) --------------------
+export async function loadHistory(c: Client, dossierId: string, userId: string, limit = 20): Promise<AgentMessage[]> {
+  const { rows } = await c.query(
+    'select role, content from lexa_messages where dossier_id=$1 and user_id=$2 order by created_at desc limit $3', [dossierId, userId, limit]);
+  return rows.reverse().map((r: any) => ({ role: r.role, content: r.content }));
+}
+export async function saveTurns(c: Client, dossierId: string, userId: string, turns: AgentMessage[]): Promise<void> {
+  for (const t of turns) {
+    if (!t?.content?.trim()) continue;
+    await c.query('insert into lexa_messages(dossier_id, user_id, role, content) values ($1,$2,$3,$4)', [dossierId, userId, t.role, t.content]);
+  }
+}
+
 // --- Contexte dossier (mis en cache dans le system prompt) -------------------
 
 const ROLE_FR: Record<string, string> = { owner: 'propriétaire', associe: 'associé(e)', collaborateur: 'collaborateur(trice)', comptable: 'comptable', client: 'client', lecture: 'accès lecture' };
