@@ -27,6 +27,8 @@ export function cleanForTts(s: string): string {
     // Sigles prononcés comme des mots : évite l'épellation lettre par lettre.
     // (Ceux qui se disent en lettres — TVA, CNPS, DGI, DSF… — restent tels quels.)
     .replace(/\bSYSCOHADA\b/gi, 'Sisco-ada').replace(/\bOHADA\b/gi, 'Oada').replace(/\bAUDCIF\b/gi, 'Od-cif')
+    // Abréviations de milliers/millions : « 650 k » se lisait « ka ». On développe.
+    .replace(/(\d)\s?[kK]\b/g, '$1 mille').replace(/(\d)\s?M\b/g, '$1 millions')
     .replace(/\bXOF\b/g, 'francs CFA').replace(/\bXAF\b/g, 'francs CFA').replace(/%/g, ' pour cent')
     .replace(/\n+/g, '. ').replace(/(\.\s*){2,}/g, '. ').replace(/[ \t]{2,}/g, ' ')
     .trim().slice(0, 2500); // borne le coût par requête
