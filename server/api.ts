@@ -9,6 +9,7 @@ import * as agent from './ai/agent.js';
 import * as whatsapp from './whatsapp/provider.js';
 import * as waHandler from './whatsapp/handler.js';
 import * as walinks from './domain/whatsapp.js';
+import * as payroll from './domain/payroll.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
@@ -979,6 +980,41 @@ export function createApi() {
     const userId = requireUser(req);
     await withUser(userId, (c) => walinks.deleteLink(c, req.params.id, req.params.lid));
     res.status(204).end();
+  }));
+
+  // --- Paie : salariés + bulletins -------------------------------------------
+  app.get('/api/dossiers/:id/payroll/employees', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => payroll.listEmployees(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/payroll/employees', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => payroll.createEmployee(c, req.params.id, req.body ?? {})));
+  }));
+  app.patch('/api/dossiers/:id/payroll/employees/:eid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => payroll.updateEmployee(c, req.params.id, req.params.eid, req.body ?? {}));
+    res.status(204).end();
+  }));
+  app.delete('/api/dossiers/:id/payroll/employees/:eid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => payroll.deleteEmployee(c, req.params.id, req.params.eid));
+    res.status(204).end();
+  }));
+  app.get('/api/dossiers/:id/payroll/payslips', h(async (req, res) => {
+    const userId = requireUser(req);
+    const year = Number(req.query.year), month = Number(req.query.month);
+    res.json(await withUser(userId, (c) => payroll.listPayslips(c, req.params.id, year, month)));
+  }));
+  app.post('/api/dossiers/:id/payroll/run', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { year, month, varsMap } = req.body ?? {};
+    res.json(await withUser(userId, (c) => payroll.runPayroll(c, req.params.id, Number(year), Number(month), varsMap ?? {})));
+  }));
+  app.post('/api/dossiers/:id/payroll/post', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { year, month, entryDate } = req.body ?? {};
+    res.json(await withUser(userId, (c) => payroll.postPayroll(c, req.params.id, Number(year), Number(month), entryDate || undefined)));
   }));
   app.post('/api/dossiers/:id/agent/chat', h(async (req, res) => {
     const userId = requireUser(req);

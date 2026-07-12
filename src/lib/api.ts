@@ -258,6 +258,18 @@ export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export type AgentMode = 'readonly' | 'assist' | 'assist_plus';
 export interface AgentResult { reply: string; toolCalls: { name: string; input: any }[]; model: string; mode: AgentMode }
 export interface AgentStatus { enabled: boolean; mode: AgentMode; canToggle: boolean }
+export interface PayrollEmployee {
+  id: string; matricule: string; nom: string; prenoms: string; poste?: string;
+  categorie: string; statutMatrimonial: string; nombreEnfants: number; nombrePartsIGR: number;
+  dateEmbauche: string; dateNaissance?: string;
+  salaireBase: number; sursalaire: number; indemniteTransport: number; indemniteLogement: number; autresPrimes: number;
+  email?: string; telephone?: string; actif: boolean;
+}
+export interface Payslip {
+  id: string; employeeId: string; matricule: string; nom: string; prenoms: string;
+  brut: number; net: number; cout: number; comptabilise: boolean; entryId: string | null; calculation: any;
+}
+export interface PayrollRunResult { count: number; totalBrut: number; totalNet: number; totalCoutEmployeur: number }
 export const AGENT_WRITE_TOOLS = new Set(['preparer_facture_vente', 'preparer_facture_achat', 'lettrer_automatiquement', 'preparer_relance_client']);
 export const AGENT_MODE_LABELS: Record<AgentMode, string> = { readonly: 'Lecture seule', assist: 'Assisté (brouillons)', assist_plus: 'Assisté + actions' };
 export interface ProposedLine {
@@ -487,6 +499,14 @@ export const api = {
   whatsappLinks: (dossierId: string) => req<{ enabled: boolean; links: { id: string; phone: string; label: string | null; created_at: string }[] }>(`/api/dossiers/${dossierId}/whatsapp/links`),
   whatsappLink: (dossierId: string, phone: string, label?: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/whatsapp/links`, { method: 'POST', body: JSON.stringify({ phone, label }) }),
   whatsappUnlink: (dossierId: string, lid: string) => req<void>(`/api/dossiers/${dossierId}/whatsapp/links/${lid}`, { method: 'DELETE' }),
+  // --- Paie ---
+  payrollEmployees: (dossierId: string) => req<PayrollEmployee[]>(`/api/dossiers/${dossierId}/payroll/employees`),
+  createPayrollEmployee: (dossierId: string, body: Partial<PayrollEmployee>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/employees`, { method: 'POST', body: JSON.stringify(body) }),
+  updatePayrollEmployee: (dossierId: string, eid: string, body: Partial<PayrollEmployee>) => req<void>(`/api/dossiers/${dossierId}/payroll/employees/${eid}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deletePayrollEmployee: (dossierId: string, eid: string) => req<void>(`/api/dossiers/${dossierId}/payroll/employees/${eid}`, { method: 'DELETE' }),
+  payrollPayslips: (dossierId: string, year: number, month: number) => req<Payslip[]>(`/api/dossiers/${dossierId}/payroll/payslips?year=${year}&month=${month}`),
+  runPayroll: (dossierId: string, year: number, month: number) => req<PayrollRunResult>(`/api/dossiers/${dossierId}/payroll/run`, { method: 'POST', body: JSON.stringify({ year, month }) }),
+  postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
 };
 
 export const OHADA_COUNTRIES: { code: string; name: string }[] = [

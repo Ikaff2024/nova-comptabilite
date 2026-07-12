@@ -562,6 +562,16 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
     await c.query('select dossier_client_grant($1,$2)', [id, clientEmail]);
   } catch { /* seed du portail best-effort */ }
 
+  // Paie de démo : 3 salariés + bulletins de juillet 2026 (non comptabilisés,
+  // à valider dans l'onglet Paie) — illustre le module de bout en bout.
+  try {
+    const { createEmployee, runPayroll } = await import('./payroll.js');
+    await createEmployee(c, id, { matricule: 'S001', nom: 'Koné', prenoms: 'Awa', poste: 'Vendeuse', categorie: 'Employe', dateEmbauche: '2022-06-01', salaireBase: 180000, indemniteTransport: 30000 });
+    await createEmployee(c, id, { matricule: 'S002', nom: 'Traoré', prenoms: 'Bakary', poste: 'Chef de boutique', categorie: 'Agent de Maitrise', dateEmbauche: '2020-02-15', salaireBase: 350000, sursalaire: 50000, indemniteTransport: 40000 });
+    await createEmployee(c, id, { matricule: 'S003', nom: 'Diabaté', prenoms: 'Fatou', poste: 'Comptable', categorie: 'Cadre', dateEmbauche: '2019-09-01', salaireBase: 600000, sursalaire: 150000, indemniteTransport: 50000, indemniteLogement: 100000 });
+    await runPayroll(c, id, 2026, 6);
+  } catch { /* seed paie best-effort */ }
+
   return { dossierId: id };
 }
 
