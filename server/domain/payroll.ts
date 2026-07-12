@@ -99,8 +99,10 @@ export async function runPayroll(
   const { rows: emps } = await c.query('select * from payroll_employees where dossier_id=$1 and actif order by nom', [dossierId]);
 
   // Registres RH → variables dérivées du mois (absences non payées, échéance d'avance).
-  const { rows: absRows } = await c.query('select * from payroll_absences where dossier_id=$1', [dossierId]);
-  const { rows: advRows } = await c.query('select * from payroll_advances where dossier_id=$1', [dossierId]);
+  // Tolérant au schéma : si les tables RH ne sont pas encore migrées, on n'échoue pas.
+  const rhReady = await rhTablesReady(c);
+  const { rows: absRows } = rhReady ? await c.query('select * from payroll_absences where dossier_id=$1', [dossierId]) : { rows: [] as any[] };
+  const { rows: advRows } = rhReady ? await c.query('select * from payroll_advances where dossier_id=$1', [dossierId]) : { rows: [] as any[] };
   const absByEmp = new Map<string, Absence[]>();
   for (const r of absRows) { const a = toAbsence(r); (absByEmp.get(a.employeeId) ?? absByEmp.set(a.employeeId, []).get(a.employeeId)!).push(a); }
   const advByEmp = new Map<string, SalaryAdvance[]>();
@@ -139,8 +141,15 @@ export async function listPayslips(c: Client, dossierId: string, year: number, m
   }));
 }
 
+// Vrai si les tables RH (absences/avances) sont présentes (migration 0046 appliquée).
+async function rhTablesReady(c: Client): Promise<boolean> {
+  const { rows } = await c.query("select to_regclass('public.payroll_absences') is not null and to_regclass('public.payroll_advances') is not null as ok");
+  return rows[0]?.ok === true;
+}
+
 // --- Registre des absences -------------------------------------------------
 export async function listAbsences(c: Client, dossierId: string): Promise<any[]> {
+  if (!(await rhTablesReady(c))) return [];
   const { rows } = await c.query(
     `select a.*, e.nom, e.prenoms, e.matricule from payroll_absences a
        join payroll_employees e on e.id=a.employee_id
@@ -163,6 +172,7 @@ export async function deleteAbsence(c: Client, dossierId: string, id: string): P
 
 // --- Avances & prêts sur salaire -------------------------------------------
 export async function listAdvances(c: Client, dossierId: string): Promise<any[]> {
+  if (!(await rhTablesReady(c))) return [];
   const now = new Date();
   const y = now.getUTCFullYear(); const m = now.getUTCMonth();
   const { rows } = await c.query(
