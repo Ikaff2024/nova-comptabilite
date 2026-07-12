@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain } from 'lucide-react';
-import { api, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
+import { api, lexaSpeak, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
 import { cn } from '../lib/utils';
 import WhatsAppLink from './WhatsAppLink';
 import LexaMemory from './LexaMemory';
@@ -104,6 +104,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   const [speakOn, setSpeakOn] = useState(false);
   const recRef = useRef<any>(null);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null); // lecture ElevenLabs en cours
   const transcriptRef = useRef('');
   // Effet « machine à écrire » sur la dernière réponse
   const [typing, setTyping] = useState<{ idx: number; len: number } | null>(null);
@@ -113,7 +114,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
   useEffect(() => { api.agentHistory(dossierId).then((h) => { if (h.length) setTurns(h.map((x) => ({ role: x.role, content: x.content }))); }).catch(() => {}); }, [dossierId]);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [turns, loading]);
-  useEffect(() => () => { try { recRef.current?.stop(); } catch { /* ignore */ } if (TTS_OK) window.speechSynthesis.cancel(); }, []);
+  useEffect(() => () => { try { recRef.current?.stop(); } catch { /* ignore */ } if (TTS_OK) window.speechSynthesis.cancel(); if (audioRef.current) { try { audioRef.current.pause(); } catch { /* ignore */ } } }, []);
 
   // Choisit la voix française la plus naturelle disponible (ex. « Google français »).
   useEffect(() => {
@@ -138,7 +139,11 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     return () => clearTimeout(id);
   }, [typing, turns]);
 
-  const speak = (text: string) => {
+  const stopSpeaking = () => {
+    if (TTS_OK) window.speechSynthesis.cancel();
+    if (audioRef.current) { try { audioRef.current.pause(); } catch { /* ignore */ } audioRef.current = null; }
+  };
+  const speakBrowser = (text: string) => {
     if (!TTS_OK) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(forSpeech(text));
@@ -146,7 +151,24 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     if (voiceRef.current) u.voice = voiceRef.current;
     window.speechSynthesis.speak(u);
   };
-  const toggleSpeak = () => setSpeakOn((s) => { if (s && TTS_OK) window.speechSynthesis.cancel(); return !s; });
+  // Voix ElevenLabs si disponible (naturelle), sinon repli sur le navigateur.
+  const speak = async (text: string) => {
+    stopSpeaking();
+    if (status?.tts) {
+      try {
+        const blob = await lexaSpeak(text);
+        if (blob) {
+          const audio = new Audio(URL.createObjectURL(blob));
+          audioRef.current = audio;
+          audio.onended = () => { if (audioRef.current === audio) audioRef.current = null; };
+          await audio.play();
+          return;
+        }
+      } catch { /* repli navigateur ci-dessous */ }
+    }
+    speakBrowser(text);
+  };
+  const toggleSpeak = () => setSpeakOn((s) => { if (s) stopSpeaking(); return !s; });
 
   const toggleMic = () => {
     if (!STT_OK) return;
@@ -180,7 +202,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     if (!q || loading) return;
     setError(null);
     try { recRef.current?.stop(); } catch { /* ignore */ }
-    if (TTS_OK) window.speechSynthesis.cancel();
+    stopSpeaking();
     const baseLen = turns.length; // index de la future réponse assistant = baseLen + 1
     const history: AgentMessage[] = [...turns.map((t) => ({ role: t.role, content: t.content })), { role: 'user', content: q }];
     setTurns((ts) => [...ts, { role: 'user', content: q }]);

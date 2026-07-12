@@ -9,6 +9,10 @@ import * as agent from './ai/agent.js';
 import * as whatsapp from './whatsapp/provider.js';
 import * as waHandler from './whatsapp/handler.js';
 import * as walinks from './domain/whatsapp.js';
+import * as telegram from './telegram/provider.js';
+import * as tgHandler from './telegram/handler.js';
+import * as tglinks from './domain/telegram.js';
+import * as tts from './tts/provider.js';
 import * as payroll from './domain/payroll.js';
 import * as watchdog from './ai/watchdog.js';
 import * as mm from './domain/mobilemoney.js';
@@ -114,6 +118,14 @@ export function createApi() {
     res.sendStatus(200); // accusé rapide exigé par Meta ; traitement en arrière-plan
     const msgs = whatsapp.parseInbound(req.body);
     if (msgs.length) waHandler.handleInbound(msgs).catch(() => {});
+  });
+
+  // --- Webhook Telegram (Bot API) — non authentifié (appelé par Telegram) ----
+  app.post('/api/telegram/webhook', (req: any, res) => {
+    if (!telegram.verifySecret(req.header('x-telegram-bot-api-secret-token'))) return res.sendStatus(401);
+    res.sendStatus(200);
+    const up = telegram.parseUpdate(req.body);
+    if (up) tgHandler.handleUpdate(up).catch(() => {});
   });
 
   // --- Authentification -------------------------------------------------------
@@ -962,7 +974,19 @@ export function createApi() {
       mode: await agent.getAgentMode(c, req.params.id),
       canToggle: await agent.isDossierAdmin(c, req.params.id),
     }));
-    res.json({ enabled: agent.agentEnabled(), mode, canToggle });
+    res.json({ enabled: agent.agentEnabled(), mode, canToggle, tts: tts.ttsEnabled() });
+  }));
+
+  // Synthèse vocale serveur (ElevenLabs). Renvoie du MP3 ; 204 si indisponible
+  // (le front bascule alors sur la voix du navigateur).
+  app.post('/api/lexa/speak', h(async (req: any, res) => {
+    requireUser(req);
+    const text = String(req.body?.text ?? '');
+    if (!text.trim()) { res.status(400).json({ error: 'Texte requis' }); return; }
+    const audio = await tts.synthesize(text);
+    if (!audio) { res.status(204).end(); return; }
+    res.setHeader('content-type', 'audio/mpeg');
+    res.send(audio);
   }));
   app.post('/api/dossiers/:id/agent/mode', h(async (req, res) => {
     const userId = requireUser(req);
@@ -1003,6 +1027,22 @@ export function createApi() {
   app.delete('/api/dossiers/:id/whatsapp/links/:lid', h(async (req, res) => {
     const userId = requireUser(req);
     await withUser(userId, (c) => walinks.deleteLink(c, req.params.id, req.params.lid));
+    res.status(204).end();
+  }));
+
+  // --- Telegram : liaison des chats par code ---------------------------------
+  app.get('/api/dossiers/:id/telegram/links', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json({ enabled: telegram.telegramEnabled(), links: await withUser(userId, (c) => tglinks.listLinks(c, req.params.id)) });
+  }));
+  app.post('/api/dossiers/:id/telegram/links', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { label } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => tglinks.createLinkCode(c, req.params.id, userId, label)));
+  }));
+  app.delete('/api/dossiers/:id/telegram/links/:lid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => tglinks.deleteLink(c, req.params.id, req.params.lid));
     res.status(204).end();
   }));
 

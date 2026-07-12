@@ -257,7 +257,20 @@ export interface AnalyticMonthly {
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export type AgentMode = 'readonly' | 'assist' | 'assist_plus';
 export interface AgentResult { reply: string; toolCalls: { name: string; input: any }[]; model: string; mode: AgentMode }
-export interface AgentStatus { enabled: boolean; mode: AgentMode; canToggle: boolean }
+export interface AgentStatus { enabled: boolean; mode: AgentMode; canToggle: boolean; tts?: boolean }
+
+// Synthèse vocale serveur (ElevenLabs). Renvoie un Blob audio, ou null si le
+// canal est indisponible (204) — le front bascule alors sur la voix navigateur.
+export async function lexaSpeak(text: string): Promise<Blob | null> {
+  const token = getToken();
+  const res = await fetch(BASE + '/api/lexa/speak', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ text }),
+  });
+  if (res.status === 204 || !res.ok) return null;
+  return res.blob();
+}
 export interface PayrollEmployee {
   id: string; matricule: string; nom: string; prenoms: string; poste?: string;
   categorie: string; statutMatrimonial: string; nombreEnfants: number; nombrePartsIGR: number;
