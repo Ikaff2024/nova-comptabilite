@@ -542,7 +542,17 @@ export const api = {
   payrollTime: (dossierId: string) => req<PayrollTimeEntry[]>(`/api/dossiers/${dossierId}/payroll/time`),
   createTimeEntry: (dossierId: string, input: Partial<PayrollTimeEntry>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/time`, { method: 'POST', body: JSON.stringify(input) }),
   deleteTimeEntry: (dossierId: string, tid: string) => req<void>(`/api/dossiers/${dossierId}/payroll/time/${tid}`, { method: 'DELETE' }),
+  // RH : solde de tout compte
+  computeStc: (dossierId: string, input: StcInput) => req<StcResult>(`/api/dossiers/${dossierId}/payroll/stc`, { method: 'POST', body: JSON.stringify(input) }),
 };
+
+export type RuptureType = 'licenciement' | 'demission' | 'fin_cdd' | 'rupture_conventionnelle' | 'retraite' | 'faute_lourde';
+export const RUPTURE_LABELS: Record<RuptureType, string> = {
+  licenciement: 'Licenciement (hors faute grave/lourde)', demission: 'Démission', fin_cdd: 'Fin de CDD (terme normal)',
+  rupture_conventionnelle: 'Rupture conventionnelle', retraite: 'Départ / mise à la retraite', faute_lourde: 'Faute grave ou lourde',
+};
+export interface StcInput { employeeId: string; ruptureType: RuptureType; ruptureDate: string; joursCongesNonPris: number; preavisEffectue: boolean; salaireMoisDu?: number; cddTotalGross?: number }
+export interface StcResult { lines: { key: string; label: string; amount: number; note?: string }[]; total: number; tenureYears: number; referenceSalary: number; ruleSetLabel: string; employee: { nom: string; prenoms: string; matricule: string; categorie: string } }
 
 export interface PayrollTimeEntry { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; jour: string; heuresJour: number; heuresNuit: number; ferie: boolean }
 export interface PayrollAbsence { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; dateDebut: string; dateFin: string; jours: number; justifiee: boolean; paye: boolean; motif: string | null }

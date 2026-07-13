@@ -1,5 +1,5 @@
 import type { Client } from '../db.js';
-import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry } from '../payroll/core/index.js';
+import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, computeSTC, referenceSalaryFromPayslips, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry, type STCInput } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
 
 // ============================================================================
@@ -236,6 +236,31 @@ export async function createTimeEntry(c: Client, dossierId: string, input: any):
 }
 export async function deleteTimeEntry(c: Client, dossierId: string, id: string): Promise<void> {
   await c.query('delete from payroll_time_entries where dossier_id=$1 and id=$2', [dossierId, id]);
+}
+
+// --- Solde de tout compte (STC) — calcul à la demande ----------------------
+export async function runSTC(c: Client, dossierId: string, input: any): Promise<any> {
+  const { rows } = await c.query('select * from payroll_employees where dossier_id=$1 and id=$2', [dossierId, input.employeeId]);
+  const e = rows[0];
+  if (!e) throw new Error('Salarié introuvable.');
+  const monthlySalary = num(e.salaire_base) + num(e.sursalaire);
+  const embauche = new Date(iso(e.date_embauche)); const rupture = new Date(input.ruptureDate);
+  const tenureYears = Math.max(0, (rupture.getTime() - embauche.getTime()) / (365.25 * 24 * 3600 * 1000));
+
+  // Salaire de référence : moyenne des 12 derniers bulletins, à défaut le salaire courant.
+  const { rows: ps } = await c.query('select period_year, period_month, calculation from payroll_payslips where dossier_id=$1 and employee_id=$2', [dossierId, input.employeeId]);
+  const saved = ps.map((r: any) => ({ employeeId: input.employeeId, year: r.period_year, month: r.period_month, variables: {}, calculation: r.calculation, createdAt: '' }));
+  const refHist = referenceSalaryFromPayslips(saved as any, input.employeeId, 12);
+  const referenceSalary = refHist > 0 ? refHist : monthlySalary;
+
+  const stcInput: STCInput = {
+    ruptureType: input.ruptureType, ruptureDate: input.ruptureDate, tenureYears, referenceSalary, monthlySalary,
+    joursCongesNonPris: num(input.joursCongesNonPris), preavisEffectue: !!input.preavisEffectue, categorie: e.categorie,
+    cddTotalGross: input.cddTotalGross != null ? num(input.cddTotalGross) : undefined,
+    salaireMoisDu: input.salaireMoisDu != null ? num(input.salaireMoisDu) : undefined,
+  };
+  const result = computeSTC(stcInput);
+  return { ...result, tenureYears: Math.round(tenureYears * 10) / 10, referenceSalary, employee: { nom: e.nom, prenoms: e.prenoms, matricule: e.matricule, categorie: e.categorie } };
 }
 
 // Comptabilise l'OD de paie de la période (une seule fois).

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText } from 'lucide-react';
-import { api, fmtMoney, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry } from '../lib/api';
+import { api, fmtMoney, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -27,7 +27,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [sub, setSub] = useState<'paie' | 'pointage' | 'absences' | 'avances'>('paie');
+  const [sub, setSub] = useState<'paie' | 'pointage' | 'absences' | 'avances' | 'stc'>('paie');
 
   // Formulaire salarié
   const [showForm, setShowForm] = useState(false);
@@ -122,7 +122,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
-        {([['paie', 'Bulletins & salariés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts']] as const).map(([k, label]) => (
+        {([['paie', 'Bulletins & salariés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setSub(k)}
             className={cn('rounded-lg px-3.5 py-1.5 font-medium transition-colors', sub === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
             {label}
@@ -247,6 +247,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {sub === 'pointage' && <TimePanel dossierId={dossierId} employees={employees} />}
       {sub === 'absences' && <AbsencesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'avances' && <AdvancesPanel dossierId={dossierId} employees={employees} currency={currency} />}
+      {sub === 'stc' && <StcPanel dossierId={dossierId} dossierName={dossierName} employees={employees} currency={currency} />}
     </div>
   );
 }
@@ -515,6 +516,94 @@ function TimePanel({ dossierId, employees }: { dossierId: string; employees: Pay
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// --- Solde de tout compte (STC) --------------------------------------------
+function StcPanel({ dossierId, dossierName, employees, currency }: { dossierId: string; dossierName: string; employees: PayrollEmployee[]; currency: string }) {
+  const m = (n: number) => fmtMoney(n, currency);
+  const today = new Date().toISOString().slice(0, 10);
+  const empty = { employeeId: '', ruptureType: 'licenciement' as RuptureType, ruptureDate: today, joursCongesNonPris: 0, preavisEffectue: false, salaireMoisDu: 0, cddTotalGross: 0 };
+  const [f, setForm] = useState<any>(empty);
+  const setF = (p: any) => setForm((x: any) => ({ ...x, ...p }));
+  const [res, setRes] = useState<StcResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const compute = async () => {
+    if (!f.employeeId) { setErr('Choisissez un salarié.'); return; }
+    setBusy(true); setErr(null); setRes(null);
+    try {
+      const input: any = { employeeId: f.employeeId, ruptureType: f.ruptureType, ruptureDate: f.ruptureDate, joursCongesNonPris: Number(f.joursCongesNonPris) || 0, preavisEffectue: !!f.preavisEffectue, salaireMoisDu: Number(f.salaireMoisDu) || 0 };
+      if (f.ruptureType === 'fin_cdd') input.cddTotalGross = Number(f.cddTotalGross) || 0;
+      setRes(await api.computeStc(dossierId, input));
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const print = () => {
+    if (!res) return;
+    const e = res.employee;
+    const rows = res.lines.map((l) => `<tr><td>${l.label}${l.note ? ` <span style="color:#666;font-size:11px">(${l.note})</span>` : ''}</td><td class="n">${m(l.amount)}</td></tr>`).join('');
+    const body = `
+      <table style="margin-bottom:12px"><tbody>
+        <tr><td><b>Employeur :</b> ${dossierName.replace(/[&<>]/g, '')}</td><td class="n">Solde de tout compte</td></tr>
+        <tr><td><b>Salarié :</b> ${(e.nom + ' ' + e.prenoms).replace(/[&<>]/g, '')} (${e.matricule})</td><td class="n">${e.categorie}</td></tr>
+        <tr><td><b>Motif :</b> ${RUPTURE_LABELS[f.ruptureType as RuptureType]}</td><td class="n">Rupture le ${f.ruptureDate}</td></tr>
+        <tr><td><b>Ancienneté :</b> ${res.tenureYears} ans</td><td class="n">Salaire de réf. ${m(res.referenceSalary)}</td></tr>
+      </tbody></table>
+      <table><thead><tr><th>Élément</th><th class="n">Montant</th></tr></thead><tbody>
+        ${rows}
+        <tr class="tot"><td>TOTAL SOLDE DE TOUT COMPTE</td><td class="n">${m(res.total)}</td></tr>
+      </tbody></table>
+      <p style="margin-top:10px;font-size:11px">Barèmes : ${res.ruleSetLabel}. Édité le ${nowStamp()}. Montant sous réserve des barèmes légaux/conventionnels en vigueur.</p>`;
+    printDocument(`STC ${e.nom} ${e.prenoms}`, `${dossierName} · solde de tout compte`, body);
+  };
+
+  return (
+    <section className="space-y-4">
+      <p className="text-xs text-zinc-500">Calcule les droits au départ d'un salarié (salaire dû, congés non pris, préavis, indemnité de licenciement / fin de CDD) selon le type de rupture. Le salaire de référence est la moyenne des 12 derniers bulletins, à défaut le salaire courant.</p>
+      {err && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{err}</p>}
+
+      <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="lg:col-span-2"><label className="mb-1 block text-xs text-zinc-500">Salarié</label>
+          <select value={f.employeeId} onChange={(e) => setF({ employeeId: e.target.value })} className={inputCls}>
+            <option value="">— choisir —</option>{employees.map((e) => <option key={e.id} value={e.id}>{e.matricule} — {e.nom} {e.prenoms}</option>)}
+          </select></div>
+        <div className="lg:col-span-2"><label className="mb-1 block text-xs text-zinc-500">Type de rupture</label>
+          <select value={f.ruptureType} onChange={(e) => setF({ ruptureType: e.target.value })} className={inputCls}>
+            {(Object.keys(RUPTURE_LABELS) as RuptureType[]).map((k) => <option key={k} value={k}>{RUPTURE_LABELS[k]}</option>)}
+          </select></div>
+        <div><label className="mb-1 block text-xs text-zinc-500">Date de rupture</label><input type="date" value={f.ruptureDate} onChange={(e) => setF({ ruptureDate: e.target.value })} className={inputCls} /></div>
+        <div><label className="mb-1 block text-xs text-zinc-500">Congés non pris (jours)</label><input type="number" value={f.joursCongesNonPris} onChange={(e) => setF({ joursCongesNonPris: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+        <div><label className="mb-1 block text-xs text-zinc-500">Salaire du mois restant dû</label><input type="number" value={f.salaireMoisDu} onChange={(e) => setF({ salaireMoisDu: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+        {f.ruptureType === 'fin_cdd'
+          ? <div><label className="mb-1 block text-xs text-zinc-500">Brut total du CDD</label><input type="number" value={f.cddTotalGross} onChange={(e) => setF({ cddTotalGross: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+          : <label className="flex items-end gap-2 pb-2 text-sm text-zinc-300"><input type="checkbox" checked={f.preavisEffectue} onChange={(e) => setF({ preavisEffectue: e.target.checked })} className="accent-emerald-500" /> Préavis effectué</label>}
+        <div className="sm:col-span-2 lg:col-span-4 flex justify-end">
+          <button onClick={compute} disabled={busy} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Calculer le solde</button>
+        </div>
+      </div>
+
+      {res && (
+        <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm text-zinc-400">Ancienneté <strong className="text-zinc-200">{res.tenureYears} ans</strong> · salaire de référence <strong className="text-zinc-200">{m(res.referenceSalary)}</strong></div>
+            <button onClick={print} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> Imprimer</button>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-white/10">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr><th className="px-4 py-2.5 font-medium">Élément</th><th className="px-4 py-2.5 text-right font-medium">Montant</th></tr></thead>
+              <tbody className="divide-y divide-white/5">
+                {res.lines.length === 0 ? <tr><td colSpan={2} className="px-4 py-3 text-zinc-500">Aucun droit ouvert pour ce type de rupture.</td></tr> : res.lines.map((l) => (
+                  <tr key={l.key}><td className="px-4 py-2.5 text-zinc-300">{l.label}{l.note && <span className="ml-2 text-xs text-zinc-500">{l.note}</span>}</td><td className="px-4 py-2.5 text-right font-mono text-zinc-200">{m(l.amount)}</td></tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t border-white/10 bg-white/5"><tr><td className="px-4 py-3 font-semibold text-zinc-100">Total solde de tout compte</td><td className="px-4 py-3 text-right font-mono font-semibold text-emerald-300">{m(res.total)}</td></tr></tfoot>
+            </table>
+          </div>
         </div>
       )}
     </section>

@@ -1136,6 +1136,13 @@ export function createApi() {
     await withUser(userId, (c) => payroll.deleteTimeEntry(c, req.params.id, req.params.tid));
     res.status(204).end();
   }));
+  // RH : solde de tout compte (calcul à la demande)
+  app.post('/api/dossiers/:id/payroll/stc', h(async (req, res) => {
+    const userId = requireUser(req);
+    const b = req.body ?? {};
+    if (!b.employeeId || !b.ruptureType || !b.ruptureDate) { const e: any = new Error('Salarié, type et date de rupture requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => payroll.runSTC(c, req.params.id, b)));
+  }));
   app.post('/api/dossiers/:id/agent/chat', h(async (req, res) => {
     const userId = requireUser(req);
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
