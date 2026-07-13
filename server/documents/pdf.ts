@@ -67,3 +67,53 @@ export function tablePdf(spec: TablePdf): Promise<Buffer> {
     doc.end();
   });
 }
+
+// --- Gabarit « sections » (label/valeur) : bulletins, fiches ----------------
+export interface PdfSection { heading: string; rows: [string, string][]; total?: [string, string] }
+export interface SectionsPdf { title: string; subtitle?: string; meta?: string[]; sections: PdfSection[]; grandTotal?: [string, string]; footNote?: string }
+
+export function sectionsPdf(spec: SectionsPdf): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const bottom = doc.page.height - doc.page.margins.bottom;
+    const valX = right - 130;
+
+    doc.fillColor('#111').font('Helvetica-Bold').fontSize(16).text(spec.title, left, doc.y);
+    if (spec.subtitle) { doc.moveDown(0.2); doc.font('Helvetica').fontSize(10).fillColor('#666').text(spec.subtitle); }
+    if (spec.meta?.length) { doc.moveDown(0.4); doc.font('Helvetica').fontSize(9).fillColor('#444'); for (const line of spec.meta) doc.text(line); }
+    doc.moveDown(0.6);
+
+    const line = (label: string, value: string, opts: { bold?: boolean; heading?: boolean; top?: boolean } = {}) => {
+      const h = opts.heading ? 22 : 16;
+      if (doc.y + h > bottom) { doc.addPage(); doc.y = doc.page.margins.top; }
+      const y = doc.y;
+      if (opts.top) { doc.moveTo(left, y).lineTo(right, y).strokeColor('#ccc').lineWidth(0.5).stroke(); }
+      if (opts.heading) {
+        doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#111').text(label, left, y + 6);
+      } else {
+        doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor('#111');
+        doc.text(label, left + 6, y + 4, { width: valX - left - 12, lineBreak: false });
+        doc.text(value, valX, y + 4, { width: right - valX, align: 'right', lineBreak: false });
+      }
+      doc.y = y + h;
+    };
+
+    for (const s of spec.sections) {
+      line(s.heading, '', { heading: true });
+      for (const [l, v] of s.rows) line(l, v);
+      if (s.total) line(s.total[0], s.total[1], { bold: true, top: true });
+      doc.moveDown(0.3);
+    }
+    if (spec.grandTotal) line(spec.grandTotal[0], spec.grandTotal[1], { bold: true, top: true });
+
+    if (spec.footNote) { doc.moveDown(1); doc.font('Helvetica').fontSize(8).fillColor('#666').text(spec.footNote, left, doc.y, { width: right - left }); }
+    doc.end();
+  });
+}

@@ -1,7 +1,7 @@
 import type { Client } from '../db.js';
 import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, computeSTC, referenceSalaryFromPayslips, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry, type STCInput } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
-import { tablePdf } from '../documents/pdf.js';
+import { tablePdf, sectionsPdf } from '../documents/pdf.js';
 
 // ============================================================================
 // Paie : salariés + bulletins, branchés sur le moteur porté (payroll/core).
@@ -192,6 +192,74 @@ export async function livrePaiePdf(c: Client, dossierId: string, year: number, m
     footNote: `${slips.length} bulletin(s). Document généré par Lexa (Nova Comptabilité). Barèmes de paie sous réserve d'attestation.`,
   });
   return { filename: `livre-paie-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: slips.length };
+}
+
+async function employerMeta(c: Client, dossierId: string): Promise<{ d: any; cur: string; money: (n: number) => string; meta: string[] }> {
+  const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const d: any = dr[0]?.j ?? {};
+  const cur = d.base_currency ?? 'XOF';
+  const money = (n: number) => `${grp(n)} ${cur}`;
+  const meta = [`Employeur : ${d.raison_sociale ?? '—'}`];
+  if (d.tax_id) meta.push(`NCC/IFU : ${d.tax_id}${d.rccm ? ` · RCCM : ${d.rccm}` : ''}`);
+  else if (d.rccm) meta.push(`RCCM : ${d.rccm}`);
+  return { d, cur, money, meta };
+}
+
+const cnpsPatronal = (c: any) => num(c.cnpsFamille) + num(c.cnpsAccident) + num(c.cnpsRetraitePatronal);
+
+// Déclaration mensuelle CNPS ou DGI (impôts sur salaires) en PDF.
+export async function declarationPdf(c: Client, dossierId: string, year: number, month: number, kind: 'cnps' | 'dgi'): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, money, meta } = await employerMeta(c, dossierId);
+  const slips = await listPayslips(c, dossierId, year, month);
+  const period = `${getMonthName(month)} ${year}`;
+  const sum = (f: (x: any) => number) => slips.reduce((s: number, p: any) => s + f(p.calculation), 0);
+
+  let title: string, columns: any[], rows: string[][], totals: string[];
+  if (kind === 'cnps') {
+    title = 'Bordereau CNPS';
+    columns = [{ label: 'Mat.', width: 55 }, { label: 'Salarié', width: 150 }, { label: 'Brut', width: 85, align: 'right' }, { label: 'CNPS salarial', width: 90, align: 'right' }, { label: 'CNPS patronal', width: 90, align: 'right' }, { label: 'Total', width: 90, align: 'right' }];
+    rows = slips.map((p: any) => { const x = p.calculation; return [p.matricule ?? '', `${p.nom} ${p.prenoms}`, money(x.salaireBrutTotal), money(x.cnpsSalarial), money(cnpsPatronal(x)), money(num(x.cnpsSalarial) + cnpsPatronal(x))]; });
+    totals = ['', 'TOTAUX', money(sum((x) => x.salaireBrutTotal)), money(sum((x) => x.cnpsSalarial)), money(sum(cnpsPatronal)), money(sum((x) => num(x.cnpsSalarial) + cnpsPatronal(x)))];
+  } else {
+    title = 'Déclaration des impôts sur salaires (DGI)';
+    columns = [{ label: 'Mat.', width: 50 }, { label: 'Salarié', width: 130 }, { label: 'Brut impos.', width: 78, align: 'right' }, { label: 'ITS', width: 62, align: 'right' }, { label: 'CN', width: 55, align: 'right' }, { label: 'IGR', width: 62, align: 'right' }, { label: 'CMU', width: 55, align: 'right' }];
+    rows = slips.map((p: any) => { const x = p.calculation; return [p.matricule ?? '', `${p.nom} ${p.prenoms}`, money(x.salaireBrutImposable), money(x.itsSalarial), money(x.cnSalarial), money(x.igrSalarial), money(x.cmuSalarial)]; });
+    totals = ['', 'TOTAUX', money(sum((x) => x.salaireBrutImposable)), money(sum((x) => x.itsSalarial)), money(sum((x) => x.cnSalarial)), money(sum((x) => x.igrSalarial)), money(sum((x) => x.cmuSalarial))];
+  }
+
+  const buffer = await tablePdf({ title, subtitle: `${d.raison_sociale ?? ''} · ${period}`, meta, columns, rows, totals, footNote: `${slips.length} salarié(s). Document généré par Nova. Barèmes sous réserve d'attestation.` });
+  return { filename: `declaration-${kind}-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: slips.length };
+}
+
+// Bulletin de paie individuel en PDF. `who` = matricule ou nom (partiel).
+export async function bulletinPdf(c: Client, dossierId: string, who: string, year: number, month: number): Promise<{ filename: string; buffer: Buffer; found: boolean; candidates?: string[] }> {
+  const { d, money, meta } = await employerMeta(c, dossierId);
+  const slips = await listPayslips(c, dossierId, year, month);
+  const q = String(who ?? '').trim().toLowerCase();
+  const p: any = slips.find((s: any) => String(s.matricule ?? '').toLowerCase() === q) ?? slips.find((s: any) => `${s.nom} ${s.prenoms}`.toLowerCase().includes(q));
+  if (!p) return { filename: '', buffer: Buffer.alloc(0), found: false, candidates: slips.map((s: any) => `${s.matricule} ${s.nom} ${s.prenoms}`) };
+  const x = p.calculation; const period = `${getMonthName(month)} ${year}`;
+
+  const gains: [string, string][] = [['Salaire de base + sursalaire', money(num(x.salaireBase) + num(x.sursalaire))]];
+  if (num(x.primeAnciennete) > 0) gains.push([`Prime d'ancienneté (${x.tauxAnciennete}%)`, money(x.primeAnciennete)]);
+  if (num(x.heuresSupMontant) > 0) gains.push(['Heures supplémentaires', money(x.heuresSupMontant)]);
+  if (num(x.indemniteLogement) > 0) gains.push(['Indemnité de logement', money(x.indemniteLogement)]);
+  if (num(x.transportExonere) > 0) gains.push(['Indemnité de transport (exonérée)', money(x.transportExonere)]);
+  if (num(x.autresPrimes) > 0) gains.push(['Autres primes', money(x.autresPrimes)]);
+
+  const buffer = await sectionsPdf({
+    title: 'Bulletin de paie',
+    subtitle: `${p.nom} ${p.prenoms} (${p.matricule}) · ${period}`,
+    meta,
+    sections: [
+      { heading: 'Gains', rows: gains, total: ['Salaire brut', money(x.salaireBrutTotal)] },
+      { heading: 'Retenues salariales', rows: [['CNPS (6,3%)', money(x.cnpsSalarial)], ['ITS', money(x.itsSalarial)], ['Contribution nationale', money(x.cnSalarial)], ['IGR', money(x.igrSalarial)], ['CMU', money(x.cmuSalarial)]], total: ['Total retenues', money(x.totalRetenuesSalariales)] },
+      { heading: 'Charges patronales', rows: [['CNPS prestations familiales', money(x.cnpsFamille)], ['CNPS accident du travail', money(x.cnpsAccident)], ['CNPS retraite (patronal)', money(x.cnpsRetraitePatronal)], ["Taxe d'apprentissage", money(x.taxeApprentissage)], ['Formation continue (FDFP)', money(x.formationContinue)]], total: ['Total charges patronales', money(x.totalChargesPatronales)] },
+    ],
+    grandTotal: ['NET À PAYER', money(x.salaireNetPaye)],
+    footNote: `Coût total employeur : ${money(x.totalCoutEmployeur)}. Document généré par Nova. Barèmes sous réserve d'attestation.`,
+  });
+  return { filename: `bulletin-${p.matricule}-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, found: true };
 }
 
 // --- Déclarations annuelles (DISA CNPS, récap impôts) ----------------------
