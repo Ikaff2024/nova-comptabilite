@@ -10,6 +10,7 @@ import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
 import * as payroll from '../domain/payroll.js';
 import * as mail from '../email/provider.js';
+import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
 
 // ============================================================================
 // Assistant comptable agentique (LECTURE SEULE).
@@ -158,9 +159,17 @@ async function dossierContext(c: Client, dossierId: string): Promise<{ text: str
   const idLine = idBits.length ? `IDENTITÉ FISCALE : ${idBits.join(' ; ')}.` : '';
   const obligLine = d.regime_fiscal && OBLIG[d.regime_fiscal] ? `OBLIGATIONS : l'entreprise est ${OBLIG[d.regime_fiscal]}` : '';
 
+  // Veille : échéances fiscales/sociales imminentes (≤ 15 jours).
+  let echeanceLine = '';
+  try {
+    const dls = upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: openFy?.end_date ?? null, horizonDays: 15 });
+    if (dls.length) echeanceLine = `ÉCHÉANCES PROCHES (≤ 15 j) : ${dls.slice(0, 3).map((x) => `${x.label} — ${x.dueDate}`).join(' ; ')}. Signale-les à propos si utile.`;
+  } catch { /* ignore */ }
+
   const text = `ENTREPRISE : ${d.raison_sociale ?? '—'} — pays ${d.country ?? 'CI'}, devise ${d.base_currency ?? 'XOF'}, référentiel SYSCOHADA révisé (AUDCIF). Tu es LEUR comptable IA (Lexa), pas un outil générique.
 ${idLine}
 ${obligLine}
+${echeanceLine}
 ${fyLine}
 ${teamLine}
 ${meLine}
@@ -229,6 +238,7 @@ const READ_TOOLS = [
   { name: 'livre_paie', description: 'Registre de paie d\'une période : par salarié (brut, net, coût employeur) et statut de comptabilisation. Fournir année et mois (mois 0-11, ou 1-12 : sois explicite).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
   { name: 'etat_rh', description: 'État RH courant : absences non payées enregistrées et avances/prêts en cours (avec restant dû).', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'profil_entreprise', description: 'Identité fiscale et légale du dossier : forme juridique, régime fiscal, NCC/IFU, RCCM, banque/RIB. À citer dans les courriers/déclarations.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'echeances_fiscales', description: 'Prochaines échéances fiscales et sociales du dossier (TVA, impôts sur salaires/état 301, CNPS, DSF) dérivées du régime fiscal, avec leurs dates. Pour rappeler proactivement ce qui arrive à échéance.', input_schema: { type: 'object', properties: {}, required: [] } },
 ];
 
 // --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
@@ -383,6 +393,13 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'livre_paie': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return { annee: y, mois: mo + 1, bulletins: await payroll.listPayslips(c, dossierId, y, mo) }; }
     case 'etat_rh': { const abs = await payroll.listAbsences(c, dossierId); const adv = await payroll.listAdvances(c, dossierId); return { absences_non_payees: abs.filter((a: any) => !a.paye), avances_en_cours: adv.filter((a: any) => a.restant > 0) }; }
     case 'profil_entreprise': { const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]); const d: any = rows[0]?.j ?? {}; return { raison_sociale: d.raison_sociale, forme_juridique: d.forme_juridique ?? null, regime_fiscal: d.regime_fiscal ?? null, ncc_ifu: d.tax_id ?? null, rccm: d.rccm ?? null, banque: d.bank_name ?? null, rib: d.rib ?? null, pays: d.country ?? 'CI', systeme_comptable: d.accounting_system }; }
+    case 'echeances_fiscales': {
+      const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+      const d: any = rows[0]?.j ?? {};
+      let fyEnd: string | null = null;
+      try { const fys = await acc.listFiscalYears(c, dossierId); const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1]; fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
+      return { echeances: upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd }) };
+    }
 
     // --- Écriture : BROUILLONS (mode assisté) ---
     case 'preparer_facture_vente': {

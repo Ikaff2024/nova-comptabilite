@@ -1,5 +1,7 @@
 import { pool, withUser } from '../db.js';
 import * as dash from '../domain/dossierdashboard.js';
+import * as acc from '../domain/accounting.js';
+import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
 import { whatsappEnabled, sendText } from '../whatsapp/provider.js';
 import { telegramEnabled, sendMessage as sendTelegram } from '../telegram/provider.js';
 
@@ -27,9 +29,21 @@ export async function runDailyPush(): Promise<{ links: number; sent: number }> {
 
   // Calcule le digest d'un dossier une fois, réutilisé pour les deux canaux.
   const digestFor = (userId: string, dossierId: string) => withUser(userId, async (c) => {
-    const { rows } = await c.query('select raison_sociale from dossiers where id=$1', [dossierId]);
+    const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+    const dj: any = rows[0]?.j ?? {};
     const d: any = await dash.dossierDashboard(c, dossierId);
-    return buildDigest(d.alerts ?? [], rows[0]?.raison_sociale ?? 'votre dossier');
+    const alerts: Alert[] = [...(d.alerts ?? [])];
+    // Échéances fiscales/sociales à ≤ 7 jours (veille).
+    try {
+      let fyEnd: string | null = null;
+      const fys = await acc.listFiscalYears(c, dossierId);
+      const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1];
+      fyEnd = openFy?.end_date ?? null;
+      for (const dl of upcomingDeadlines({ regimeFiscal: dj.regime_fiscal, accountingSystem: dj.accounting_system, fiscalYearEnd: fyEnd, horizonDays: 7 })) {
+        alerts.push({ level: 'warn', message: `Échéance ${dl.dueDate} : ${dl.label}` });
+      }
+    } catch { /* ignore */ }
+    return buildDigest(alerts, dj.raison_sociale ?? 'votre dossier');
   });
 
   // --- WhatsApp ---
