@@ -538,8 +538,13 @@ export const api = {
   payrollAdvances: (dossierId: string) => req<PayrollAdvance[]>(`/api/dossiers/${dossierId}/payroll/advances`),
   createAdvance: (dossierId: string, input: Partial<PayrollAdvance>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/advances`, { method: 'POST', body: JSON.stringify(input) }),
   deleteAdvance: (dossierId: string, aid: string) => req<void>(`/api/dossiers/${dossierId}/payroll/advances/${aid}`, { method: 'DELETE' }),
+  // RH : pointage
+  payrollTime: (dossierId: string) => req<PayrollTimeEntry[]>(`/api/dossiers/${dossierId}/payroll/time`),
+  createTimeEntry: (dossierId: string, input: Partial<PayrollTimeEntry>) => req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/time`, { method: 'POST', body: JSON.stringify(input) }),
+  deleteTimeEntry: (dossierId: string, tid: string) => req<void>(`/api/dossiers/${dossierId}/payroll/time/${tid}`, { method: 'DELETE' }),
 };
 
+export interface PayrollTimeEntry { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; jour: string; heuresJour: number; heuresNuit: number; ferie: boolean }
 export interface PayrollAbsence { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; dateDebut: string; dateFin: string; jours: number; justifiee: boolean; paye: boolean; motif: string | null }
 export interface PayrollAdvance { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; type: 'avance' | 'pret'; montantTotal: number; mensualite: number; startYear: number; startMonth: number; motif: string | null; restant: number }
 

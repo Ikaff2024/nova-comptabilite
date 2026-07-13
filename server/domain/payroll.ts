@@ -1,5 +1,5 @@
 import type { Client } from '../db.js';
-import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance } from '../payroll/core/index.js';
+import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
 
 // ============================================================================
@@ -48,6 +48,13 @@ function toAbsence(r: any): Absence {
 }
 function toAdvance(r: any): SalaryAdvance {
   return { id: r.id, employeeId: r.employee_id, type: r.type, montantTotal: num(r.montant_total), mensualite: num(r.mensualite), startYear: Number(r.start_year), startMonth: Number(r.start_month), motif: r.motif ?? undefined, createdAt: iso(r.created_at) };
+}
+function toTimeEntry(r: any): TimeEntry {
+  return { id: r.id, employeeId: r.employee_id, date: iso(r.jour), heuresJour: num(r.heures_jour), heuresNuit: num(r.heures_nuit), ferie: !!r.ferie, createdAt: iso(r.created_at) };
+}
+async function tableExists(c: Client, name: string): Promise<boolean> {
+  const { rows } = await c.query('select to_regclass($1) is not null as ok', [`public.${name}`]);
+  return rows[0]?.ok === true;
 }
 
 export async function listEmployees(c: Client, dossierId: string): Promise<any[]> {
@@ -98,23 +105,31 @@ export async function runPayroll(
 
   const { rows: emps } = await c.query('select * from payroll_employees where dossier_id=$1 and actif order by nom', [dossierId]);
 
-  // Registres RH → variables dérivées du mois (absences non payées, échéance d'avance).
-  // Tolérant au schéma : si les tables RH ne sont pas encore migrées, on n'échoue pas.
-  const rhReady = await rhTablesReady(c);
-  const { rows: absRows } = rhReady ? await c.query('select * from payroll_absences where dossier_id=$1', [dossierId]) : { rows: [] as any[] };
-  const { rows: advRows } = rhReady ? await c.query('select * from payroll_advances where dossier_id=$1', [dossierId]) : { rows: [] as any[] };
+  // Registres RH → variables dérivées du mois. Tolérant au schéma : si une table
+  // n'est pas encore migrée, on n'échoue pas.
+  const [hasAbs, hasAdv, hasTime] = await Promise.all([
+    tableExists(c, 'payroll_absences'), tableExists(c, 'payroll_advances'), tableExists(c, 'payroll_time_entries'),
+  ]);
+  const { rows: absRows } = hasAbs ? await c.query('select * from payroll_absences where dossier_id=$1', [dossierId]) : { rows: [] as any[] };
+  const { rows: advRows } = hasAdv ? await c.query('select * from payroll_advances where dossier_id=$1', [dossierId]) : { rows: [] as any[] };
+  const { rows: timeRows } = hasTime ? await c.query('select * from payroll_time_entries where dossier_id=$1', [dossierId]) : { rows: [] as any[] };
   const absByEmp = new Map<string, Absence[]>();
   for (const r of absRows) { const a = toAbsence(r); (absByEmp.get(a.employeeId) ?? absByEmp.set(a.employeeId, []).get(a.employeeId)!).push(a); }
   const advByEmp = new Map<string, SalaryAdvance[]>();
   for (const r of advRows) { const a = toAdvance(r); (advByEmp.get(a.employeeId) ?? advByEmp.set(a.employeeId, []).get(a.employeeId)!).push(a); }
+  const timeByEmp = new Map<string, TimeEntry[]>();
+  for (const r of timeRows) { const t = toTimeEntry(r); (timeByEmp.get(t.employeeId) ?? timeByEmp.set(t.employeeId, []).get(t.employeeId)!).push(t); }
+  const ruleSet = resolveRuleSet(year, month, 'CI');
 
   let totalBrut = 0, totalNet = 0, totalCout = 0, count = 0;
   for (const e of emps) {
+    const ot = ventilateOvertime(timeByEmp.get(e.id) ?? [], year, month, ruleSet.overtimeThresholds);
     const derived: Partial<MonthlyVariables> = {
       joursAbsence: unpaidAbsenceDaysInMonth(absByEmp.get(e.id) ?? [], year, month),
       remboursementAvance: advanceDeductionForMonth(advByEmp.get(e.id) ?? [], year, month),
+      heuresSup15: ot.hs15, heuresSup50: ot.hs50, heuresSup75: ot.hs75, heuresSup100: ot.hs100,
     };
-    // Les variables manuelles éventuelles (heures sup, primes…) priment sur le dérivé.
+    // Les variables manuelles éventuelles priment sur le dérivé.
     const v = zeroVars(e.id, year, month, { ...derived, ...(varsMap[e.id] ?? {}) });
     const calc = calculatePayroll(toEmployee(e), v, 'CI');
     await c.query(
@@ -198,6 +213,29 @@ export async function createAdvance(c: Client, dossierId: string, input: any): P
 }
 export async function deleteAdvance(c: Client, dossierId: string, id: string): Promise<void> {
   await c.query('delete from payroll_advances where dossier_id=$1 and id=$2', [dossierId, id]);
+}
+
+// --- Pointage (heures) ------------------------------------------------------
+export async function listTimeEntries(c: Client, dossierId: string): Promise<any[]> {
+  if (!(await tableExists(c, 'payroll_time_entries'))) return [];
+  const { rows } = await c.query(
+    `select t.*, e.nom, e.prenoms, e.matricule from payroll_time_entries t
+       join payroll_employees e on e.id=t.employee_id
+      where t.dossier_id=$1 order by t.jour desc`, [dossierId]);
+  return rows.map((r: any) => ({
+    id: r.id, employeeId: r.employee_id, nom: r.nom, prenoms: r.prenoms, matricule: r.matricule,
+    jour: iso(r.jour), heuresJour: num(r.heures_jour), heuresNuit: num(r.heures_nuit), ferie: !!r.ferie,
+  }));
+}
+export async function createTimeEntry(c: Client, dossierId: string, input: any): Promise<{ id: string }> {
+  const { rows } = await c.query(
+    `insert into payroll_time_entries(dossier_id, employee_id, jour, heures_jour, heures_nuit, ferie)
+     values ($1,$2,$3,$4,$5,$6) returning id`,
+    [dossierId, input.employeeId, input.jour, num(input.heuresJour), num(input.heuresNuit), !!input.ferie]);
+  return { id: rows[0].id };
+}
+export async function deleteTimeEntry(c: Client, dossierId: string, id: string): Promise<void> {
+  await c.query('delete from payroll_time_entries where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 
 // Comptabilise l'OD de paie de la période (une seule fois).

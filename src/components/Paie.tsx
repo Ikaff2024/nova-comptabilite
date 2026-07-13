@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText } from 'lucide-react';
-import { api, fmtMoney, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance } from '../lib/api';
+import { api, fmtMoney, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -27,7 +27,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [sub, setSub] = useState<'paie' | 'absences' | 'avances'>('paie');
+  const [sub, setSub] = useState<'paie' | 'pointage' | 'absences' | 'avances'>('paie');
 
   // Formulaire salarié
   const [showForm, setShowForm] = useState(false);
@@ -122,7 +122,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
-        {([['paie', 'Bulletins & salariés'], ['absences', 'Absences'], ['avances', 'Avances & prêts']] as const).map(([k, label]) => (
+        {([['paie', 'Bulletins & salariés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setSub(k)}
             className={cn('rounded-lg px-3.5 py-1.5 font-medium transition-colors', sub === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
             {label}
@@ -244,6 +244,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       </section>
       </>)}
 
+      {sub === 'pointage' && <TimePanel dossierId={dossierId} employees={employees} />}
       {sub === 'absences' && <AbsencesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'avances' && <AdvancesPanel dossierId={dossierId} employees={employees} currency={currency} />}
     </div>
@@ -436,6 +437,80 @@ function AdvancesPanel({ dossierId, employees, currency }: { dossierId: string; 
                   <td className="px-4 py-2.5 text-zinc-400">{MONTHS[a.startMonth]} {a.startYear}</td>
                   <td className="px-4 py-2.5 text-right font-mono"><span className={cn(a.restant > 0 ? 'text-amber-300' : 'text-emerald-400')}>{a.restant > 0 ? m(a.restant) : 'Soldé'}</span></td>
                   <td className="px-4 py-2.5 text-right"><button onClick={() => del(a.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// --- Pointage (heures) ------------------------------------------------------
+function TimePanel({ dossierId, employees }: { dossierId: string; employees: PayrollEmployee[] }) {
+  const [rows, setRows] = useState<PayrollTimeEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const empty = { employeeId: '', jour: today, heuresJour: 8, heuresNuit: 0, ferie: false };
+  const [f, setForm] = useState<any>(empty);
+  const setF = (p: any) => setForm((x: any) => ({ ...x, ...p }));
+
+  const load = async () => { setLoading(true); try { setRows(await api.payrollTime(dossierId)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [dossierId]);
+
+  const add = async () => {
+    if (!f.employeeId) { setErr('Choisissez un salarié.'); return; }
+    setBusy(true); setErr(null);
+    try { await api.createTimeEntry(dossierId, { ...f, heuresJour: Number(f.heuresJour) || 0, heuresNuit: Number(f.heuresNuit) || 0 }); setForm(empty); setShowForm(false); await load(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const del = async (id: string) => { setErr(null); try { await api.deleteTimeEntry(dossierId, id); await load(); } catch (e: any) { setErr(e.message); } };
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium text-zinc-200">Pointage ({rows.length})</div>
+        <button onClick={() => { setForm(empty); setShowForm((v) => !v); }} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Jour pointé</button>
+      </div>
+      <p className="text-xs text-zinc-500">Les heures au-delà de la durée normale sont <strong>ventilées automatiquement</strong> au calcul de paie : 15/50 % le jour, 75 % la nuit, 100 % le dimanche ou un jour férié.</p>
+      {err && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{err}</p>}
+
+      {showForm && (
+        <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="lg:col-span-2"><label className="mb-1 block text-xs text-zinc-500">Salarié</label>
+            <select value={f.employeeId} onChange={(e) => setF({ employeeId: e.target.value })} className={inputCls}>
+              <option value="">— choisir —</option>{employees.map((e) => <option key={e.id} value={e.id}>{e.matricule} — {e.nom} {e.prenoms}</option>)}
+            </select></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Jour</label><input type="date" value={f.jour} onChange={(e) => setF({ jour: e.target.value })} className={inputCls} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Heures (jour)</label><input type="number" step="0.5" value={f.heuresJour} onChange={(e) => setF({ heuresJour: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Heures (nuit)</label><input type="number" step="0.5" value={f.heuresNuit} onChange={(e) => setF({ heuresNuit: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+          <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={f.ferie} onChange={(e) => setF({ ferie: e.target.checked })} className="accent-emerald-500" /> Jour férié</label>
+          <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2">
+            <button onClick={() => setShowForm(false)} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+            <button onClick={add} disabled={busy} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : rows.length === 0 ? <p className="text-sm text-zinc-500">Aucun jour pointé.</p> : (
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+              <th className="px-4 py-2.5 font-medium">Salarié</th><th className="px-4 py-2.5 font-medium">Jour</th><th className="px-4 py-2.5 text-right font-medium">H. jour</th><th className="px-4 py-2.5 text-right font-medium">H. nuit</th><th className="px-4 py-2.5 font-medium">Férié</th><th className="px-4 py-2.5"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-white/5">
+              {rows.map((t) => (
+                <tr key={t.id} className="hover:bg-white/5">
+                  <td className="px-4 py-2.5 text-zinc-200">{t.nom} {t.prenoms}</td>
+                  <td className="px-4 py-2.5 font-mono text-zinc-400">{t.jour}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{t.heuresJour}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{t.heuresNuit || '—'}</td>
+                  <td className="px-4 py-2.5">{t.ferie ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">Férié</span> : <span className="text-zinc-600">—</span>}</td>
+                  <td className="px-4 py-2.5 text-right"><button onClick={() => del(t.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
                 </tr>
               ))}
             </tbody>

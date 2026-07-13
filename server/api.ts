@@ -1122,6 +1122,20 @@ export function createApi() {
     await withUser(userId, (c) => payroll.deleteAdvance(c, req.params.id, req.params.aid));
     res.status(204).end();
   }));
+  // RH : pointage (heures)
+  app.get('/api/dossiers/:id/payroll/time', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => payroll.listTimeEntries(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/payroll/time', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => payroll.createTimeEntry(c, req.params.id, req.body ?? {})));
+  }));
+  app.delete('/api/dossiers/:id/payroll/time/:tid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => payroll.deleteTimeEntry(c, req.params.id, req.params.tid));
+    res.status(204).end();
+  }));
   app.post('/api/dossiers/:id/agent/chat', h(async (req, res) => {
     const userId = requireUser(req);
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
