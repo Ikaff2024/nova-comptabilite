@@ -12,7 +12,8 @@ export function emailEnabled(): boolean {
   return !!apiKey();
 }
 
-export interface EmailInput { to: string; subject: string; html?: string; text?: string; replyTo?: string }
+export interface EmailAttachment { filename: string; content: string } // content = base64
+export interface EmailInput { to: string; subject: string; html?: string; text?: string; replyTo?: string; attachments?: EmailAttachment[] }
 
 // Envoie un email. Renvoie { id } en cas de succès, lève une erreur sinon.
 export async function sendEmail(input: EmailInput): Promise<{ id: string }> {
@@ -27,6 +28,7 @@ export async function sendEmail(input: EmailInput): Promise<{ id: string }> {
         from: from(), to: [input.to], subject: input.subject,
         html: input.html ?? undefined, text: input.text ?? (input.html ? undefined : ''),
         reply_to: input.replyTo ?? undefined,
+        attachments: input.attachments?.length ? input.attachments : undefined,
       }),
       signal: controller.signal,
     });

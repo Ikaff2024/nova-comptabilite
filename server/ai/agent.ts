@@ -205,9 +205,9 @@ ACTIONS RÉVERSIBLES AUTORISÉES (palier assisté+) :
 
 ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de bout en bout :
 - "preparer_livre_paie" : calcule la paie d'une période (bulletins BROUILLONS de tous les salariés, absences/heures sup/avances incluses). Cela n'entre PAS au grand livre : la comptabilisation de l'OD reste une validation humaine dans l'onglet Paie. Après exécution, récapitule (nombre de bulletins, masse salariale brute, net, coût employeur).
-- "envoyer_email" : envoie un email. C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et montre un récapitulatif du contenu ; si le destinataire n'est pas fourni, demande-le (ne devine jamais une adresse). Après envoi, confirme à qui et quoi tu as envoyé.
+- "envoyer_email" : envoie un email, avec éventuellement une PIÈCE JOINTE PDF générée par Nova (le livre de paie via piece_jointe = { document: "livre_paie", annee, mois }). C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et montre un récapitulatif du contenu ; si le destinataire n'est pas fourni, demande-le (ne devine jamais une adresse). Après envoi, confirme à qui, quoi, et la pièce jointe.
 
-Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie puis, après confirmation du destinataire, envoyer_email avec la synthèse). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
+Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie, puis — après confirmation du destinataire — envoyer_email avec piece_jointe { document: "livre_paie", annee, mois } et une courte synthèse dans le corps). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
 
 // --- Outils de LECTURE (toujours disponibles) --------------------------------
 
@@ -323,13 +323,22 @@ const ACTION_TOOLS = [
   },
   {
     name: 'envoyer_email',
-    description: 'Envoie un email (synthèse, relance, document). IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple.',
+    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pour joindre le livre de paie, passe piece_jointe = { document: "livre_paie", annee, mois }.',
     input_schema: {
       type: 'object',
       properties: {
         destinataire: { type: 'string', description: 'Adresse email du destinataire' },
         sujet: { type: 'string' },
         corps: { type: 'string', description: 'Corps du message (texte ou HTML simple)' },
+        piece_jointe: {
+          type: 'object',
+          description: 'Pièce jointe PDF générée par Nova (optionnel).',
+          properties: {
+            document: { type: 'string', description: 'Type de document : "livre_paie"' },
+            annee: { type: 'number' },
+            mois: { type: 'number', description: 'Mois en clair 1-12' },
+          },
+        },
       },
       required: ['destinataire', 'sujet', 'corps'],
     },
@@ -418,9 +427,24 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       if (!to.includes('@')) return { error: 'Adresse email du destinataire invalide.' };
       const corps = String(input?.corps ?? '');
       const isHtml = /<[a-z][\s\S]*>/i.test(corps);
+
+      // Pièce jointe optionnelle générée par Nova.
+      const attachments: { filename: string; content: string }[] = [];
+      let jointe: string | undefined;
+      const pj = input?.piece_jointe;
+      if (pj && pj.document === 'livre_paie') {
+        const y = Number(pj.annee) || new Date().getUTCFullYear(); const mo = clampMonth(pj.mois);
+        const doc = await payroll.livrePaiePdf(c, dossierId, y, mo);
+        if (doc.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie (preparer_livre_paie) avant d'envoyer le livre de paie.` };
+        attachments.push({ filename: doc.filename, content: doc.buffer.toString('base64') });
+        jointe = doc.filename;
+      } else if (pj && pj.document) {
+        return { error: `Type de pièce jointe non pris en charge : ${pj.document}. Disponible : livre_paie.` };
+      }
+
       try {
-        const { id } = await mail.sendEmail({ to, subject: String(input?.sujet ?? '(sans objet)'), html: isHtml ? corps : undefined, text: isHtml ? undefined : corps });
-        return { statut: 'email_envoye', destinataire: to, id, note: 'Email envoyé (action irréversible).' };
+        const { id } = await mail.sendEmail({ to, subject: String(input?.sujet ?? '(sans objet)'), html: isHtml ? corps : undefined, text: isHtml ? undefined : corps, attachments: attachments.length ? attachments : undefined });
+        return { statut: 'email_envoye', destinataire: to, piece_jointe: jointe ?? null, id, note: 'Email envoyé (action irréversible).' };
       } catch (e: any) { return { error: String(e?.message ?? e).slice(0, 200) }; }
     }
 

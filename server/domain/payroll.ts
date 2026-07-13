@@ -1,6 +1,7 @@
 import type { Client } from '../db.js';
 import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, computeSTC, referenceSalaryFromPayslips, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry, type STCInput } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
+import { tablePdf } from '../documents/pdf.js';
 
 // ============================================================================
 // Paie : salariés + bulletins, branchés sur le moteur porté (payroll/core).
@@ -160,6 +161,37 @@ export async function listPayslips(c: Client, dossierId: string, year: number, m
 async function rhTablesReady(c: Client): Promise<boolean> {
   const { rows } = await c.query("select to_regclass('public.payroll_absences') is not null and to_regclass('public.payroll_advances') is not null as ok");
   return rows[0]?.ok === true;
+}
+
+// --- Documents PDF (livre de paie) -----------------------------------------
+const grp = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); // séparateur milliers
+export async function livrePaiePdf(c: Client, dossierId: string, year: number, month: number): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const d: any = dr[0]?.j ?? {};
+  const cur = d.base_currency ?? 'XOF';
+  const money = (n: number) => `${grp(n)} ${cur}`;
+  const slips = await listPayslips(c, dossierId, year, month);
+  const period = `${getMonthName(month)} ${year}`;
+
+  const meta = [`Employeur : ${d.raison_sociale ?? '—'}`];
+  if (d.tax_id) meta.push(`NCC/IFU : ${d.tax_id}${d.rccm ? ` · RCCM : ${d.rccm}` : ''}`);
+  else if (d.rccm) meta.push(`RCCM : ${d.rccm}`);
+
+  const rows = slips.map((p: any) => [p.matricule ?? '', `${p.nom} ${p.prenoms}`, money(p.brut), money(p.net), money(p.cout)]);
+  const totals = ['', 'TOTAUX', money(slips.reduce((s: number, p: any) => s + p.brut, 0)), money(slips.reduce((s: number, p: any) => s + p.net, 0)), money(slips.reduce((s: number, p: any) => s + p.cout, 0))];
+
+  const buffer = await tablePdf({
+    title: 'Livre de paie',
+    subtitle: `${d.raison_sociale ?? ''} · ${period}`,
+    meta,
+    columns: [
+      { label: 'Matricule', width: 60 }, { label: 'Salarié', width: 140 },
+      { label: 'Salaire brut', width: 80, align: 'right' }, { label: 'Net à payer', width: 80, align: 'right' }, { label: 'Coût employeur', width: 90, align: 'right' },
+    ],
+    rows, totals,
+    footNote: `${slips.length} bulletin(s). Document généré par Lexa (Nova Comptabilité). Barèmes de paie sous réserve d'attestation.`,
+  });
+  return { filename: `livre-paie-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: slips.length };
 }
 
 // --- Déclarations annuelles (DISA CNPS, récap impôts) ----------------------
