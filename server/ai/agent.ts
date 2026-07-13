@@ -8,6 +8,8 @@ import * as forecast from '../domain/forecast.js';
 import * as tax from '../domain/tax.js';
 import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
+import * as payroll from '../domain/payroll.js';
+import * as mail from '../email/provider.js';
 
 // ============================================================================
 // Assistant comptable agentique (LECTURE SEULE).
@@ -28,7 +30,7 @@ const ROUTING = (process.env.AGENT_ROUTING ?? '1') !== '0';
 const MAX_STEPS = 6;
 
 // Intentions d'analyse → modèle profond. Sinon (lecture/navigation) → rapide.
-const DEEP_HINTS = /pourquoi|analys|diagnos|cl[oô]tur|incoh[ée]ren|[ée]cart|compar|pr[ée]vision|optimis|conseil|recommand|rentab|marge|fiscal|redress|justifi|baisse|hausse|[ée]volu|tendance|anomal|strat[ée]g/i;
+const DEEP_HINTS = /pourquoi|analys|diagnos|cl[oô]tur|incoh[ée]ren|[ée]cart|compar|pr[ée]vision|optimis|conseil|recommand|rentab|marge|fiscal|redress|justifi|baisse|hausse|[ée]volu|tendance|anomal|strat[ée]g|pr[ée]par|envoi|envoy|email|e-mail|bulletin|d[ée]clar|livre de paie/i;
 
 function pickModel(history: AgentMessage[]): string {
   if (!ROUTING) return MODEL_DEEP;
@@ -200,7 +202,12 @@ const PLUS_NOTE = `
 ACTIONS RÉVERSIBLES AUTORISÉES (palier assisté+) :
 - "lettrer_automatiquement" : rapproche automatiquement, par tiers, les factures et leurs règlements qui s'annulent (lettrage). C'est RÉVERSIBLE (délettrable) et n'affecte PAS le grand livre. Annonce combien de lettrages/lignes ont été rapprochés.
 - "preparer_relance_client" : produit le texte d'une lettre de relance pour un client en retard (ne l'envoie pas). L'humain décide de l'envoi.
-Ces actions restent hors du grand livre immuable. Tu ne postes/émets/règles/clôtures toujours JAMAIS.`;
+
+ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de bout en bout :
+- "preparer_livre_paie" : calcule la paie d'une période (bulletins BROUILLONS de tous les salariés, absences/heures sup/avances incluses). Cela n'entre PAS au grand livre : la comptabilisation de l'OD reste une validation humaine dans l'onglet Paie. Après exécution, récapitule (nombre de bulletins, masse salariale brute, net, coût employeur).
+- "envoyer_email" : envoie un email. C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et montre un récapitulatif du contenu ; si le destinataire n'est pas fourni, demande-le (ne devine jamais une adresse). Après envoi, confirme à qui et quoi tu as envoyé.
+
+Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie puis, après confirmation du destinataire, envoyer_email avec la synthèse). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
 
 // --- Outils de LECTURE (toujours disponibles) --------------------------------
 
@@ -218,6 +225,10 @@ const READ_TOOLS = [
   { name: 'factures_ventes', description: 'Liste des factures de vente (optionnellement filtrées par statut : draft, issued, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
   { name: 'factures_achats', description: 'Liste des factures fournisseurs (optionnellement filtrées par statut : draft, recorded, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
   { name: 'memoriser', description: 'Enregistre dans ta mémoire un fait DURABLE et utile sur cette entreprise (préférence, spécificité, correction, interlocuteur clé) pour t\'en souvenir plus tard. À utiliser quand tu apprends quelque chose d\'important à retenir.', input_schema: { type: 'object', properties: { fait: { type: 'string', description: 'Le fait à retenir, formulé de façon concise et durable' } }, required: ['fait'] } },
+  { name: 'personnel', description: 'Liste des salariés du dossier (matricule, nom, poste, catégorie, salaire de base).', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'livre_paie', description: 'Registre de paie d\'une période : par salarié (brut, net, coût employeur) et statut de comptabilisation. Fournir année et mois (mois 0-11, ou 1-12 : sois explicite).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
+  { name: 'etat_rh', description: 'État RH courant : absences non payées enregistrées et avances/prêts en cours (avec restant dû).', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'profil_entreprise', description: 'Identité fiscale et légale du dossier : forme juridique, régime fiscal, NCC/IFU, RCCM, banque/RIB. À citer dans les courriers/déclarations.', input_schema: { type: 'object', properties: {}, required: [] } },
 ];
 
 // --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
@@ -301,6 +312,31 @@ const REVERSIBLE_TOOLS = [
 ];
 const REVERSIBLE_TOOL_NAMES = new Set(REVERSIBLE_TOOLS.map((t) => t.name));
 
+// --- Outils d'ACTION (palier assist_plus) -----------------------------------
+// Actions à effet réel/externe : exécuter la paie (bulletins brouillons) et
+// envoyer un email. Toujours gatés assist_plus. L'envoi d'email est irréversible.
+const ACTION_TOOLS = [
+  {
+    name: 'preparer_livre_paie',
+    description: 'Calcule (prépare) la paie d\'une période : génère les bulletins BROUILLONS de tous les salariés (avec absences, heures sup et avances déjà branchées). N\'écrit PAS au grand livre — la comptabilisation reste une action humaine dans l\'onglet Paie. Fournir année et mois (1-12).',
+    input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] },
+  },
+  {
+    name: 'envoyer_email',
+    description: 'Envoie un email (synthèse, relance, document). IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        destinataire: { type: 'string', description: 'Adresse email du destinataire' },
+        sujet: { type: 'string' },
+        corps: { type: 'string', description: 'Corps du message (texte ou HTML simple)' },
+      },
+      required: ['destinataire', 'sujet', 'corps'],
+    },
+  },
+];
+const ACTION_TOOL_NAMES = new Set(ACTION_TOOLS.map((t) => t.name));
+
 // Tronque une sortie volumineuse pour maîtriser les tokens.
 function cap<T>(rows: T[], n = 60): T[] { return Array.isArray(rows) && rows.length > n ? rows.slice(0, n) : rows; }
 
@@ -314,6 +350,9 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
   }
   if (REVERSIBLE_TOOL_NAMES.has(name) && mode !== 'assist_plus') {
     return { error: 'Action réversible non autorisée : activez le mode « assisté + actions » (réservé aux administrateurs).' };
+  }
+  if (ACTION_TOOL_NAMES.has(name) && mode !== 'assist_plus') {
+    return { error: 'Action non autorisée : activez le mode « assisté + actions » (réservé aux administrateurs).' };
   }
 
   switch (name) {
@@ -330,6 +369,10 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'factures_ventes': return cap(await invoicing.listInvoices(c, dossierId, input?.statut, 'invoice'), 50);
     case 'factures_achats': return cap(await purchases.listPurchases(c, dossierId, input?.statut), 50);
     case 'memoriser': { await addMemory(c, dossierId, String(input?.fait ?? ''), 'lexa'); return { statut: 'memorise', note: 'Fait enregistré dans ta mémoire pour les prochaines sessions.' }; }
+    case 'personnel': return cap(await payroll.listEmployees(c, dossierId), 100);
+    case 'livre_paie': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return { annee: y, mois: mo + 1, bulletins: await payroll.listPayslips(c, dossierId, y, mo) }; }
+    case 'etat_rh': { const abs = await payroll.listAbsences(c, dossierId); const adv = await payroll.listAdvances(c, dossierId); return { absences_non_payees: abs.filter((a: any) => !a.paye), avances_en_cours: adv.filter((a: any) => a.restant > 0) }; }
+    case 'profil_entreprise': { const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]); const d: any = rows[0]?.j ?? {}; return { raison_sociale: d.raison_sociale, forme_juridique: d.forme_juridique ?? null, regime_fiscal: d.regime_fiscal ?? null, ncc_ifu: d.tax_id ?? null, rccm: d.rccm ?? null, banque: d.bank_name ?? null, rib: d.rib ?? null, pays: d.country ?? 'CI', systeme_comptable: d.accounting_system }; }
 
     // --- Écriture : BROUILLONS (mode assisté) ---
     case 'preparer_facture_vente': {
@@ -363,9 +406,30 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       return { statut: 'relance_preparee', client: match.name, montant_du: letter.total, niveau_suggere: letter.suggestedLevel, postes_ouverts: letter.open, note: 'Lettre préparée — non envoyée. L\'humain décide de l\'envoi.' };
     }
 
+    // --- Actions (palier assist_plus) ---
+    case 'preparer_livre_paie': {
+      const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois);
+      const r = await payroll.runPayroll(c, dossierId, y, mo);
+      return { statut: 'paie_preparee', annee: y, mois: mo + 1, ...r, note: 'Bulletins BROUILLONS générés (absences, heures sup et avances incluses). La comptabilisation de l\'OD de paie reste à valider dans l\'onglet Paie.' };
+    }
+    case 'envoyer_email': {
+      if (!mail.emailEnabled()) return { error: 'Canal email non configuré côté serveur (RESEND_API_KEY absent).' };
+      const to = String(input?.destinataire ?? '').trim();
+      if (!to.includes('@')) return { error: 'Adresse email du destinataire invalide.' };
+      const corps = String(input?.corps ?? '');
+      const isHtml = /<[a-z][\s\S]*>/i.test(corps);
+      try {
+        const { id } = await mail.sendEmail({ to, subject: String(input?.sujet ?? '(sans objet)'), html: isHtml ? corps : undefined, text: isHtml ? undefined : corps });
+        return { statut: 'email_envoye', destinataire: to, id, note: 'Email envoyé (action irréversible).' };
+      } catch (e: any) { return { error: String(e?.message ?? e).slice(0, 200) }; }
+    }
+
     default: return { error: `Outil inconnu : ${name}` };
   }
 }
+
+// Convertit un mois « en clair » (1-12) en index 0-11, borné.
+function clampMonth(mois: any): number { const mo = Number(mois) || 1; return Math.max(0, Math.min(11, mo - 1)); }
 
 // --- Boucle agentique --------------------------------------------------------
 
@@ -397,7 +461,7 @@ export async function runToolForTest(c: Client, dossierId: string, name: string,
 export async function runAgent(c: Client, dossierId: string, history: AgentMessage[]): Promise<AgentResult> {
   if (!agentEnabled()) throw new Error('Assistant IA non configuré (ANTHROPIC_API_KEY absent).');
   const { text: ctx, fyId, mode } = await dossierContext(c, dossierId);
-  const tools = mode === 'assist_plus' ? [...READ_TOOLS, ...DRAFT_TOOLS, ...REVERSIBLE_TOOLS]
+  const tools = mode === 'assist_plus' ? [...READ_TOOLS, ...DRAFT_TOOLS, ...REVERSIBLE_TOOLS, ...ACTION_TOOLS]
     : mode === 'assist' ? [...READ_TOOLS, ...DRAFT_TOOLS]
     : READ_TOOLS;
   const note = mode === 'assist_plus' ? ASSIST_NOTE + PLUS_NOTE : mode === 'assist' ? ASSIST_NOTE : '';
