@@ -9,6 +9,7 @@ import * as tax from '../domain/tax.js';
 import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
 import * as payroll from '../domain/payroll.js';
+import * as reporting from '../domain/reporting.js';
 import * as mail from '../email/provider.js';
 import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
 
@@ -188,6 +189,7 @@ RÈGLES ABSOLUES :
 6. ALTITUDE : pour un diagnostic (ex. « pourquoi le résultat baisse ? »), structure ta réponse en CONSTAT (le chiffre) → CAUSE (d'où il vient, comptes/périodes) → RECOMMANDATION (action concrète), puis propose d'approfondir. Distingue toujours clairement un constat, une recommandation et une action à valider.
 7. ADAPTE-TOI À L'INTERLOCUTEUR (voir son profil dans le contexte) : à un dirigeant/non-comptable, va à l'essentiel en langage clair et cache le jargon (donne le compte entre parenthèses si utile) ; à un comptable/DAF/expert-comptable, sois technique et précis (codes de comptes, mécanismes). En cas de doute, reste simple et propose d'entrer dans le détail.
 8. IDENTITÉ FISCALE : tu connais la forme juridique, le régime fiscal, le NCC/IFU, le RCCM et la banque du dossier (voir contexte). Raisonne selon le régime (ex. n'évoque la TVA à collecter que si l'entreprise y est assujettie ; sous l'impôt synthétique, il n'y a pas de TVA), rappelle les obligations et échéances pertinentes, et cite ces références (NCC, RCCM…) quand c'est utile (déclarations, courriers officiels).
+9. REPORTING MENSUEL : pour un « point du mois » / « reporting », appuie-toi sur « analyse_mensuelle » (résultat vs M-1, cumul, ratios, principales charges) — c'est plus riche qu'une simple lecture. Commente en pilotage : ce qui bouge et pourquoi (postes de charges/produits qui varient), les ratios, la trésorerie, puis des recommandations concrètes. Si on te le demande, tu peux joindre le « rapport_mensuel » en PDF par email.
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
 
@@ -239,6 +241,7 @@ const READ_TOOLS = [
   { name: 'etat_rh', description: 'État RH courant : absences non payées enregistrées et avances/prêts en cours (avec restant dû).', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'profil_entreprise', description: 'Identité fiscale et légale du dossier : forme juridique, régime fiscal, NCC/IFU, RCCM, banque/RIB. À citer dans les courriers/déclarations.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'echeances_fiscales', description: 'Prochaines échéances fiscales et sociales du dossier (TVA, impôts sur salaires/état 301, CNPS, DSF) dérivées du régime fiscal, avec leurs dates. Pour rappeler proactivement ce qui arrive à échéance.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'analyse_mensuelle', description: 'Analyse comparée d\'un mois pour le reporting : chiffre d\'affaires, produits, charges et résultat du mois vs mois précédent (avec variations), cumul annuel, ratios (marge nette, taux de charges), situation (trésorerie, créances, dettes) et principales charges du mois. À commenter (constat → cause → recommandation). Fournir année et mois (1-12).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
 ];
 
 // --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
@@ -333,7 +336,7 @@ const ACTION_TOOLS = [
   },
   {
     name: 'envoyer_email',
-    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pièces jointes disponibles via piece_jointe.document : "livre_paie", "bulletin" (préciser salarie = matricule ou nom), "declaration_cnps", "declaration_dgi" — toutes avec annee + mois.',
+    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pièces jointes disponibles via piece_jointe.document : "livre_paie", "bulletin" (préciser salarie = matricule ou nom), "declaration_cnps", "declaration_dgi", "rapport_mensuel" — toutes avec annee + mois.',
     input_schema: {
       type: 'object',
       properties: {
@@ -344,7 +347,7 @@ const ACTION_TOOLS = [
           type: 'object',
           description: 'Pièce jointe PDF générée par Nova (optionnel).',
           properties: {
-            document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi"' },
+            document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "rapport_mensuel"' },
             annee: { type: 'number' },
             mois: { type: 'number', description: 'Mois en clair 1-12' },
             salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
@@ -400,6 +403,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       try { const fys = await acc.listFiscalYears(c, dossierId); const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1]; fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
       return { echeances: upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd }) };
     }
+    case 'analyse_mensuelle': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return await reporting.monthlyReport(c, dossierId, y, mo); }
 
     // --- Écriture : BROUILLONS (mode assisté) ---
     case 'preparer_facture_vente': {
@@ -465,6 +469,8 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
           const r = await payroll.bulletinPdf(c, dossierId, String(pj.salarie ?? ''), y, mo);
           if (!r.found) return { error: `Salarié « ${pj.salarie} » introuvable pour ${mo + 1}/${y}.`, salaries_disponibles: r.candidates };
           doc = r;
+        } else if (pj.document === 'rapport_mensuel') {
+          doc = await reporting.rapportMensuelPdf(c, dossierId, y, mo);
         } else {
           return { error: `Type de pièce jointe non pris en charge : ${pj.document}. Disponibles : livre_paie, bulletin, declaration_cnps, declaration_dgi.` };
         }
