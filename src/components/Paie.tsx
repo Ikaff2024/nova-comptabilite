@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText } from 'lucide-react';
-import { api, fmtMoney, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult } from '../lib/api';
+import { api, fmtMoney, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -27,7 +27,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [sub, setSub] = useState<'paie' | 'pointage' | 'absences' | 'avances' | 'stc'>('paie');
+  const [sub, setSub] = useState<'paie' | 'pointage' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
 
   // Formulaire salarié
   const [showForm, setShowForm] = useState(false);
@@ -122,7 +122,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
-        {([['paie', 'Bulletins & salariés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte']] as const).map(([k, label]) => (
+        {([['paie', 'Bulletins & salariés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte'], ['declarations', 'Déclarations']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setSub(k)}
             className={cn('rounded-lg px-3.5 py-1.5 font-medium transition-colors', sub === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
             {label}
@@ -248,6 +248,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {sub === 'absences' && <AbsencesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'avances' && <AdvancesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'stc' && <StcPanel dossierId={dossierId} dossierName={dossierName} employees={employees} currency={currency} />}
+      {sub === 'declarations' && <DeclarationsPanel dossierId={dossierId} dossierName={dossierName} currency={currency} />}
     </div>
   );
 }
@@ -607,5 +608,115 @@ function StcPanel({ dossierId, dossierName, employees, currency }: { dossierId: 
         </div>
       )}
     </section>
+  );
+}
+
+// --- Déclarations annuelles (DISA CNPS, récap impôts DGI) -------------------
+function DeclarationsPanel({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+  const m = (n: number) => fmtMoney(n, currency);
+  const [year, setYear] = useState(new Date().getUTCFullYear());
+  const [data, setData] = useState<PayrollYear | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => { setLoading(true); try { setData(await api.payrollYear(dossierId, year)); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [dossierId, year]);
+
+  const esc = (s: string) => (s || '').replace(/[&<>]/g, '');
+  const employerHead = (title: string) => {
+    const e = data!.employer;
+    return `<table style="margin-bottom:12px"><tbody>
+      <tr><td><b>Employeur :</b> ${esc(e.raisonSociale)}</td><td class="n">${title}</td></tr>
+      <tr><td>${e.taxId ? `NCC/IFU : ${esc(e.taxId)}` : ''}${e.rccm ? ` · RCCM : ${esc(e.rccm)}` : ''}</td><td class="n">Année ${year}</td></tr>
+    </tbody></table>`;
+  };
+
+  const printDISA = () => {
+    if (!data) return;
+    const rows = data.annual.map((a) => `<tr><td>${a.matricule}</td><td>${esc(a.nom + ' ' + a.prenoms)}</td><td class="n">${a.mois}</td><td class="n">${m(a.brut)}</td><td class="n">${m(a.cnpsSalarial)}</td><td class="n">${m(a.cnpsPatronal)}</td><td class="n">${m(a.cnpsSalarial + a.cnpsPatronal)}</td></tr>`).join('');
+    const t = data.totals;
+    const body = `${employerHead('DISA — CNPS (déclaration individuelle des salaires annuels)')}
+      <table><thead><tr><th>Mat.</th><th>Salarié</th><th class="n">Mois</th><th class="n">Brut annuel</th><th class="n">CNPS salarial</th><th class="n">CNPS patronal</th><th class="n">Total CNPS</th></tr></thead><tbody>
+        ${rows}<tr class="tot"><td colspan="3">Totaux</td><td class="n">${m(t.brut)}</td><td class="n">${m(t.cnpsSalarial)}</td><td class="n">${m(t.cnpsPatronal)}</td><td class="n">${m(t.cnpsSalarial + t.cnpsPatronal)}</td></tr>
+      </tbody></table><p style="margin-top:8px;font-size:11px">Document de synthèse annuelle CNPS. Barèmes à attester ; à rapprocher des bordereaux mensuels.</p>`;
+    printDocument(`DISA CNPS ${year} — ${dossierName}`, `${dossierName} · CNPS · ${year}`, body);
+  };
+  const printImpots = () => {
+    if (!data) return;
+    const rows = data.annual.map((a) => `<tr><td>${a.matricule}</td><td>${esc(a.nom + ' ' + a.prenoms)}</td><td class="n">${m(a.brutImposable)}</td><td class="n">${m(a.its)}</td><td class="n">${m(a.cn)}</td><td class="n">${m(a.igr)}</td><td class="n">${m(a.cmu)}</td><td class="n">${m(a.its + a.cn + a.igr + a.cmu)}</td></tr>`).join('');
+    const t = data.totals;
+    const body = `${employerHead('Récapitulatif annuel des impôts sur salaires — DGI')}
+      <table><thead><tr><th>Mat.</th><th>Salarié</th><th class="n">Brut imposable</th><th class="n">ITS</th><th class="n">CN</th><th class="n">IGR</th><th class="n">CMU</th><th class="n">Total</th></tr></thead><tbody>
+        ${rows}<tr class="tot"><td colspan="2">Totaux</td><td class="n">${m(t.brutImposable)}</td><td class="n">${m(t.its)}</td><td class="n">${m(t.cn)}</td><td class="n">${m(t.igr)}</td><td class="n">${m(t.cmu)}</td><td class="n">${m(t.its + t.cn + t.igr + t.cmu)}</td></tr>
+      </tbody></table><p style="margin-top:8px;font-size:11px">Cumul annuel des impôts sur salaires retenus (IUS/ITS, CN, IGR, CMU) à rapprocher des déclarations mensuelles DGI.</p>`;
+    printDocument(`Récap impôts salaires ${year} — ${dossierName}`, `${dossierName} · DGI · ${year}`, body);
+  };
+
+  const totalCnps = data ? data.totals.cnpsSalarial + data.totals.cnpsPatronal : 0;
+  const totalImpots = data ? data.totals.its + data.totals.cn + data.totals.igr + data.totals.cmu : 0;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-zinc-400">Déclarations annuelles cumulées à partir des bulletins comptabilisés.</div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-zinc-500">Année</label>
+          <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className={cn(inputCls, 'w-24 font-mono')} />
+        </div>
+      </div>
+
+      {data && (data.employer.taxId || data.employer.rccm) && (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-300">
+          <div className="font-medium text-zinc-100">{data.employer.raisonSociale}</div>
+          <div className="mt-0.5 text-xs text-zinc-500">{data.employer.taxId ? `NCC/IFU ${data.employer.taxId}` : ''}{data.employer.rccm ? ` · RCCM ${data.employer.rccm}` : ''}</div>
+        </div>
+      )}
+
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : !data || data.annual.length === 0 ? (
+        <p className="text-sm text-zinc-500">Aucun bulletin pour {year}. Lancez la paie des mois concernés pour alimenter les déclarations annuelles.</p>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <Card label="Masse salariale (brut)" value={m(data.totals.brut)} />
+            <Card label="Total CNPS (sal.+pat.)" value={m(totalCnps)} />
+            <Card label="Total impôts sur salaires" value={m(totalImpots)} />
+            <Card label="Net versé" value={m(data.totals.net)} />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button onClick={printDISA} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> DISA annuelle (CNPS)</button>
+            <button onClick={printImpots} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> Récap annuel impôts (DGI)</button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+                <th className="px-4 py-2.5 font-medium">Salarié</th><th className="px-4 py-2.5 text-right font-medium">Mois</th><th className="px-4 py-2.5 text-right font-medium">Brut</th><th className="px-4 py-2.5 text-right font-medium">CNPS</th><th className="px-4 py-2.5 text-right font-medium">Impôts</th><th className="px-4 py-2.5 text-right font-medium">Net</th>
+              </tr></thead>
+              <tbody className="divide-y divide-white/5">
+                {data.annual.map((a) => (
+                  <tr key={a.employeeId} className="hover:bg-white/5">
+                    <td className="px-4 py-2.5 text-zinc-200">{a.nom} {a.prenoms} <span className="text-xs text-zinc-500">{a.matricule}</span></td>
+                    <td className="px-4 py-2.5 text-right font-mono text-zinc-400">{a.mois}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(a.brut)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(a.cnpsSalarial + a.cnpsPatronal)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(a.its + a.cn + a.igr + a.cmu)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(a.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Card({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="text-xs text-zinc-500">{label}</div>
+      <div className="mt-1 font-mono text-lg font-semibold text-zinc-100">{value}</div>
+    </div>
   );
 }

@@ -1094,6 +1094,11 @@ export function createApi() {
     const { year, month, entryDate } = req.body ?? {};
     res.json(await withUser(userId, (c) => payroll.postPayroll(c, req.params.id, Number(year), Number(month), entryDate || undefined)));
   }));
+  app.get('/api/dossiers/:id/payroll/year', h(async (req, res) => {
+    const userId = requireUser(req);
+    const year = Number(req.query.year) || new Date().getUTCFullYear();
+    res.json(await withUser(userId, (c) => payroll.payrollYear(c, req.params.id, year)));
+  }));
   // RH : absences
   app.get('/api/dossiers/:id/payroll/absences', h(async (req, res) => {
     const userId = requireUser(req);

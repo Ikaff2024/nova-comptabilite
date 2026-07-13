@@ -162,6 +162,36 @@ async function rhTablesReady(c: Client): Promise<boolean> {
   return rows[0]?.ok === true;
 }
 
+// --- Déclarations annuelles (DISA CNPS, récap impôts) ----------------------
+export async function payrollYear(c: Client, dossierId: string, year: number): Promise<any> {
+  const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const d: any = dr[0]?.j ?? {};
+  const employer = { raisonSociale: d.raison_sociale ?? '—', taxId: d.tax_id ?? null, rccm: d.rccm ?? null, country: d.country ?? 'CI' };
+
+  const { rows } = await c.query(
+    `select p.employee_id, e.matricule, e.nom, e.prenoms, p.calculation
+       from payroll_payslips p join payroll_employees e on e.id=p.employee_id
+      where p.dossier_id=$1 and p.period_year=$2
+      order by e.nom, e.prenoms`, [dossierId, year]);
+
+  const byEmp = new Map<string, any>();
+  const cnpsPat = (c: any) => num(c.cnpsFamille) + num(c.cnpsAccident) + num(c.cnpsRetraitePatronal);
+  for (const r of rows) {
+    const c = r.calculation ?? {};
+    let a = byEmp.get(r.employee_id);
+    if (!a) { a = { employeeId: r.employee_id, matricule: r.matricule, nom: r.nom, prenoms: r.prenoms, mois: 0, brut: 0, brutImposable: 0, cnpsSalarial: 0, cnpsPatronal: 0, its: 0, cn: 0, igr: 0, cmu: 0, net: 0 }; byEmp.set(r.employee_id, a); }
+    a.mois += 1;
+    a.brut += num(c.salaireBrutTotal); a.brutImposable += num(c.salaireBrutImposable);
+    a.cnpsSalarial += num(c.cnpsSalarial); a.cnpsPatronal += cnpsPat(c);
+    a.its += num(c.itsSalarial); a.cn += num(c.cnSalarial); a.igr += num(c.igrSalarial); a.cmu += num(c.cmuSalarial);
+    a.net += num(c.salaireNetPaye);
+  }
+  const annual = [...byEmp.values()].map((a) => { for (const k of Object.keys(a)) if (typeof a[k] === 'number' && k !== 'mois') a[k] = Math.round(a[k]); return a; });
+  const sum = (k: string) => annual.reduce((s, a) => s + (a[k] || 0), 0);
+  const totals = { brut: sum('brut'), brutImposable: sum('brutImposable'), cnpsSalarial: sum('cnpsSalarial'), cnpsPatronal: sum('cnpsPatronal'), its: sum('its'), cn: sum('cn'), igr: sum('igr'), cmu: sum('cmu'), net: sum('net') };
+  return { employer, year, annual, totals };
+}
+
 // --- Registre des absences -------------------------------------------------
 export async function listAbsences(c: Client, dossierId: string): Promise<any[]> {
   if (!(await rhTablesReady(c))) return [];
