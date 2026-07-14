@@ -1,7 +1,7 @@
 // Fournisseur de synthèse vocale ElevenLabs. Reçoit un texte déjà nettoyé.
 const apiKey = () => process.env.ELEVENLABS_API_KEY ?? '';
 const model = () => process.env.ELEVENLABS_MODEL ?? 'eleven_multilingual_v2';
-export const DEFAULT_VOICE = 'EXAVITQu4vr4xnSDxMaL'; // « Sarah » (premade, offre gratuite OK)
+export const DEFAULT_VOICE = 'hpp4J3VqNfWAUOO0d1Us'; // « Bella » (retenue comme la plus naturelle)
 
 export function elevenlabsEnabled(): boolean { return !!apiKey(); }
 

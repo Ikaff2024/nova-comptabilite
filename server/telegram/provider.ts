@@ -17,13 +17,28 @@ export function verifySecret(header?: string): boolean {
   return header === secret();
 }
 
-export interface TelegramUpdate { chatId: string; text: string; firstName?: string }
+export interface TelegramUpdate { chatId: string; text: string; firstName?: string; voiceFileId?: string }
 
 export function parseUpdate(body: any): TelegramUpdate | null {
   const msg = body?.message ?? body?.edited_message;
   const chatId = msg?.chat?.id;
   if (chatId == null) return null;
-  return { chatId: String(chatId), text: String(msg?.text ?? ''), firstName: msg?.from?.first_name };
+  const voiceFileId = msg?.voice?.file_id ?? msg?.audio?.file_id ?? undefined;
+  return { chatId: String(chatId), text: String(msg?.text ?? ''), firstName: msg?.from?.first_name, voiceFileId };
+}
+
+// Télécharge un fichier Telegram (note vocale) et renvoie ses octets.
+export async function downloadFile(fileId: string): Promise<Buffer | null> {
+  if (!token()) return null;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token()}/getFile?file_id=${encodeURIComponent(fileId)}`);
+    const j: any = await r.json();
+    const path = j?.result?.file_path;
+    if (!path) return null;
+    const f = await fetch(`https://api.telegram.org/file/bot${token()}/${path}`);
+    if (!f.ok) return null;
+    return Buffer.from(await f.arrayBuffer());
+  } catch { return null; }
 }
 
 export async function sendMessage(chatId: string, text: string): Promise<void> {

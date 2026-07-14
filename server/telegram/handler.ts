@@ -1,7 +1,8 @@
 import { withUser } from '../db.js';
 import * as tg from '../domain/telegram.js';
 import * as agent from '../ai/agent.js';
-import { sendMessage, type TelegramUpdate } from './provider.js';
+import { sendMessage, downloadFile, type TelegramUpdate } from './provider.js';
+import { transcribeAudio } from '../ai/transcribe.js';
 import { mdToPlain } from '../textfmt.js';
 
 // ============================================================================
@@ -33,18 +34,30 @@ export async function handleUpdate(up: TelegramUpdate): Promise<void> {
       return;
     }
 
-    if (!text || text.startsWith('/start')) {
-      await sendMessage(up.chatId, 'Je vous écoute — posez votre question comptable (trésorerie, créances, TVA, résultat…).');
+    // Message effectif : texte, ou transcription d'une note vocale.
+    let message = text;
+    let fromVoice = false;
+    if (!message && up.voiceFileId) {
+      const audio = await downloadFile(up.voiceFileId);
+      const transcript = audio ? await transcribeAudio(audio) : null;
+      if (!transcript) { await sendMessage(up.chatId, "Je n'ai pas pu transcrire ta note vocale — réessaie ou écris-moi ? 🎤"); return; }
+      message = transcript; fromVoice = true;
+    }
+
+    if (!message || message.startsWith('/start')) {
+      await sendMessage(up.chatId, 'Je t\'écoute — pose ta question comptable (trésorerie, créances, TVA, résultat…), à l\'écrit ou en note vocale. 🎤');
       return;
     }
 
     const reply = await withUser(link.userId, async (c) => {
       const history = await agent.loadHistory(c, link.dossierId, link.userId, 12);
-      const r = await agent.runAgent(c, link.dossierId, [...history, { role: 'user', content: text }]);
-      await agent.saveTurns(c, link.dossierId, link.userId, [{ role: 'user', content: text }, { role: 'assistant', content: r.reply }]);
+      const r = await agent.runAgent(c, link.dossierId, [...history, { role: 'user', content: message }]);
+      await agent.saveTurns(c, link.dossierId, link.userId, [{ role: 'user', content: message }, { role: 'assistant', content: r.reply }]);
       return r.reply;
     });
-    await sendMessage(up.chatId, mdToPlain(reply));
+    // Sur note vocale, confirme ce qui a été compris (les STT peuvent se tromper).
+    const out = fromVoice ? `🎤 J'ai compris : « ${message} »\n\n${mdToPlain(reply)}` : mdToPlain(reply);
+    await sendMessage(up.chatId, out);
   } catch {
     try { await sendMessage(up.chatId, 'Désolé, une erreur est survenue. Réessayez dans un instant.'); } catch { /* ignore */ }
   }
