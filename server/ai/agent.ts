@@ -8,6 +8,7 @@ import * as forecast from '../domain/forecast.js';
 import * as tax from '../domain/tax.js';
 import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
+import * as alerts from '../domain/alerts.js';
 import * as budget from '../domain/budget.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
@@ -238,6 +239,7 @@ Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépa
 
 const READ_TOOLS = [
   { name: 'situation_generale', description: 'Tableau de bord du dossier : trésorerie, résultat, créances/dettes, activité récente. À utiliser pour une vue d\'ensemble.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'alertes', description: 'Points d\'attention priorisés du dossier (trésorerie négative, créances anciennes, TVA à payer, écritures en brouillon, échéances fiscales/sociales imminentes). À utiliser quand on te demande « qu\'est-ce qui nécessite mon attention ? », « quoi de neuf ? », pour un point du mois, ou de façon proactive.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'balance_generale', description: 'Balance générale (par compte : à-nouveaux, mouvements, soldes). Pour analyser les soldes de comptes.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'grand_livre', description: 'Détail des écritures d\'un compte donné (grand livre). Fournir le code du compte.', input_schema: { type: 'object', properties: { compte: { type: 'string', description: 'Code du compte SYSCOHADA, ex. 411, 521, 601' } }, required: ['compte'] } },
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
@@ -430,6 +432,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
 
   switch (name) {
     case 'situation_generale': return await dash.dossierDashboard(c, dossierId, fy);
+    case 'alertes': return await alerts.dossierAlerts(c, dossierId, fy);
     case 'balance_generale': return cap(await acc.trialBalance(c, dossierId, fy), 120);
     case 'grand_livre': return cap(await acc.generalLedger(c, dossierId, { fiscalYearId: fy, accountCode: String(input?.compte ?? '') }), 100);
     case 'etats_financiers': return await acc.financialStatements(c, dossierId, fy);

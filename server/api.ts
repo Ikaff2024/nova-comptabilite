@@ -29,6 +29,7 @@ import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
 import * as usage from './domain/usage.js';
 import * as platform from './domain/platform.js';
+import * as alerts from './domain/alerts.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -537,6 +538,13 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => dossierDashboard(c, req.params.id, fy)));
+  }));
+
+  // Alertes intelligentes (points d'attention priorisés) du dossier.
+  app.get('/api/dossiers/:id/alerts', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => alerts.dossierAlerts(c, req.params.id, fy)));
   }));
 
   // --- Écritures récurrentes / abonnements -----------------------------------
