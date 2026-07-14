@@ -31,6 +31,7 @@ import * as usage from './domain/usage.js';
 import * as platform from './domain/platform.js';
 import * as alerts from './domain/alerts.js';
 import * as ratios from './domain/ratios.js';
+import * as controls from './domain/controls.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -553,6 +554,13 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => ratios.financialRatios(c, req.params.id, fy)));
+  }));
+
+  // Contrôles de cohérence comptable (révision automatisée).
+  app.get('/api/dossiers/:id/controls', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => controls.coherenceChecks(c, req.params.id, fy)));
   }));
 
   // --- Écritures récurrentes / abonnements -----------------------------------
