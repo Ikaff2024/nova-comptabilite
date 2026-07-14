@@ -96,7 +96,7 @@ export interface Mapping {
   id: string; keyword: string; account_code: string; hits: number;
   source: 'manual' | 'learned'; account_label: string | null;
 }
-export interface Counterparty { id: string; type: string; name: string; aux_code: string | null; tax_id: string | null; collective: string | null; }
+export interface Counterparty { id: string; type: string; name: string; aux_code: string | null; tax_id: string | null; email?: string | null; collective: string | null; }
 export interface AuxBalanceRow { id: string; aux_code: string | null; name: string; type: string; collective: string; debit: number; credit: number; balance: number; }
 export interface AuxLedgerRow { entry_date: string; journal_code: string; piece_ref: string | null; account_code: string; label: string; debit: number; credit: number; }
 export interface BankAccount { account_code: string; label: string; moves: number; unpointed: number; }
@@ -369,8 +369,10 @@ export const api = {
     req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   counterparties: (dossierId: string, type?: string) =>
     req<Counterparty[]>(`/api/dossiers/${dossierId}/counterparties${type ? `?type=${type}` : ''}`),
-  createCounterparty: (dossierId: string, body: { type: string; name: string; auxCode?: string; taxId?: string }) =>
+  createCounterparty: (dossierId: string, body: { type: string; name: string; auxCode?: string; taxId?: string; email?: string }) =>
     req<Counterparty>(`/api/dossiers/${dossierId}/counterparties`, { method: 'POST', body: JSON.stringify(body) }),
+  updateCounterparty: (dossierId: string, cid: string, body: { name?: string; auxCode?: string; taxId?: string; email?: string }) =>
+    req<void>(`/api/dossiers/${dossierId}/counterparties/${cid}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteCounterparty: (dossierId: string, cid: string) =>
     req<void>(`/api/dossiers/${dossierId}/counterparties/${cid}`, { method: 'DELETE' }),
   auxBalance: (dossierId: string, type?: string) =>

@@ -64,7 +64,7 @@ export async function overdueClients(c: Client, dossierId: string, asOf?: string
         where l.dossier_id = $1 and l.counterparty_id is not null
           and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
      )
-     select o.counterparty_id, cp.name, cp.aux_code,
+     select o.counterparty_id, cp.name, cp.aux_code, cp.email,
             sum(net) as balance,
             coalesce(sum(net) filter (where age <= 30), 0) as b0_30,
             coalesce(sum(net) filter (where age > 30 and age <= 60), 0) as b31_60,
@@ -89,7 +89,7 @@ export async function overdueClients(c: Client, dossierId: string, asOf?: string
   return rows.map((r: any) => {
     const last: any = relMap.get(r.counterparty_id);
     return {
-      counterpartyId: r.counterparty_id, name: r.name, auxCode: r.aux_code,
+      counterpartyId: r.counterparty_id, name: r.name, auxCode: r.aux_code, email: r.email ?? null,
       balance: Number(r.balance), b0_30: Number(r.b0_30), b31_60: Number(r.b31_60),
       b61_90: Number(r.b61_90), b90_plus: Number(r.b90_plus), oldestAge: Number(r.oldest_age),
       lastLevel: last ? Number(last.level) : 0, lastSentAt: last ? last.sent_at : null,

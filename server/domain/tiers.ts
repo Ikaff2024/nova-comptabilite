@@ -9,7 +9,7 @@ export async function listCounterparties(c: Client, dossierId: string, type?: st
   let where = 'cp.dossier_id = $1';
   if (type) { params.push(type); where += ` and cp.type = $${params.length}`; }
   const { rows } = await c.query(
-    `select cp.id, cp.type, cp.name, cp.aux_code, cp.tax_id,
+    `select cp.id, cp.type, cp.name, cp.aux_code, cp.tax_id, cp.email,
             a.account_code as collective
        from counterparties cp
        left join accounts a on a.id = cp.account_id
@@ -23,7 +23,7 @@ export async function listCounterparties(c: Client, dossierId: string, type?: st
 const COLL: Record<string, string> = { client: '411', fournisseur: '401', salarie: '421' };
 
 export async function createCounterparty(
-  c: Client, dossierId: string, input: { type: string; name: string; auxCode?: string; taxId?: string },
+  c: Client, dossierId: string, input: { type: string; name: string; auxCode?: string; taxId?: string; email?: string },
 ): Promise<any> {
   const type = input.type || 'client';
   if (!input.name?.trim()) throw new Error('Nom requis');
@@ -39,22 +39,23 @@ export async function createCounterparty(
     aux = (collCode ?? 'TIER') + String(Number(cnt[0].n) + 1).padStart(4, '0');
   }
   const { rows } = await c.query(
-    'insert into counterparties(dossier_id, type, name, aux_code, tax_id, account_id) values ($1,$2,$3,$4,$5,$6) returning id, type, name, aux_code, tax_id',
-    [dossierId, type, input.name.trim(), aux, input.taxId ?? null, accId],
+    'insert into counterparties(dossier_id, type, name, aux_code, tax_id, email, account_id) values ($1,$2,$3,$4,$5,$6,$7) returning id, type, name, aux_code, tax_id, email',
+    [dossierId, type, input.name.trim(), aux, input.taxId ?? null, input.email?.trim() || null, accId],
   );
   return rows[0];
 }
 
 export async function updateCounterparty(
-  c: Client, dossierId: string, id: string, input: { name?: string; auxCode?: string; taxId?: string },
+  c: Client, dossierId: string, id: string, input: { name?: string; auxCode?: string; taxId?: string; email?: string },
 ): Promise<void> {
   await c.query(
     `update counterparties set
        name = coalesce($3, name),
        aux_code = coalesce($4, aux_code),
-       tax_id = coalesce($5, tax_id)
+       tax_id = coalesce($5, tax_id),
+       email = coalesce($6, email)
      where dossier_id=$1 and id=$2`,
-    [dossierId, id, input.name ?? null, input.auxCode ?? null, input.taxId ?? null],
+    [dossierId, id, input.name ?? null, input.auxCode ?? null, input.taxId ?? null, input.email ?? null],
   );
 }
 

@@ -220,6 +220,7 @@ ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de b
 - "envoyer_email" : envoie un email, avec éventuellement une PIÈCE JOINTE PDF générée par Nova : livre de paie, bulletin individuel (+salarie), déclaration CNPS/DGI, rapport mensuel (tous avec annee+mois), ou une restitution comptable de l'exercice courant — balance, grand livre (+compte), états financiers. C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et montre un récapitulatif du contenu ; si le destinataire n'est pas fourni, demande-le (ne devine jamais une adresse). Après envoi, confirme à qui, quoi, et la pièce jointe.
 
 - "envoyer_relance_client" : relance un client en retard PAR EMAIL (lettre + relevé de compte PDF), et journalise la relance (niveau auto-incrémenté). IRRÉVERSIBLE. Il te faut le nom du client et l'adresse email du destinataire — demande-la si tu ne l'as pas (le tiers n'a pas forcément d'email en fiche). Confirme avant d'envoyer.
+- "relance_groupee" : relance d'un coup tous les clients en retard au-delà d'un seuil (défaut 90 j) qui ont un email en fiche. IRRÉVERSIBLE et potentiellement massif : confirme le périmètre (nombre de clients, seuil) AVANT de lancer, puis récapitule les envois et les clients ignorés faute d'email.
 
 Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie, puis — après confirmation du destinataire — envoyer_email avec piece_jointe { document: "livre_paie", annee, mois } et une courte synthèse dans le corps). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
 
@@ -365,6 +366,11 @@ const ACTION_TOOLS = [
     name: 'envoyer_relance_client',
     description: 'Relance un client en retard de paiement PAR EMAIL : envoie une lettre de relance (ton adapté au niveau) avec le relevé de compte (postes ouverts) en PDF, et journalise la relance (le niveau s\'incrémente automatiquement). IRRÉVERSIBLE. Nécessite le nom du client et l\'adresse email du destinataire (demande-la si tu ne l\'as pas). Le niveau est déduit (1 rappel, 2 relance, 3 mise en demeure) sauf si précisé.',
     input_schema: { type: 'object', properties: { client: { type: 'string', description: 'Nom du client à relancer' }, destinataire: { type: 'string', description: 'Adresse email du destinataire' }, niveau: { type: 'number', description: '1, 2 ou 3 (optionnel)' } }, required: ['client', 'destinataire'] },
+  },
+  {
+    name: 'relance_groupee',
+    description: 'Relance PAR EMAIL, en une fois, tous les clients en retard au-delà d\'un seuil d\'ancienneté (défaut 90 jours) DONT l\'email est renseigné en fiche : à chacun sa lettre + relevé PDF, journalisée. IRRÉVERSIBLE. Renvoie le récapitulatif (envoyées, ignorées faute d\'email, échecs). Confirme avant de lancer.',
+    input_schema: { type: 'object', properties: { seuil_jours: { type: 'number', description: 'Ancienneté minimale en jours (défaut 90)' }, niveau: { type: 'number', description: 'Forcer un niveau 1-3 (optionnel, sinon auto par client)' } }, required: [] },
   },
 ];
 const ACTION_TOOL_NAMES = new Set(ACTION_TOOLS.map((t) => t.name));
@@ -521,6 +527,26 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
         const rec = await relances.recordRelance(c, dossierId, match.counterpartyId, level, doc.letter.total, undefined, `Relance niveau ${level} envoyée à ${to}`);
         return { statut: 'relance_envoyee', client: match.name, destinataire: to, niveau: rec.level, total_du: doc.letter.total, piece_jointe: doc.filename, id, note: 'Relance envoyée et journalisée (action irréversible).' };
       } catch (e: any) { return { error: String(e?.message ?? e).slice(0, 200) }; }
+    }
+    case 'relance_groupee': {
+      if (!mail.emailEnabled()) return { error: 'Canal email non configuré côté serveur (RESEND_API_KEY absent).' };
+      const seuil = Number(input?.seuil_jours) || 90;
+      const overdue = await relances.overdueClients(c, dossierId);
+      const cibles = overdue.filter((o: any) => o.oldestAge >= seuil && o.balance > 0);
+      const envoyees: any[] = []; const sansEmail: string[] = []; const echecs: any[] = [];
+      for (const cli of cibles) {
+        if (!cli.email || !String(cli.email).includes('@')) { sansEmail.push(cli.name); continue; }
+        try {
+          const doc = await relances.releveClientPdf(c, dossierId, cli.counterpartyId);
+          if (doc.letter.open.length === 0) continue;
+          const level = Number(input?.niveau) || (cli.lastLevel + 1);
+          const body = relances.relanceEmailBody(doc.letter, level, doc.cur);
+          await mail.sendEmail({ to: cli.email, subject: body.subject, html: body.html, attachments: [{ filename: doc.filename, content: doc.buffer.toString('base64') }] });
+          await relances.recordRelance(c, dossierId, cli.counterpartyId, level, doc.letter.total, undefined, `Relance groupée niveau ${level} à ${cli.email}`);
+          envoyees.push({ client: cli.name, email: cli.email, niveau: level, total: doc.letter.total });
+        } catch (e: any) { echecs.push({ client: cli.name, erreur: String(e?.message ?? e).slice(0, 120) }); }
+      }
+      return { statut: 'relances_envoyees', seuil_jours: seuil, total_envoyees: envoyees.length, envoyees, ignores_sans_email: sansEmail, echecs };
     }
 
     default: return { error: `Outil inconnu : ${name}` };

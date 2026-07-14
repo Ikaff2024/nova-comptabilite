@@ -112,9 +112,11 @@ const TYPE_LABEL: Record<string, string> = { client: 'Client', fournisseur: 'Fou
 function PlanTiers({ dossierId }: { dossierId: string }) {
   const [rows, setRows] = useState<Counterparty[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ type: 'client', name: '', auxCode: '', taxId: '' });
+  const [form, setForm] = useState({ type: 'client', name: '', auxCode: '', taxId: '', email: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editEmail, setEditEmail] = useState('');
 
   const load = async () => { setLoading(true); try { setRows(await api.counterparties(dossierId)); } finally { setLoading(false); } };
   useEffect(() => { load(); }, [dossierId]);
@@ -122,9 +124,10 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
   const add = async (e: React.FormEvent) => {
     e.preventDefault(); if (!form.name.trim()) return;
     setBusy(true); setError(null);
-    try { await api.createCounterparty(dossierId, { type: form.type, name: form.name.trim(), auxCode: form.auxCode.trim() || undefined, taxId: form.taxId.trim() || undefined }); setForm({ type: form.type, name: '', auxCode: '', taxId: '' }); await load(); }
+    try { await api.createCounterparty(dossierId, { type: form.type, name: form.name.trim(), auxCode: form.auxCode.trim() || undefined, taxId: form.taxId.trim() || undefined, email: form.email.trim() || undefined }); setForm({ type: form.type, name: '', auxCode: '', taxId: '', email: '' }); await load(); }
     catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
+  const saveEmail = async (r: Counterparty) => { setEditId(null); if ((editEmail.trim() || null) === (r.email ?? null)) return; try { await api.updateCounterparty(dossierId, r.id, { email: editEmail.trim() }); await load(); } catch (e: any) { setError(e.message); } };
   const remove = async (id: string) => { await api.deleteCounterparty(dossierId, id); await load(); };
 
   return (
@@ -140,6 +143,8 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
           <input value={form.auxCode} onChange={(e) => setForm({ ...form, auxCode: e.target.value })} placeholder="auto" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
         <div className="w-32"><label className="mb-1 block text-xs text-zinc-500">Id. fiscal</label>
           <input value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} placeholder="IFU/NCC" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+        <div className="w-48"><label className="mb-1 block text-xs text-zinc-500">Email (relances)</label>
+          <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="contact@client.ci" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
         <button type="submit" disabled={busy} className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Ajouter</button>
       </form>
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
@@ -148,7 +153,7 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
-              <th className="px-4 py-3 font-medium">Code aux.</th><th className="px-4 py-3 font-medium">Type</th><th className="px-4 py-3 font-medium">Nom</th><th className="px-4 py-3 font-medium">Collectif</th><th className="px-4 py-3 font-medium">Id. fiscal</th><th className="px-4 py-3"></th>
+              <th className="px-4 py-3 font-medium">Code aux.</th><th className="px-4 py-3 font-medium">Type</th><th className="px-4 py-3 font-medium">Nom</th><th className="px-4 py-3 font-medium">Collectif</th><th className="px-4 py-3 font-medium">Id. fiscal</th><th className="px-4 py-3 font-medium">Email</th><th className="px-4 py-3"></th>
             </tr></thead>
             <tbody className="divide-y divide-white/5">
               {rows.map((r) => (
@@ -158,6 +163,11 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
                   <td className="px-4 py-2.5 text-zinc-300">{r.name}</td>
                   <td className="px-4 py-2.5 font-mono text-zinc-500">{r.collective ?? '—'}</td>
                   <td className="px-4 py-2.5 text-zinc-500">{r.tax_id ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-zinc-400">
+                    {editId === r.id
+                      ? <input value={editEmail} autoFocus onChange={(e) => setEditEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEmail(r)} onBlur={() => saveEmail(r)} placeholder="contact@client.ci" className="w-44 rounded border border-emerald-500/40 bg-zinc-900/60 px-2 py-1 text-sm outline-none" />
+                      : <span onClick={() => { setEditId(r.id); setEditEmail(r.email ?? ''); }} className="cursor-text">{r.email || <span className="text-zinc-600">+ email</span>}</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-right"><button onClick={() => remove(r.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></td>
                 </tr>
               ))}
