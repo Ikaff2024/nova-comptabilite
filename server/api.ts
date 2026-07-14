@@ -27,6 +27,7 @@ import * as tax from './domain/tax.js';
 import * as importbalance from './domain/importbalance.js';
 import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
+import * as usage from './domain/usage.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -247,6 +248,13 @@ export function createApi() {
   app.get('/api/dashboard', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => acc.cabinetDashboard(c)));
+  }));
+
+  // Suivi des coûts d'API par client (page propriétaire). Portée RLS = dossiers accessibles.
+  app.get('/api/usage', h(async (req, res) => {
+    const userId = requireUser(req);
+    const days = Math.min(365, Math.max(1, Number(req.query?.days) || 30));
+    res.json(await withUser(userId, (c) => usage.usageSummary(c, days)));
   }));
 
   app.post('/api/demo/seed', h(async (req, res) => {
@@ -1001,6 +1009,8 @@ export function createApi() {
     const v = await withUser(userId, (c) => agent.getVoice(c, req.params.id));
     const audio = await tts.synthesize(text, v.provider as any, v.voiceId || undefined);
     if (!audio) { res.status(204).end(); return; }
+    const ttsProvider = v.provider === 'openai' ? 'openai_tts' : 'elevenlabs';
+    await withUser(userId, (c) => usage.recordUsage(c, req.params.id, ttsProvider, v.voiceId || null, { units: text.length }));
     res.setHeader('content-type', 'audio/mpeg');
     res.send(audio);
   }));

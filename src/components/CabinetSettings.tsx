@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Users, ShieldCheck, ShieldOff, Plus, Trash2, KeyRound, CheckCircle2, Building2, Pencil, UserRound } from 'lucide-react';
 import { api, type Cabinet, type AuthUser, type CabinetMember } from '../lib/api';
 import { cn } from '../lib/utils';
+import ApiCosts from './ApiCosts';
 
 const ROLES = [
   { v: 'owner', l: 'Propriétaire' },
@@ -11,6 +12,10 @@ const ROLES = [
 const roleLabel = (r: string) => ROLES.find((x) => x.v === r)?.l ?? r;
 
 export default function CabinetSettings({ cabinet, user, onUserRefresh, onRenamed }: { cabinet: Cabinet; user: AuthUser; onUserRefresh: () => void; onRenamed: () => void }) {
+  const [myRole, setMyRole] = useState<string | null>(null);
+  useEffect(() => { let on = true; api.members(cabinet.id).then((ms) => { if (on) setMyRole(ms.find((m) => m.userId === user.id)?.role ?? null); }).catch(() => {}); return () => { on = false; }; }, [cabinet.id, user.id]);
+  const isOwner = myRole === 'owner' || myRole === 'associe';
+
   return (
     <div className="space-y-8">
       <div>
@@ -20,6 +25,7 @@ export default function CabinetSettings({ cabinet, user, onUserRefresh, onRename
       <CabinetName cabinet={cabinet} onRenamed={onRenamed} />
       <ProfileName user={user} onUserRefresh={onUserRefresh} />
       <Members cabinet={cabinet} user={user} />
+      {isOwner && <ApiCosts />}
       <TwoFactor user={user} onUserRefresh={onUserRefresh} />
     </div>
   );

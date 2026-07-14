@@ -70,6 +70,13 @@ export interface DashboardData {
   sourceBreakdown: { source: string; label: string; count: number }[];
   alerts: { type: string; dossierId: string; dossierName: string; message: string }[];
 }
+export interface UsageSummary {
+  days: number;
+  indisponible?: boolean;
+  total: { costUsd: number; appels: number };
+  parProvider: { provider: string; label: string; cost: number; appels: number }[];
+  dossiers: { dossierId: string; raisonSociale: string; costUsd: number; appels: number; providers: Record<string, number> }[];
+}
 export interface FinancialStatements {
   incomeStatement: {
     produits: { group: string; label: string; amount: number }[];
@@ -315,6 +322,7 @@ export const api = {
   removeMember: (cabinetId: string, uid: string) => req<void>(`/api/cabinets/${cabinetId}/members/${uid}`, { method: 'DELETE' }),
   cabinets: () => req<Cabinet[]>('/api/cabinets'),
   dashboard: () => req<DashboardData>('/api/dashboard'),
+  usage: (days = 30) => req<UsageSummary>(`/api/usage?days=${days}`),
   seedDemo: () => req<{ dossierId: string }>('/api/demo/seed', { method: 'POST', body: '{}' }),
   onboard: (name: string, country: string) =>
     req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country }) }),

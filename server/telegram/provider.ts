@@ -17,14 +17,15 @@ export function verifySecret(header?: string): boolean {
   return header === secret();
 }
 
-export interface TelegramUpdate { chatId: string; text: string; firstName?: string; voiceFileId?: string }
+export interface TelegramUpdate { chatId: string; text: string; firstName?: string; voiceFileId?: string; voiceDuration?: number }
 
 export function parseUpdate(body: any): TelegramUpdate | null {
   const msg = body?.message ?? body?.edited_message;
   const chatId = msg?.chat?.id;
   if (chatId == null) return null;
   const voiceFileId = msg?.voice?.file_id ?? msg?.audio?.file_id ?? undefined;
-  return { chatId: String(chatId), text: String(msg?.text ?? ''), firstName: msg?.from?.first_name, voiceFileId };
+  const voiceDuration = msg?.voice?.duration ?? msg?.audio?.duration ?? undefined;
+  return { chatId: String(chatId), text: String(msg?.text ?? ''), firstName: msg?.from?.first_name, voiceFileId, voiceDuration };
 }
 
 // Télécharge un fichier Telegram (note vocale) et renvoie ses octets.

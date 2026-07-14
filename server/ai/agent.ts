@@ -15,6 +15,7 @@ import * as recurring from '../domain/recurring.js';
 import * as recinv from '../domain/recurringinvoices.js';
 import * as accdocs from '../documents/accounting-docs.js';
 import * as audit from '../domain/audit.js';
+import * as usage from '../domain/usage.js';
 import * as mail from '../email/provider.js';
 import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
 
@@ -652,10 +653,14 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
   const model = pickModel(history);
   const instruction = String([...history].reverse().find((h) => h.role === 'user')?.content ?? '');
   const toolCalls: AgentToolCall[] = [];
+  let tokIn = 0, tokOut = 0; // cumul des tokens sur toutes les étapes du tour
   for (let step = 0; step < MAX_STEPS; step++) {
     const data = await callClaude({
       model, max_tokens: 2048, system, tools, messages,
     });
+    const u = data.usage ?? {};
+    tokIn += (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+    tokOut += u.output_tokens ?? 0;
     const content: any[] = data.content ?? [];
     messages.push({ role: 'assistant', content });
 
@@ -679,7 +684,9 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
 
     // Réponse finale : concatène les blocs texte.
     const reply = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    await usage.recordUsage(c, dossierId, 'anthropic', model, { inputTokens: tokIn, outputTokens: tokOut });
     return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model, mode };
   }
+  await usage.recordUsage(c, dossierId, 'anthropic', model, { inputTokens: tokIn, outputTokens: tokOut });
   return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model, mode };
 }
