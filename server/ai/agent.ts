@@ -10,6 +10,7 @@ import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
+import * as recurring from '../domain/recurring.js';
 import * as accdocs from '../documents/accounting-docs.js';
 import * as mail from '../email/provider.js';
 import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
@@ -222,6 +223,8 @@ ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de b
 - "envoyer_relance_client" : relance un client en retard PAR EMAIL (lettre + relevé de compte PDF), et journalise la relance (niveau auto-incrémenté). IRRÉVERSIBLE. Il te faut le nom du client et l'adresse email du destinataire — demande-la si tu ne l'as pas (le tiers n'a pas forcément d'email en fiche). Confirme avant d'envoyer.
 - "relance_groupee" : relance d'un coup tous les clients en retard au-delà d'un seuil (défaut 90 j) qui ont un email en fiche. IRRÉVERSIBLE et potentiellement massif : confirme le périmètre (nombre de clients, seuil) AVANT de lancer, puis récapitule les envois et les clients ignorés faute d'email.
 
+- "generer_recurrences" : génère les échéances dues des modèles d'écritures récurrentes (loyers, abonnements…). SEULE exception à la règle « tu ne postes pas d'écritures » : ici les écritures proviennent de modèles PRÉ-VALIDÉS par l'humain, tu ne fais qu'appliquer un échéancier déjà décidé. Montre d'abord ce qui va être généré (recurrences_dues) et confirme avant. Tu ne crées jamais toi-même un nouveau modèle récurrent ni une écriture hors modèle.
+
 Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie, puis — après confirmation du destinataire — envoyer_email avec piece_jointe { document: "livre_paie", annee, mois } et une courte synthèse dans le corps). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
 
 // --- Outils de LECTURE (toujours disponibles) --------------------------------
@@ -246,6 +249,7 @@ const READ_TOOLS = [
   { name: 'profil_entreprise', description: 'Identité fiscale et légale du dossier : forme juridique, régime fiscal, NCC/IFU, RCCM, banque/RIB. À citer dans les courriers/déclarations.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'echeances_fiscales', description: 'Prochaines échéances fiscales et sociales du dossier (TVA, impôts sur salaires/état 301, CNPS, DSF) dérivées du régime fiscal, avec leurs dates. Pour rappeler proactivement ce qui arrive à échéance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'analyse_mensuelle', description: 'Analyse comparée d\'un mois pour le reporting : chiffre d\'affaires, produits, charges et résultat du mois vs mois précédent (avec variations), cumul annuel, ratios (marge nette, taux de charges), situation (trésorerie, créances, dettes) et principales charges du mois. À commenter (constat → cause → recommandation). Fournir année et mois (1-12).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
+  { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
 ];
 
 // --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
@@ -372,6 +376,11 @@ const ACTION_TOOLS = [
     description: 'Relance PAR EMAIL, en une fois, tous les clients en retard au-delà d\'un seuil d\'ancienneté (défaut 90 jours) DONT l\'email est renseigné en fiche : à chacun sa lettre + relevé PDF, journalisée. IRRÉVERSIBLE. Renvoie le récapitulatif (envoyées, ignorées faute d\'email, échecs). Confirme avant de lancer.',
     input_schema: { type: 'object', properties: { seuil_jours: { type: 'number', description: 'Ancienneté minimale en jours (défaut 90)' }, niveau: { type: 'number', description: 'Forcer un niveau 1-3 (optionnel, sinon auto par client)' } }, required: [] },
   },
+  {
+    name: 'generer_recurrences',
+    description: 'Génère (comptabilise) les échéances DUES des modèles d\'écritures récurrentes définis par l\'humain (loyers, abonnements…). Les écritures viennent de modèles pré-validés — c\'est l\'application d\'un échéancier déjà décidé, pas une écriture inventée. Confirme d\'abord ce qui va être généré (vois recurrences_dues), puis récapitule le nombre d\'écritures et le total.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
 ];
 const ACTION_TOOL_NAMES = new Set(ACTION_TOOLS.map((t) => t.name));
 
@@ -419,6 +428,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       return { echeances: upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd }) };
     }
     case 'analyse_mensuelle': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return await reporting.monthlyReport(c, dossierId, y, mo); }
+    case 'recurrences_dues': { const t = await recurring.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, frequence: x.frequencyLabel, journal: x.journalCode, montant: x.amount, tiers: x.counterpartyName ?? null, actif: x.active, echeances_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
 
     // --- Écriture : BROUILLONS (mode assisté) ---
     case 'preparer_facture_vente': {
@@ -547,6 +557,10 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
         } catch (e: any) { echecs.push({ client: cli.name, erreur: String(e?.message ?? e).slice(0, 120) }); }
       }
       return { statut: 'relances_envoyees', seuil_jours: seuil, total_envoyees: envoyees.length, envoyees, ignores_sans_email: sansEmail, echecs };
+    }
+    case 'generer_recurrences': {
+      const r = await recurring.generateAllDue(c, dossierId);
+      return { statut: 'recurrences_generees', ecritures: r.count, modeles_concernes: r.templates, total: r.total, note: 'Échéances récurrentes générées à partir des modèles validés. Visibles dans les journaux / l\'onglet Récurrences.' };
     }
 
     default: return { error: `Outil inconnu : ${name}` };
