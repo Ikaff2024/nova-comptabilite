@@ -2,6 +2,7 @@ import { withUser } from '../db.js';
 import * as wa from '../domain/whatsapp.js';
 import * as agent from '../ai/agent.js';
 import { sendText, type InboundMessage } from './provider.js';
+import { mdToPlain } from '../textfmt.js';
 
 // ============================================================================
 // Routage des messages WhatsApp entrants. Texte -> agent (dans le périmètre RLS
@@ -25,7 +26,7 @@ export async function handleInbound(messages: InboundMessage[]): Promise<void> {
           await agent.saveTurns(c, link.dossierId, link.userId, [{ role: 'user', content: text }, { role: 'assistant', content: r.reply }]);
           return r.reply;
         });
-        await sendText(m.from, reply);
+        await sendText(m.from, mdToPlain(reply));
       } else if (m.type === 'image' || m.type === 'document') {
         await sendText(m.from, '📎 Pièce bien reçue. La comptabilisation par photo arrive très bientôt — en attendant, posez-moi vos questions par écrit, ou utilisez l\'onglet « Capture IA » dans l\'application.');
       } else {

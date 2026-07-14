@@ -2,6 +2,7 @@ import { withUser } from '../db.js';
 import * as tg from '../domain/telegram.js';
 import * as agent from '../ai/agent.js';
 import { sendMessage, type TelegramUpdate } from './provider.js';
+import { mdToPlain } from '../textfmt.js';
 
 // ============================================================================
 // Routage des messages Telegram. Chat non relié -> liaison par code ; chat
@@ -43,7 +44,7 @@ export async function handleUpdate(up: TelegramUpdate): Promise<void> {
       await agent.saveTurns(c, link.dossierId, link.userId, [{ role: 'user', content: text }, { role: 'assistant', content: r.reply }]);
       return r.reply;
     });
-    await sendMessage(up.chatId, reply);
+    await sendMessage(up.chatId, mdToPlain(reply));
   } catch {
     try { await sendMessage(up.chatId, 'Désolé, une erreur est survenue. Réessayez dans un instant.'); } catch { /* ignore */ }
   }
