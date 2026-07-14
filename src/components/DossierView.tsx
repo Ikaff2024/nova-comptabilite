@@ -23,6 +23,7 @@ import ImportBalance from './ImportBalance';
 import Immobilisations from './Immobilisations';
 import AuditTrail from './AuditTrail';
 import DossierDashboard from './DossierDashboard';
+import AnalyseFinanciere from './AnalyseFinanciere';
 import Recurring from './Recurring';
 import RecurringInvoices from './RecurringInvoices';
 import Analytique from './Analytique';
@@ -31,7 +32,7 @@ import Revision from './Revision';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'assistant' | 'facturation' | 'achats' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
+type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -57,6 +58,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'synthese', label: 'Synthèse', icon: LayoutDashboard },
     { id: 'assistant', label: 'Lexa', icon: Sparkles },
+    { id: 'analyse', label: 'Analyse & révision', icon: Gauge },
     { id: 'facturation', label: 'Facturation', icon: ReceiptText },
     { id: 'achats', label: 'Achats', icon: ShoppingCart },
     { id: 'paie', label: 'Paie', icon: Wallet },
@@ -88,7 +90,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   // Regroupement des modules par nature (menu latéral).
   const meta = Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<Tab, { id: Tab; label: string; icon: any }>;
   const groups: { label: string; items: Tab[] }[] = [
-    { label: 'Pilotage', items: ['synthese', 'assistant', 'previsionnel', 'scoring', 'analytique', 'budget'] },
+    { label: 'Pilotage', items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring', 'analytique', 'budget'] },
     { label: 'Saisie', items: ['capture', 'facturation', 'achats', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
     { label: 'Comptabilité', items: ['balance', 'grandlivre', 'journaux', 'revision', 'plan'] },
     { label: 'Tiers & trésorerie', items: ['tiers', 'banque', 'immos'] },
@@ -145,6 +147,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'achats' && <Achats dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'paie' && <Paie dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'assistant' && <Assistant dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'analyse' && <AnalyseFinanciere dossierId={dossier.id} currency={dossier.base_currency} />}
             {tab === 'capture' && (
               <Capture dossierId={dossier.id} fiscalYears={fiscalYears} journals={journals}
                 currency={dossier.base_currency} onPosted={() => { /* la balance se recharge à l'ouverture de l'onglet */ }} />

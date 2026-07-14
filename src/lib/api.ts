@@ -70,6 +70,20 @@ export interface DashboardData {
   sourceBreakdown: { source: string; label: string; count: number }[];
   alerts: { type: string; dossierId: string; dossierName: string; message: string }[];
 }
+export interface DossierAlerts {
+  dossierId: string; devise: string; genereLe: string;
+  resume: { haute: number; moyenne: number; info: number; total: number };
+  alertes: { niveau: 'haute' | 'moyenne' | 'info'; categorie: string; titre: string; detail?: string; montant?: number; echeance?: string; onglet?: string }[];
+}
+export interface FinancialRatios {
+  devise: string; chiffreAffaires: number; soldes: Record<string, number>;
+  ratios: { cle: string; libelle: string; valeur: number | null; unite: 'ratio' | 'pourcent' | 'jours' | 'montant'; formule: string; niveau?: 'bon' | 'moyen' | 'faible'; commentaire?: string }[];
+}
+export interface CoherenceReport {
+  dossierId: string; devise: string; nbComptesAnalyses: number;
+  resume: { haute: number; moyenne: number; info: number; total: number };
+  anomalies: { niveau: 'haute' | 'moyenne' | 'info'; regle: string; compte: string; intitule: string; solde: number; sens: string; explication: string }[];
+}
 export interface UsageSummary {
   days: number;
   indisponible?: boolean;
@@ -437,6 +451,9 @@ export const api = {
   parseTiersReprise: (dossierId: string, tiersCsv: string) =>
     req<{ count: number; items: TiersOpenItem[] }>(`/api/dossiers/${dossierId}/import-balance/parse-tiers`, { method: 'POST', body: JSON.stringify({ tiersCsv }) }),
   dossierDashboard: (dossierId: string, fiscalYearId?: string) => req<DossierDashboard>(`/api/dossiers/${dossierId}/dashboard${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  dossierAlerts: (dossierId: string, fiscalYearId?: string) => req<DossierAlerts>(`/api/dossiers/${dossierId}/alerts${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  dossierRatios: (dossierId: string, fiscalYearId?: string) => req<FinancialRatios>(`/api/dossiers/${dossierId}/ratios${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  dossierControls: (dossierId: string, fiscalYearId?: string) => req<CoherenceReport>(`/api/dossiers/${dossierId}/controls${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   recurringTemplates: (dossierId: string) => req<RecurringTemplate[]>(`/api/dossiers/${dossierId}/recurring`),
   createRecurring: (dossierId: string, body: { label: string; journalId: string; frequency: string; dayOfMonth?: number; startDate: string; endDate?: string | null; counterpartyName?: string; lines: RecurringLine[]; notes?: string }) =>
     req<{ id: string }>(`/api/dossiers/${dossierId}/recurring`, { method: 'POST', body: JSON.stringify(body) }),
