@@ -1,9 +1,56 @@
 import type { Client } from '../db.js';
+import { tablePdf } from '../documents/pdf.js';
 
 // ============================================================================
 // Relances clients : créances échues non réglées (postes non lettrés au débit
 // d'un compte 41x), ventilées par ancienneté, avec le niveau de relance atteint.
 // ============================================================================
+
+const grp = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+const esc = (s: string) => (s || '').replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m] as string));
+
+// Relevé de compte (postes ouverts) d'un client en PDF.
+export async function releveClientPdf(c: Client, dossierId: string, counterpartyId: string, asOf?: string): Promise<{ filename: string; buffer: Buffer; letter: any; cur: string }> {
+  const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const d: any = dr[0]?.j ?? {};
+  const cur = d.base_currency ?? 'XOF';
+  const money = (n: number) => `${grp(n)} ${cur}`;
+  const letter = await relanceLetter(c, dossierId, counterpartyId, asOf);
+  const meta = [`${d.raison_sociale ?? ''}`];
+  if (d.tax_id || d.rccm) meta.push([d.tax_id ? `NCC/IFU : ${d.tax_id}` : '', d.rccm ? `RCCM : ${d.rccm}` : ''].filter(Boolean).join(' · '));
+  const buffer = await tablePdf({
+    title: `Relevé de compte — ${letter.name}`, subtitle: `${d.raison_sociale ?? ''} · au ${letter.asOf}`, meta,
+    columns: [{ label: 'Date', width: 62 }, { label: 'Pièce', width: 70 }, { label: 'Libellé', width: 170 }, { label: 'Ancienneté', width: 62, align: 'right' }, { label: 'Montant', width: 82, align: 'right' }],
+    rows: letter.open.map((o: any) => [o.date, o.piece_ref ?? '', String(o.label ?? '').slice(0, 46), `${o.age} j`, money(o.amount)]),
+    totals: ['', '', '', 'TOTAL DÛ', money(letter.total)],
+    footNote: `${letter.open.length} poste(s) ouvert(s). Relevé généré par Nova.`,
+  });
+  return { filename: `releve-${(letter.auxCode || letter.name || 'client').replace(/\W+/g, '-')}.pdf`, buffer, letter, cur };
+}
+
+// Corps d'email de relance, ton selon le niveau (1 rappel · 2 relance · 3+ mise en demeure).
+export function relanceEmailBody(letter: any, level: number, cur: string): { subject: string; html: string } {
+  const money = (n: number) => `${grp(n)} ${cur}`;
+  const intro = level <= 1
+    ? "Sauf erreur de notre part, nous constatons que les factures ci-dessous demeurent impayées à ce jour. Nous vous serions reconnaissants de bien vouloir procéder à leur règlement."
+    : level === 2
+      ? "Malgré notre précédent rappel, les factures ci-dessous restent impayées. Nous vous demandons de régulariser votre situation sans délai."
+      : "En dépit de nos relances, votre compte présente toujours les impayés ci-dessous. La présente vaut MISE EN DEMEURE de régler sous huitaine, à défaut de quoi nous serions contraints d'engager les voies de recouvrement.";
+  const subject = level <= 1 ? `Rappel — factures échues (${letter.name})` : level === 2 ? `Relance — factures impayées (${letter.name})` : `Mise en demeure — factures impayées (${letter.name})`;
+  const rows = letter.open.map((o: any) => `<tr><td style="padding:4px 8px">${o.date}</td><td style="padding:4px 8px">${esc(o.piece_ref ?? '')}</td><td style="padding:4px 8px">${esc(o.label ?? '')}</td><td style="padding:4px 8px;text-align:right">${money(o.amount)}</td></tr>`).join('');
+  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">
+    <p>Bonjour,</p>
+    <p>${intro}</p>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <thead><tr style="background:#f0f0f0"><th style="padding:4px 8px;text-align:left">Date</th><th style="padding:4px 8px;text-align:left">Pièce</th><th style="padding:4px 8px;text-align:left">Libellé</th><th style="padding:4px 8px;text-align:right">Montant</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="font-weight:bold;border-top:2px solid #ccc"><td colspan="3" style="padding:6px 8px">Total dû au ${letter.asOf}</td><td style="padding:6px 8px;text-align:right">${money(letter.total)}</td></tr></tfoot>
+    </table>
+    <p>Vous trouverez le relevé de compte détaillé en pièce jointe. Si ce règlement a été effectué entretemps, merci de ne pas tenir compte de ce message.</p>
+    <p>Cordialement,<br/>Le service comptable</p>
+  </div>`;
+  return { subject, html };
+}
 
 export async function overdueClients(c: Client, dossierId: string, asOf?: string): Promise<any[]> {
   const ref = asOf || new Date().toISOString().slice(0, 10);
