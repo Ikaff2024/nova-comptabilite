@@ -223,7 +223,9 @@ ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de b
 - "envoyer_relance_client" : relance un client en retard PAR EMAIL (lettre + relevé de compte PDF), et journalise la relance (niveau auto-incrémenté). IRRÉVERSIBLE. Il te faut le nom du client et l'adresse email du destinataire — demande-la si tu ne l'as pas (le tiers n'a pas forcément d'email en fiche). Confirme avant d'envoyer.
 - "relance_groupee" : relance d'un coup tous les clients en retard au-delà d'un seuil (défaut 90 j) qui ont un email en fiche. IRRÉVERSIBLE et potentiellement massif : confirme le périmètre (nombre de clients, seuil) AVANT de lancer, puis récapitule les envois et les clients ignorés faute d'email.
 
-- "generer_recurrences" : génère les échéances dues des modèles d'écritures récurrentes (loyers, abonnements…). SEULE exception à la règle « tu ne postes pas d'écritures » : ici les écritures proviennent de modèles PRÉ-VALIDÉS par l'humain, tu ne fais qu'appliquer un échéancier déjà décidé. Montre d'abord ce qui va être généré (recurrences_dues) et confirme avant. Tu ne crées jamais toi-même un nouveau modèle récurrent ni une écriture hors modèle.
+- "generer_recurrences" : génère les échéances dues des modèles d'écritures récurrentes (loyers, abonnements…). Les écritures proviennent de modèles PRÉ-VALIDÉS par l'humain, tu ne fais qu'appliquer un échéancier déjà décidé. Montre d'abord ce qui va être généré (recurrences_dues) et confirme avant. Tu ne crées jamais toi-même un nouveau modèle récurrent.
+- "comptabiliser_tva" : passe l'écriture de liquidation de TVA du mois (opération MÉCANIQUE et déterministe : solde 443/445, constate 4441/4449). Montre d'abord la situation TVA du mois (outil tva) et CONFIRME avant de comptabiliser.
+Ces deux seules écritures au grand livre (récurrences validées, liquidation TVA mécanique) sont autorisées après confirmation ; pour tout le reste, tu ne postes/émets/règles/clôtures JAMAIS toi-même — tu prépares des brouillons que l'humain valide.
 
 Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie, puis — après confirmation du destinataire — envoyer_email avec piece_jointe { document: "livre_paie", annee, mois } et une courte synthèse dans le corps). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
 
@@ -380,6 +382,11 @@ const ACTION_TOOLS = [
     name: 'generer_recurrences',
     description: 'Génère (comptabilise) les échéances DUES des modèles d\'écritures récurrentes définis par l\'humain (loyers, abonnements…). Les écritures viennent de modèles pré-validés — c\'est l\'application d\'un échéancier déjà décidé, pas une écriture inventée. Confirme d\'abord ce qui va être généré (vois recurrences_dues), puis récapitule le nombre d\'écritures et le total.',
     input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'comptabiliser_tva',
+    description: 'Comptabilise la LIQUIDATION de TVA d\'un mois : écriture d\'OD déterministe qui solde la TVA collectée (443) et déductible (445) et constate le net (TVA due 4441, ou crédit de TVA 4449). Opération mécanique de fin de mois (aucun jugement). Montre d\'abord la situation TVA (outil tva) et CONFIRME avant. Fournir année et mois (1-12).',
+    input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] },
   },
 ];
 const ACTION_TOOL_NAMES = new Set(ACTION_TOOLS.map((t) => t.name));
@@ -561,6 +568,15 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'generer_recurrences': {
       const r = await recurring.generateAllDue(c, dossierId);
       return { statut: 'recurrences_generees', ecritures: r.count, modeles_concernes: r.templates, total: r.total, note: 'Échéances récurrentes générées à partir des modèles validés. Visibles dans les journaux / l\'onglet Récurrences.' };
+    }
+    case 'comptabiliser_tva': {
+      const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois);
+      const from = `${y}-${String(mo + 1).padStart(2, '0')}-01`;
+      const to = `${y}-${String(mo + 1).padStart(2, '0')}-${String(new Date(y, mo + 1, 0).getDate()).padStart(2, '0')}`;
+      try {
+        const r = await tax.postVatLiquidation(c, dossierId, from, to, to);
+        return { statut: 'tva_comptabilisee', periode: `${mo + 1}/${y}`, ecriture_id: r.entryId, tva_collectee: r.collectee, tva_deductible: r.deductible, tva_a_payer: r.netDue, credit_reportable: r.creditReportable, note: 'Écriture de liquidation de TVA comptabilisée (journal OD).' };
+      } catch (e: any) { return { error: String(e?.message ?? e).slice(0, 200) }; }
     }
 
     default: return { error: `Outil inconnu : ${name}` };
