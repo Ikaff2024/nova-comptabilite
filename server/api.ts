@@ -41,6 +41,7 @@ import { creditScore } from './domain/scoring.js';
 import * as financing from './domain/financing.js';
 import * as recurring from './domain/recurring.js';
 import * as documents from './domain/documents.js';
+import * as csv from './documents/csv.js';
 import * as portal from './domain/portal.js';
 import * as relances from './domain/relances.js';
 
@@ -820,6 +821,26 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
+  }));
+
+  // Exports tableur (Excel/LibreOffice) : balance & grand livre en CSV.
+  app.get('/api/dossiers/:id/export/balance.csv', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const out = await withUser(userId, (c) => csv.balanceCsv(c, req.params.id, fy));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
+  app.get('/api/dossiers/:id/export/grand-livre.csv', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const account = (req.query.account as string) || '';
+    if (!account) { const e: any = new Error('Paramètre account requis'); e.status = 400; throw e; }
+    const out = await withUser(userId, (c) => csv.grandLivreCsv(c, req.params.id, account, fy));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
   }));
   // --- Scoring & finance embarquée -------------------------------------------
   app.get('/api/dossiers/:id/score', h(async (req, res) => {

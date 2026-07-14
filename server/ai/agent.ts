@@ -14,6 +14,7 @@ import * as reporting from '../domain/reporting.js';
 import * as recurring from '../domain/recurring.js';
 import * as recinv from '../domain/recurringinvoices.js';
 import * as accdocs from '../documents/accounting-docs.js';
+import * as csv from '../documents/csv.js';
 import * as audit from '../domain/audit.js';
 import * as usage from '../domain/usage.js';
 import * as mail from '../email/provider.js';
@@ -370,6 +371,7 @@ const ACTION_TOOLS = [
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
               salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
               compte: { type: 'string', description: 'Pour "grand_livre" : code du compte (ex. 411, 601)' },
+              format: { type: 'string', description: 'Format du fichier : "pdf" (défaut) ou "excel" (CSV ouvrable dans Excel). "excel" disponible pour "balance" et "grand_livre".' },
             },
             required: ['document'],
           },
@@ -593,6 +595,10 @@ function clampMonth(mois: any): number { const mo = Number(mois) || 1; return Ma
 // Construit une pièce jointe PDF à partir d'une spec { document, annee, mois, … }.
 async function buildDocAttachment(c: Client, dossierId: string, fy: string | undefined, pj: any): Promise<{ filename: string; buffer: Buffer } | { error: string; extra?: any }> {
   const y = Number(pj.annee) || new Date().getUTCFullYear(); const mo = clampMonth(pj.mois);
+  const excel = /csv|excel|tableur/i.test(String(pj.format ?? ''));
+  // Exports tableur (Excel) pour la balance et le grand livre.
+  if (excel && pj.document === 'balance') { const r = await csv.balanceCsv(c, dossierId, fy); return { filename: r.filename, buffer: r.buffer }; }
+  if (excel && pj.document === 'grand_livre') { const code = String(pj.compte ?? '').trim(); if (!code) return { error: 'Précisez le compte (piece_jointe.compte) pour le grand livre.' }; const r = await csv.grandLivreCsv(c, dossierId, code, fy); if (r.count === 0) return { error: `Aucune écriture sur le compte ${code}.` }; return { filename: r.filename, buffer: r.buffer }; }
   switch (pj.document) {
     case 'livre_paie': { const r = await payroll.livrePaiePdf(c, dossierId, y, mo); if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie (preparer_livre_paie).` }; return r; }
     case 'declaration_cnps': case 'declaration_dgi': { const r = await payroll.declarationPdf(c, dossierId, y, mo, pj.document === 'declaration_cnps' ? 'cnps' : 'dgi'); if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie avant d'éditer la déclaration.` }; return r; }
