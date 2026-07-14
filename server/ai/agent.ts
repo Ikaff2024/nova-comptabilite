@@ -9,6 +9,7 @@ import * as tax from '../domain/tax.js';
 import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
 import * as alerts from '../domain/alerts.js';
+import * as ratios from '../domain/ratios.js';
 import * as budget from '../domain/budget.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
@@ -243,6 +244,7 @@ const READ_TOOLS = [
   { name: 'balance_generale', description: 'Balance générale (par compte : à-nouveaux, mouvements, soldes). Pour analyser les soldes de comptes.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'grand_livre', description: 'Détail des écritures d\'un compte donné (grand livre). Fournir le code du compte.', input_schema: { type: 'object', properties: { compte: { type: 'string', description: 'Code du compte SYSCOHADA, ex. 411, 521, 601' } }, required: ['compte'] } },
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'ratios_financiers', description: 'Analyse financière : ratios de liquidité, autonomie/endettement, rentabilité et marges, + grandes masses (BFR, fonds de roulement, trésorerie nette). Pour un diagnostic financier ou du conseil sur la structure et la performance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'resultat_analytique', description: 'Résultat par section analytique (centres de coût / points de vente) : produits, charges, résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'detail_analytique', description: 'Détail des charges/produits d\'une section analytique donnée (par son code).', input_schema: { type: 'object', properties: { section: { type: 'string', description: 'Code de la section analytique, ex. COCODY' } }, required: ['section'] } },
   { name: 'creances_clients', description: 'Balance âgée clients : qui doit de l\'argent, montants et ancienneté (0-30, 31-60, 61-90, +90 jours).', input_schema: { type: 'object', properties: {}, required: [] } },
@@ -436,6 +438,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'balance_generale': return cap(await acc.trialBalance(c, dossierId, fy), 120);
     case 'grand_livre': return cap(await acc.generalLedger(c, dossierId, { fiscalYearId: fy, accountCode: String(input?.compte ?? '') }), 100);
     case 'etats_financiers': return await acc.financialStatements(c, dossierId, fy);
+    case 'ratios_financiers': return await ratios.financialRatios(c, dossierId, fy);
     case 'resultat_analytique': return await analytic.analyticReport(c, dossierId, fy);
     case 'detail_analytique': return await analytic.analyticDetail(c, dossierId, String(input?.section ?? ''), fy);
     case 'creances_clients': return await relances.overdueClients(c, dossierId);
