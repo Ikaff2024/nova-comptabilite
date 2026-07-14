@@ -1007,7 +1007,7 @@ export function createApi() {
   app.post('/api/dossiers/:id/agent/mode', h(async (req, res) => {
     const userId = requireUser(req);
     const mode = req.body?.mode;
-    if (mode !== 'readonly' && mode !== 'assist') { const e: any = new Error('mode invalide (readonly|assist)'); e.status = 400; throw e; }
+    if (mode !== 'readonly' && mode !== 'assist' && mode !== 'assist_plus') { const e: any = new Error('mode invalide (readonly|assist|assist_plus)'); e.status = 400; throw e; }
     await withUser(userId, (c) => agent.setAgentMode(c, req.params.id, mode));
     await withUser(userId, (c) => audit.recordAudit(c, { dossierId: req.params.id, action: 'agent.mode_changed', entity: 'agent', detail: { mode } }));
     res.json({ mode });
