@@ -28,6 +28,7 @@ import * as importbalance from './domain/importbalance.js';
 import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
 import * as usage from './domain/usage.js';
+import * as platform from './domain/platform.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -159,14 +160,14 @@ export function createApi() {
       if (!verifyTotp(row.totp_secret ?? '', String(code))) { const e: any = new Error('Code de vérification invalide'); e.status = 401; e.code = '2FA_INVALID'; throw e; }
     }
     const token = issueToken({ id: row.id, email: row.email, name: row.name ?? undefined });
-    res.json({ token, user: { id: row.id, email: row.email, name: row.name, twoFactorEnabled: row.totp_enabled } });
+    res.json({ token, user: { id: row.id, email: row.email, name: row.name, twoFactorEnabled: row.totp_enabled, platformAdmin: !!row.is_platform_admin } });
   }));
 
   app.get('/api/auth/me', h(async (req, res) => {
     const userId = requireUser(req);
     const user = await withUser(userId, (c) => users.getUser(c, userId));
     if (!user) { const e: any = new Error('Utilisateur introuvable'); e.status = 404; throw e; }
-    res.json({ id: user.id, email: user.email, name: user.name, twoFactorEnabled: user.totp_enabled });
+    res.json({ id: user.id, email: user.email, name: user.name, twoFactorEnabled: user.totp_enabled, platformAdmin: !!user.is_platform_admin });
   }));
 
   app.patch('/api/auth/me', h(async (req, res) => {
@@ -256,6 +257,18 @@ export function createApi() {
     const userId = requireUser(req);
     const days = Math.min(365, Math.max(1, Number(req.query?.days) || 30));
     res.json(await withUser(userId, (c) => usage.usageSummary(c, days)));
+  }));
+
+  // Console éditeur Nova : vue transverse à tous les cabinets clients.
+  // La fonction SQL est fail-closed ; on mappe l'exception en 403.
+  app.get('/api/platform/overview', h(async (req, res) => {
+    const userId = requireUser(req);
+    try {
+      res.json(await withUser(userId, (c) => platform.platformOverview(c)));
+    } catch (e: any) {
+      if (String(e?.message ?? '').includes('NOT_PLATFORM_ADMIN')) { const err: any = new Error('Accès réservé aux opérateurs Nova'); err.status = 403; throw err; }
+      throw e;
+    }
   }));
 
   app.post('/api/demo/seed', h(async (req, res) => {

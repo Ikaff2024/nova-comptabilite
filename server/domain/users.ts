@@ -9,14 +9,14 @@ export async function registerUser(c: Client, email: string, passwordHash: strin
 
 export async function getUserForLogin(
   c: Client, email: string,
-): Promise<{ id: string; password_hash: string; name: string | null; email: string; totp_secret: string | null; totp_enabled: boolean } | null> {
+): Promise<{ id: string; password_hash: string; name: string | null; email: string; totp_secret: string | null; totp_enabled: boolean; is_platform_admin: boolean } | null> {
   const { rows } = await c.query('select * from get_user_for_login($1)', [email]);
   return rows[0] ?? null;
 }
 
 export async function getUser(
   c: Client, id: string,
-): Promise<{ id: string; email: string; name: string | null; totp_enabled: boolean } | null> {
+): Promise<{ id: string; email: string; name: string | null; totp_enabled: boolean; is_platform_admin: boolean } | null> {
   const { rows } = await c.query('select * from get_user($1)', [id]);
   return rows[0] ?? null;
 }

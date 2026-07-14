@@ -302,7 +302,17 @@ export interface CaptureProposal {
   currency: string; confidence: number; lines: ProposedLine[]; warnings?: string[];
 }
 
-export interface AuthUser { id: string; email: string; name: string | null; twoFactorEnabled?: boolean; }
+export interface AuthUser { id: string; email: string; name: string | null; twoFactorEnabled?: boolean; platformAdmin?: boolean; }
+export interface PlatformCabinet {
+  cabinetId: string; name: string; country: string; createdAt: string;
+  dossiers: number; membres: number; ecritures: number;
+  cost30d: number; costTotal: number; lastActivity: string | null;
+}
+export interface PlatformOverview {
+  cabinets: PlatformCabinet[];
+  totals: { cabinets: number; dossiers: number; ecritures: number; cost30d: number; costTotal: number; actifs30j: number };
+  generatedAt: string;
+}
 export interface CabinetMember { userId: string; email: string; name: string | null; role: string; createdAt: string; }
 
 export const api = {
@@ -323,6 +333,7 @@ export const api = {
   cabinets: () => req<Cabinet[]>('/api/cabinets'),
   dashboard: () => req<DashboardData>('/api/dashboard'),
   usage: (days = 30) => req<UsageSummary>(`/api/usage?days=${days}`),
+  platformOverview: () => req<PlatformOverview>('/api/platform/overview'),
   seedDemo: () => req<{ dossierId: string }>('/api/demo/seed', { method: 'POST', body: '{}' }),
   onboard: (name: string, country: string) =>
     req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country }) }),
