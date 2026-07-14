@@ -15,6 +15,7 @@ import * as tglinks from './domain/telegram.js';
 import * as tts from './tts/provider.js';
 import * as mail from './email/provider.js';
 import * as payroll from './domain/payroll.js';
+import * as recinv from './domain/recurringinvoices.js';
 import * as watchdog from './ai/watchdog.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
@@ -1099,6 +1100,29 @@ export function createApi() {
     const userId = requireUser(req);
     const year = Number(req.query.year) || new Date().getUTCFullYear();
     res.json(await withUser(userId, (c) => payroll.payrollYear(c, req.params.id, year)));
+  }));
+  // Factures de vente récurrentes (abonnements)
+  app.get('/api/dossiers/:id/recurring-invoices', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => recinv.listTemplates(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/recurring-invoices', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => recinv.createTemplate(c, req.params.id, req.body ?? {})));
+  }));
+  app.patch('/api/dossiers/:id/recurring-invoices/:tid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => recinv.setActive(c, req.params.id, req.params.tid, !!req.body?.active));
+    res.status(204).end();
+  }));
+  app.delete('/api/dossiers/:id/recurring-invoices/:tid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => recinv.deleteTemplate(c, req.params.id, req.params.tid));
+    res.status(204).end();
+  }));
+  app.post('/api/dossiers/:id/recurring-invoices/generate', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => recinv.generateAllDue(c, req.params.id)));
   }));
   // RH : absences
   app.get('/api/dossiers/:id/payroll/absences', h(async (req, res) => {

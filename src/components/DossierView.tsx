@@ -24,13 +24,14 @@ import Immobilisations from './Immobilisations';
 import AuditTrail from './AuditTrail';
 import DossierDashboard from './DossierDashboard';
 import Recurring from './Recurring';
+import RecurringInvoices from './RecurringInvoices';
 import Analytique from './Analytique';
 import Budget from './Budget';
 import Revision from './Revision';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'assistant' | 'facturation' | 'achats' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
+type Tab = 'synthese' | 'assistant' | 'facturation' | 'achats' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -63,6 +64,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'mobilemoney', label: 'Mobile Money', icon: Smartphone },
     { id: 'saisie', label: 'Saisie', icon: PencilLine },
     { id: 'recurrences', label: 'Récurrences', icon: Repeat },
+    { id: 'abonnements', label: 'Abonnements', icon: Repeat },
     { id: 'balance', label: 'Balance', icon: Scale },
     { id: 'grandlivre', label: 'Grand livre', icon: Library },
     { id: 'journaux', label: 'Journaux', icon: BookMarked },
@@ -87,7 +89,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const meta = Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<Tab, { id: Tab; label: string; icon: any }>;
   const groups: { label: string; items: Tab[] }[] = [
     { label: 'Pilotage', items: ['synthese', 'assistant', 'previsionnel', 'scoring', 'analytique', 'budget'] },
-    { label: 'Saisie', items: ['capture', 'facturation', 'achats', 'paie', 'mobilemoney', 'saisie', 'recurrences'] },
+    { label: 'Saisie', items: ['capture', 'facturation', 'achats', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
     { label: 'Comptabilité', items: ['balance', 'grandlivre', 'journaux', 'revision', 'plan'] },
     { label: 'Tiers & trésorerie', items: ['tiers', 'banque', 'immos'] },
     { label: 'États & déclarations', items: ['etats', 'fiscalite'] },
@@ -172,6 +174,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'plan' && <PlanTab dossierId={dossier.id} />}
             {tab === 'import' && <ImportBalance dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'recurrences' && <Recurring dossierId={dossier.id} currency={dossier.base_currency} journals={journals} />}
+            {tab === 'abonnements' && <RecurringInvoices dossierId={dossier.id} currency={dossier.base_currency} />}
             {tab === 'audit' && <AuditTrail dossierId={dossier.id} />}
             {tab === 'portail' && <ClientAccess dossierId={dossier.id} />}
           </motion.div>
