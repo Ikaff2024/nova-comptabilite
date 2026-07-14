@@ -8,6 +8,7 @@ import * as forecast from '../domain/forecast.js';
 import * as tax from '../domain/tax.js';
 import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
+import * as budget from '../domain/budget.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
 import * as recurring from '../domain/recurring.js';
@@ -182,7 +183,7 @@ Date du jour : ${today}.${memText}`;
   return { text, fyId: openFy?.id ?? null, currency: d.base_currency ?? 'XOF', mode: MODES.includes(d.agent_mode) ? d.agent_mode : 'readonly' };
 }
 
-const SYSTEM_GUARDRAILS = `Tu es **Lexa**, la comptable IA de Nova — une véritable collaboratrice de l'entreprise du dossier, experte du référentiel OHADA (SYSCOHADA révisé, AUDCIF). Tu n'es pas un chatbot générique : tu connais l'entreprise, son équipe et la personne avec qui tu échanges (voir le contexte). Adresse-toi aux gens par leur nom, avec le ton d'une collègue de confiance : professionnelle, chaleureuse, concise.
+const SYSTEM_GUARDRAILS = `Tu es **Lexa**, la comptable IA de Nova — une véritable collaboratrice de l'entreprise du dossier, experte du référentiel OHADA (SYSCOHADA révisé, AUDCIF). Tu n'es pas un chatbot générique : tu connais l'entreprise, son équipe et la personne avec qui tu échanges (voir le contexte). REGISTRE (identique sur TOUS les canaux — application, email, Telegram, WhatsApp) : appelle toujours la personne par son PRÉNOM (voir contexte), TUTOIE-la (« tu », jamais « vous »), ton de collègue de confiance : chaleureuse, directe, concise. Ne bascule jamais vers un registre distant/formel selon le canal.
 
 RÈGLES ABSOLUES :
 1. Tu es en LECTURE SEULE. Tu ne crées, ne modifies et ne postes JAMAIS d'écriture. Si on te le demande, explique que la saisie se fait dans les onglets dédiés (l'utilisateur valide toujours).
@@ -253,6 +254,7 @@ const READ_TOOLS = [
   { name: 'profil_entreprise', description: 'Identité fiscale et légale du dossier : forme juridique, régime fiscal, NCC/IFU, RCCM, banque/RIB. À citer dans les courriers/déclarations.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'echeances_fiscales', description: 'Prochaines échéances fiscales et sociales du dossier (TVA, impôts sur salaires/état 301, CNPS, DSF) dérivées du régime fiscal, avec leurs dates. Pour rappeler proactivement ce qui arrive à échéance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'analyse_mensuelle', description: 'Analyse comparée d\'un mois pour le reporting : chiffre d\'affaires, produits, charges et résultat du mois vs mois précédent (avec variations), cumul annuel, ratios (marge nette, taux de charges), situation (trésorerie, créances, dettes) et principales charges du mois. À commenter (constat → cause → recommandation). Fournir année et mois (1-12).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
+  { name: 'budget', description: 'Budget vs réalisé de l\'exercice courant : par compte (classes 6 et 7) et totaux charges/produits, avec écarts et taux de réalisation (%). Pour répondre au « pourcentage du budget réalisé », prends les produits (classe 7 = ventes/CA).', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'factures_recurrentes_dues', description: 'Modèles de factures de vente récurrentes (abonnements) et nombre de factures DUES à générer pour chacun.', input_schema: { type: 'object', properties: {}, required: [] } },
 ];
@@ -449,6 +451,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       return { echeances: upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd }) };
     }
     case 'analyse_mensuelle': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return await reporting.monthlyReport(c, dossierId, y, mo); }
+    case 'budget': { if (!fy) return { note: 'Aucun exercice ouvert pour lire le budget.' }; const b: any = await budget.budgetReport(c, dossierId, fy); return { ...b, rows: cap(b.rows ?? [], 60) }; }
     case 'recurrences_dues': { const t = await recurring.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, frequence: x.frequencyLabel, journal: x.journalCode, montant: x.amount, tiers: x.counterpartyName ?? null, actif: x.active, echeances_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
     case 'factures_recurrentes_dues': { const t = await recinv.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, client: x.clientName, frequence: x.frequencyLabel, montant_ttc: x.montantTtc, actif: x.active, factures_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
 
