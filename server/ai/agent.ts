@@ -366,7 +366,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
               salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
@@ -602,6 +602,7 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
   switch (pj.document) {
     case 'livre_paie': { const r = await payroll.livrePaiePdf(c, dossierId, y, mo); if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie (preparer_livre_paie).` }; return r; }
     case 'declaration_cnps': case 'declaration_dgi': { const r = await payroll.declarationPdf(c, dossierId, y, mo, pj.document === 'declaration_cnps' ? 'cnps' : 'dgi'); if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie avant d'éditer la déclaration.` }; return r; }
+    case 'ordre_virement': { const r = await payroll.ordreVirementPdf(c, dossierId, y, mo); if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie avant l'ordre de virement.` }; return r; }
     case 'bulletin': { const r = await payroll.bulletinPdf(c, dossierId, String(pj.salarie ?? ''), y, mo); if (!r.found) return { error: `Salarié « ${pj.salarie} » introuvable pour ${mo + 1}/${y}.`, extra: { salaries_disponibles: r.candidates } }; return r; }
     case 'rapport_mensuel': return await reporting.rapportMensuelPdf(c, dossierId, y, mo);
     case 'declaration_tva': return await accdocs.declarationTvaPdf(c, dossierId, y, mo);

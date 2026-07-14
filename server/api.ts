@@ -1145,6 +1145,22 @@ export function createApi() {
     const year = Number(req.query.year) || new Date().getUTCFullYear();
     res.json(await withUser(userId, (c) => payroll.payrollYear(c, req.params.id, year)));
   }));
+  // Documents de paie en PDF (téléchargement). kind = ordre_virement | livre_paie.
+  app.get('/api/dossiers/:id/payroll/document', h(async (req, res) => {
+    const userId = requireUser(req);
+    const kind = String(req.query.kind ?? '');
+    const year = Number(req.query.year) || new Date().getUTCFullYear();
+    const month = Math.max(0, Math.min(11, Number(req.query.month) || 0));
+    const out = await withUser(userId, (c) => {
+      if (kind === 'ordre_virement') return payroll.ordreVirementPdf(c, req.params.id, year, month);
+      if (kind === 'livre_paie') return payroll.livrePaiePdf(c, req.params.id, year, month);
+      const e: any = new Error('Type de document inconnu'); e.status = 400; throw e;
+    });
+    if (out.count === 0) { const e: any = new Error(`Aucun bulletin pour ${month + 1}/${year}`); e.status = 400; throw e; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
   // Factures de vente récurrentes (abonnements)
   app.get('/api/dossiers/:id/recurring-invoices', h(async (req, res) => {
     const userId = requireUser(req);

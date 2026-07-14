@@ -194,6 +194,50 @@ export async function livrePaiePdf(c: Client, dossierId: string, year: number, m
   return { filename: `livre-paie-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: slips.length };
 }
 
+// Ordre de virement des salaires : liste des bénéficiaires + coordonnées + net à payer.
+export async function ordreVirementPdf(c: Client, dossierId: string, year: number, month: number): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, money, meta } = await employerMeta(c, dossierId);
+  const period = `${getMonthName(month)} ${year}`;
+  const { rows: rr } = await c.query(
+    `select e.matricule, e.nom, e.prenoms, e.banque, e.rib, e.mode_paiement,
+            e.mobile_money_numero, e.mobile_money_operateur, p.calculation
+       from payroll_payslips p join payroll_employees e on e.id = p.employee_id
+      where p.dossier_id = $1 and p.period_year = $2 and p.period_month = $3
+      order by e.nom, e.prenoms`, [dossierId, year, month]);
+
+  // Coordonnées de règlement affichées selon le mode de paiement.
+  const coord = (r: any): string => {
+    if (r.rib) return String(r.rib);
+    if (r.mobile_money_numero) return `${r.mobile_money_operateur ? r.mobile_money_operateur + ' ' : ''}${r.mobile_money_numero}`;
+    return '—';
+  };
+  const mode = (r: any): string => r.mode_paiement || (r.rib ? 'Virement' : r.mobile_money_numero ? 'Mobile Money' : '—');
+
+  const rows = rr.map((r: any) => [
+    `${r.nom} ${r.prenoms}`, r.banque || '—', coord(r), mode(r), money(num(r.calculation?.salaireNetPaye)),
+  ]);
+  const total = rr.reduce((s: number, r: any) => s + num(r.calculation?.salaireNetPaye), 0);
+
+  // Le compte à débiter (employeur) si renseigné sur le dossier.
+  const debit = [d.bank_name ? `Banque : ${d.bank_name}` : '', d.rib ? `Compte à débiter : ${d.rib}` : ''].filter(Boolean).join(' · ');
+  const fullMeta = debit ? [...meta, debit] : meta;
+
+  const buffer = await tablePdf({
+    title: 'Ordre de virement des salaires',
+    subtitle: `${d.raison_sociale ?? ''} · ${period}`,
+    meta: fullMeta,
+    columns: [
+      { label: 'Bénéficiaire', width: 130 }, { label: 'Banque', width: 85 },
+      { label: 'RIB / N° compte', width: 135 }, { label: 'Mode', width: 60 },
+      { label: 'Net à payer', width: 85, align: 'right' },
+    ],
+    rows,
+    totals: ['', '', '', 'TOTAL', money(total)],
+    footNote: `${rr.length} bénéficiaire(s) · ${period}. Ordre de paiement des salaires à transmettre à la banque. Généré par Lexa (Nova Comptabilité) — à vérifier et signer avant exécution.`,
+  });
+  return { filename: `ordre-virement-salaires-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: rr.length };
+}
+
 async function employerMeta(c: Client, dossierId: string): Promise<{ d: any; cur: string; money: (n: number) => string; meta: string[] }> {
   const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
   const d: any = dr[0]?.j ?? {};
