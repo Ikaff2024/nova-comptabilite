@@ -117,7 +117,12 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
 
   useEffect(() => { api.agentStatus(dossierId).then(setStatus).catch(() => setStatus({ enabled: false, mode: 'readonly', canToggle: false })); }, [dossierId]);
   useEffect(() => { api.agentHistory(dossierId).then((h) => { if (h.length) setTurns(h.map((x) => ({ role: x.role, content: x.content }))); }).catch(() => {}); }, [dossierId]);
-  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [turns, loading]);
+  useEffect(() => {
+    const el = scrollRef.current; if (!el) return;
+    // Suit le bas pendant la frappe/nouvelle réponse ; ne force pas si l'utilisateur a scrollé vers le haut pour relire.
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+    if (nearBottom || loading) el.scrollTo({ top: el.scrollHeight, behavior: typing ? 'auto' : 'smooth' });
+  }, [turns, loading, typing]);
   useEffect(() => () => { try { recRef.current?.stop(); } catch { /* ignore */ } if (TTS_OK) window.speechSynthesis.cancel(); if (audioRef.current) { try { audioRef.current.pause(); } catch { /* ignore */ } } }, []);
 
   // Choisit la voix française la plus naturelle disponible (ex. « Google français »).
