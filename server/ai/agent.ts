@@ -220,7 +220,7 @@ ACTIONS RÉVERSIBLES AUTORISÉES (palier assisté+) :
 
 ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de bout en bout :
 - "preparer_livre_paie" : calcule la paie d'une période (bulletins BROUILLONS de tous les salariés, absences/heures sup/avances incluses). Cela n'entre PAS au grand livre : la comptabilisation de l'OD reste une validation humaine dans l'onglet Paie. Après exécution, récapitule (nombre de bulletins, masse salariale brute, net, coût employeur).
-- "envoyer_email" : envoie un email, avec éventuellement une PIÈCE JOINTE PDF générée par Nova : livre de paie, bulletin individuel (+salarie), déclaration CNPS/DGI, rapport mensuel (tous avec annee+mois), ou une restitution comptable de l'exercice courant — balance, grand livre (+compte), états financiers. C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et montre un récapitulatif du contenu ; si le destinataire n'est pas fourni, demande-le (ne devine jamais une adresse). Après envoi, confirme à qui, quoi, et la pièce jointe.
+- "envoyer_email" : envoie un email, avec une ou plusieurs PIÈCES JOINTES PDF via pieces_jointes = [ { document, annee, mois, … }, … ] (livre de paie, bulletin +salarie, déclaration CNPS/DGI/TVA, rapport mensuel, ou restitutions de l'exercice — balance, grand livre +compte, états financiers). RÈGLE ABSOLUE : si le corps dit « ci-joint » / « fichiers joints », les documents DOIVENT être dans pieces_jointes — ne prétends JAMAIS joindre un fichier sans le joindre réellement. C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et récapitule le contenu ; ne devine jamais une adresse. Après envoi, confirme à qui, quoi, et les pièces jointes.
 
 - "envoyer_relance_client" : relance un client en retard PAR EMAIL (lettre + relevé de compte PDF), et journalise la relance (niveau auto-incrémenté). IRRÉVERSIBLE. Il te faut le nom du client et l'adresse email du destinataire — demande-la si tu ne l'as pas (le tiers n'a pas forcément d'email en fiche). Confirme avant d'envoyer.
 - "relance_groupee" : relance d'un coup tous les clients en retard au-delà d'un seuil (défaut 90 j) qui ont un email en fiche. IRRÉVERSIBLE et potentiellement massif : confirme le périmètre (nombre de clients, seuil) AVANT de lancer, puis récapitule les envois et les clients ignorés faute d'email.
@@ -349,22 +349,26 @@ const ACTION_TOOLS = [
   },
   {
     name: 'envoyer_email',
-    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pièces jointes disponibles via piece_jointe.document : avec annee+mois ("livre_paie", "bulletin" +salarie, "declaration_cnps", "declaration_dgi", "declaration_tva", "rapport_mensuel") ; restitutions comptables de l\'exercice courant ("balance", "grand_livre" +compte, "etats_financiers").',
+    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Joins un ou plusieurs documents via pieces_jointes = [ { document, annee, mois, … }, … ]. Documents disponibles : avec annee+mois ("livre_paie", "bulletin" +salarie, "declaration_cnps", "declaration_dgi", "declaration_tva", "rapport_mensuel") ; restitutions comptables de l\'exercice courant ("balance", "grand_livre" +compte, "etats_financiers"). N\'annonce JAMAIS une pièce jointe dans le corps sans la mettre réellement dans pieces_jointes.',
     input_schema: {
       type: 'object',
       properties: {
         destinataire: { type: 'string', description: 'Adresse email du destinataire' },
         sujet: { type: 'string' },
         corps: { type: 'string', description: 'Corps du message (texte ou HTML simple)' },
-        piece_jointe: {
-          type: 'object',
-          description: 'Pièce jointe PDF générée par Nova (optionnel).',
-          properties: {
-            document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
-            annee: { type: 'number' },
-            mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
-            salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
-            compte: { type: 'string', description: 'Pour "grand_livre" : code du compte (ex. 411, 601)' },
+        pieces_jointes: {
+          type: 'array',
+          description: 'Pièces jointes PDF générées par Nova (0, 1 ou plusieurs). UTILISE CE TABLEAU dès qu\'il y a au moins un document à joindre.',
+          items: {
+            type: 'object',
+            properties: {
+              document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
+              annee: { type: 'number' },
+              mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
+              salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
+              compte: { type: 'string', description: 'Pour "grand_livre" : code du compte (ex. 411, 601)' },
+            },
+            required: ['document'],
           },
         },
       },
@@ -493,49 +497,30 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       const corps = String(input?.corps ?? '');
       const isHtml = /<[a-z][\s\S]*>/i.test(corps);
 
-      // Pièce jointe optionnelle générée par Nova.
+      // Pièces jointes générées par Nova : accepte un objet unique, un tableau,
+      // ou une chaîne JSON (robustesse : le modèle passe parfois un tableau).
+      const specs: any[] = [];
+      const collect = (v: any) => {
+        if (!v) return;
+        let x = v;
+        if (typeof x === 'string') { try { x = JSON.parse(x); } catch { return; } }
+        if (Array.isArray(x)) x.forEach((s) => { if (s && s.document) specs.push(s); });
+        else if (x && x.document) specs.push(x);
+      };
+      collect(input?.piece_jointe); collect(input?.pieces_jointes);
+
       const attachments: { filename: string; content: string }[] = [];
-      let jointe: string | undefined;
-      const pj = input?.piece_jointe;
-      if (pj && pj.document) {
-        const y = Number(pj.annee) || new Date().getUTCFullYear(); const mo = clampMonth(pj.mois);
-        let doc: { filename: string; buffer: Buffer } | null = null;
-        if (pj.document === 'livre_paie') {
-          const r = await payroll.livrePaiePdf(c, dossierId, y, mo);
-          if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie (preparer_livre_paie).` };
-          doc = r;
-        } else if (pj.document === 'declaration_cnps' || pj.document === 'declaration_dgi') {
-          const r = await payroll.declarationPdf(c, dossierId, y, mo, pj.document === 'declaration_cnps' ? 'cnps' : 'dgi');
-          if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie avant d'éditer la déclaration.` };
-          doc = r;
-        } else if (pj.document === 'bulletin') {
-          const r = await payroll.bulletinPdf(c, dossierId, String(pj.salarie ?? ''), y, mo);
-          if (!r.found) return { error: `Salarié « ${pj.salarie} » introuvable pour ${mo + 1}/${y}.`, salaries_disponibles: r.candidates };
-          doc = r;
-        } else if (pj.document === 'rapport_mensuel') {
-          doc = await reporting.rapportMensuelPdf(c, dossierId, y, mo);
-        } else if (pj.document === 'declaration_tva') {
-          doc = await accdocs.declarationTvaPdf(c, dossierId, y, mo);
-        } else if (pj.document === 'balance') {
-          doc = await accdocs.balancePdf(c, dossierId, fy);
-        } else if (pj.document === 'grand_livre') {
-          const code = String(pj.compte ?? '').trim();
-          if (!code) return { error: 'Précisez le compte (piece_jointe.compte) pour le grand livre.' };
-          const r = await accdocs.grandLivrePdf(c, dossierId, code, fy);
-          if (r.count === 0) return { error: `Aucune écriture sur le compte ${code}.` };
-          doc = r;
-        } else if (pj.document === 'etats_financiers') {
-          doc = await accdocs.etatsFinanciersPdf(c, dossierId, fy);
-        } else {
-          return { error: `Type de pièce jointe non pris en charge : ${pj.document}. Disponibles : livre_paie, bulletin, declaration_cnps, declaration_dgi.` };
-        }
-        attachments.push({ filename: doc.filename, content: doc.buffer.toString('base64') });
-        jointe = doc.filename;
+      const jointes: string[] = [];
+      for (const spec of specs) {
+        const d = await buildDocAttachment(c, dossierId, fy, spec);
+        if ('error' in d) return { error: d.error, ...(d.extra ?? {}) };
+        attachments.push({ filename: d.filename, content: d.buffer.toString('base64') });
+        jointes.push(d.filename);
       }
 
       try {
         const { id } = await mail.sendEmail({ to, subject: String(input?.sujet ?? '(sans objet)'), html: isHtml ? corps : undefined, text: isHtml ? undefined : corps, attachments: attachments.length ? attachments : undefined });
-        return { statut: 'email_envoye', destinataire: to, piece_jointe: jointe ?? null, id, note: 'Email envoyé (action irréversible).' };
+        return { statut: 'email_envoye', destinataire: to, pieces_jointes: jointes, id, note: 'Email envoyé (action irréversible).' };
       } catch (e: any) { return { error: String(e?.message ?? e).slice(0, 200) }; }
     }
     case 'envoyer_relance_client': {
@@ -600,6 +585,22 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
 
 // Convertit un mois « en clair » (1-12) en index 0-11, borné.
 function clampMonth(mois: any): number { const mo = Number(mois) || 1; return Math.max(0, Math.min(11, mo - 1)); }
+
+// Construit une pièce jointe PDF à partir d'une spec { document, annee, mois, … }.
+async function buildDocAttachment(c: Client, dossierId: string, fy: string | undefined, pj: any): Promise<{ filename: string; buffer: Buffer } | { error: string; extra?: any }> {
+  const y = Number(pj.annee) || new Date().getUTCFullYear(); const mo = clampMonth(pj.mois);
+  switch (pj.document) {
+    case 'livre_paie': { const r = await payroll.livrePaiePdf(c, dossierId, y, mo); if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie (preparer_livre_paie).` }; return r; }
+    case 'declaration_cnps': case 'declaration_dgi': { const r = await payroll.declarationPdf(c, dossierId, y, mo, pj.document === 'declaration_cnps' ? 'cnps' : 'dgi'); if (r.count === 0) return { error: `Aucun bulletin pour ${mo + 1}/${y} : lancez d'abord la paie avant d'éditer la déclaration.` }; return r; }
+    case 'bulletin': { const r = await payroll.bulletinPdf(c, dossierId, String(pj.salarie ?? ''), y, mo); if (!r.found) return { error: `Salarié « ${pj.salarie} » introuvable pour ${mo + 1}/${y}.`, extra: { salaries_disponibles: r.candidates } }; return r; }
+    case 'rapport_mensuel': return await reporting.rapportMensuelPdf(c, dossierId, y, mo);
+    case 'declaration_tva': return await accdocs.declarationTvaPdf(c, dossierId, y, mo);
+    case 'balance': return await accdocs.balancePdf(c, dossierId, fy);
+    case 'grand_livre': { const code = String(pj.compte ?? '').trim(); if (!code) return { error: 'Précisez le compte (piece_jointe.compte) pour le grand livre.' }; const r = await accdocs.grandLivrePdf(c, dossierId, code, fy); if (r.count === 0) return { error: `Aucune écriture sur le compte ${code}.` }; return r; }
+    case 'etats_financiers': return await accdocs.etatsFinanciersPdf(c, dossierId, fy);
+    default: return { error: `Type de pièce jointe non pris en charge : ${pj.document}.` };
+  }
+}
 
 // --- Boucle agentique --------------------------------------------------------
 
