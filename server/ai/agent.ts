@@ -10,6 +10,7 @@ import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
+import * as accdocs from '../documents/accounting-docs.js';
 import * as mail from '../email/provider.js';
 import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
 
@@ -216,7 +217,7 @@ ACTIONS RÉVERSIBLES AUTORISÉES (palier assisté+) :
 
 ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de bout en bout :
 - "preparer_livre_paie" : calcule la paie d'une période (bulletins BROUILLONS de tous les salariés, absences/heures sup/avances incluses). Cela n'entre PAS au grand livre : la comptabilisation de l'OD reste une validation humaine dans l'onglet Paie. Après exécution, récapitule (nombre de bulletins, masse salariale brute, net, coût employeur).
-- "envoyer_email" : envoie un email, avec éventuellement une PIÈCE JOINTE PDF générée par Nova : le livre de paie ({ document: "livre_paie", annee, mois }), un bulletin individuel ({ document: "bulletin", salarie, annee, mois }), ou une déclaration ({ document: "declaration_cnps" | "declaration_dgi", annee, mois }). C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et montre un récapitulatif du contenu ; si le destinataire n'est pas fourni, demande-le (ne devine jamais une adresse). Après envoi, confirme à qui, quoi, et la pièce jointe.
+- "envoyer_email" : envoie un email, avec éventuellement une PIÈCE JOINTE PDF générée par Nova : livre de paie, bulletin individuel (+salarie), déclaration CNPS/DGI, rapport mensuel (tous avec annee+mois), ou une restitution comptable de l'exercice courant — balance, grand livre (+compte), états financiers. C'EST IRRÉVERSIBLE. N'envoie QUE si on te l'a clairement demandé. AVANT d'envoyer : confirme le destinataire et montre un récapitulatif du contenu ; si le destinataire n'est pas fourni, demande-le (ne devine jamais une adresse). Après envoi, confirme à qui, quoi, et la pièce jointe.
 
 Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie, puis — après confirmation du destinataire — envoyer_email avec piece_jointe { document: "livre_paie", annee, mois } et une courte synthèse dans le corps). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
 
@@ -336,7 +337,7 @@ const ACTION_TOOLS = [
   },
   {
     name: 'envoyer_email',
-    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pièces jointes disponibles via piece_jointe.document : "livre_paie", "bulletin" (préciser salarie = matricule ou nom), "declaration_cnps", "declaration_dgi", "rapport_mensuel" — toutes avec annee + mois.',
+    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pièces jointes disponibles via piece_jointe.document : paie/reporting avec annee+mois ("livre_paie", "bulletin" +salarie, "declaration_cnps", "declaration_dgi", "rapport_mensuel") ; restitutions comptables de l\'exercice courant ("balance", "grand_livre" +compte, "etats_financiers").',
     input_schema: {
       type: 'object',
       properties: {
@@ -347,10 +348,11 @@ const ACTION_TOOLS = [
           type: 'object',
           description: 'Pièce jointe PDF générée par Nova (optionnel).',
           properties: {
-            document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "rapport_mensuel"' },
+            document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
             annee: { type: 'number' },
-            mois: { type: 'number', description: 'Mois en clair 1-12' },
+            mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
             salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
+            compte: { type: 'string', description: 'Pour "grand_livre" : code du compte (ex. 411, 601)' },
           },
         },
       },
@@ -471,6 +473,16 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
           doc = r;
         } else if (pj.document === 'rapport_mensuel') {
           doc = await reporting.rapportMensuelPdf(c, dossierId, y, mo);
+        } else if (pj.document === 'balance') {
+          doc = await accdocs.balancePdf(c, dossierId, fy);
+        } else if (pj.document === 'grand_livre') {
+          const code = String(pj.compte ?? '').trim();
+          if (!code) return { error: 'Précisez le compte (piece_jointe.compte) pour le grand livre.' };
+          const r = await accdocs.grandLivrePdf(c, dossierId, code, fy);
+          if (r.count === 0) return { error: `Aucune écriture sur le compte ${code}.` };
+          doc = r;
+        } else if (pj.document === 'etats_financiers') {
+          doc = await accdocs.etatsFinanciersPdf(c, dossierId, fy);
         } else {
           return { error: `Type de pièce jointe non pris en charge : ${pj.document}. Disponibles : livre_paie, bulletin, declaration_cnps, declaration_dgi.` };
         }
