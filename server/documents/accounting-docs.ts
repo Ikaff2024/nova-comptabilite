@@ -1,6 +1,9 @@
 import type { Client } from '../db.js';
 import * as acc from '../domain/accounting.js';
+import { vatDeclaration } from '../domain/tax.js';
 import { tablePdf, sectionsPdf } from './pdf.js';
+
+const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 // ============================================================================
 // Restitutions comptables en PDF (balance, grand livre, états financiers),
@@ -61,6 +64,27 @@ export async function grandLivrePdf(c: Client, dossierId: string, accountCode: s
     footNote: `${lines.length} écriture(s). Généré par Nova.`,
   });
   return { filename: `grand-livre-${accountCode}.pdf`, buffer, count: lines.length };
+}
+
+export async function declarationTvaPdf(c: Client, dossierId: string, year: number, month0: number): Promise<{ filename: string; buffer: Buffer }> {
+  const { d, money, meta } = await ctx(c, dossierId);
+  const from = `${year}-${String(month0 + 1).padStart(2, '0')}-01`;
+  const to = `${year}-${String(month0 + 1).padStart(2, '0')}-${String(new Date(year, month0 + 1, 0).getDate()).padStart(2, '0')}`;
+  const vat: any = await vatDeclaration(c, dossierId, from, to);
+  const collectee = vat.breakdown.filter((b: any) => b.account_code.startsWith('443'));
+  const deductible = vat.breakdown.filter((b: any) => b.account_code.startsWith('445'));
+
+  const buffer = await sectionsPdf({
+    title: 'Déclaration de TVA', subtitle: `${d.raison_sociale ?? ''} · ${MOIS[month0]} ${year}`, meta,
+    sections: [
+      { heading: 'TVA collectée (comptes 443)', rows: collectee.length ? collectee.map((b: any) => [`${b.account_code} ${b.label}`, money(b.credit - b.debit)] as [string, string]) : [['—', money(0)]] as [string, string][], total: ['Total TVA collectée', money(vat.collectee)] },
+      { heading: 'TVA déductible (comptes 445)', rows: deductible.length ? deductible.map((b: any) => [`${b.account_code} ${b.label}`, money(b.debit - b.credit)] as [string, string]) : [['—', money(0)]] as [string, string][], total: ['Total TVA déductible', money(vat.deductible)] },
+      { heading: 'Résultat de la période', rows: [['TVA nette à payer', money(vat.netDue)], ['Crédit de TVA reportable', money(vat.creditReportable)]] },
+    ],
+    grandTotal: vat.netDue > 0 ? ['À PAYER À LA DGI', money(vat.netDue)] : ['CRÉDIT DE TVA REPORTABLE', money(vat.creditReportable)],
+    footNote: 'Déclaration pré-remplie par Nova à partir des écritures comptabilisées. À vérifier et déposer auprès de la DGI.',
+  });
+  return { filename: `declaration-tva-${year}-${String(month0 + 1).padStart(2, '0')}.pdf`, buffer };
 }
 
 export async function etatsFinanciersPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer }> {

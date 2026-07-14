@@ -339,7 +339,7 @@ const ACTION_TOOLS = [
   },
   {
     name: 'envoyer_email',
-    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pièces jointes disponibles via piece_jointe.document : paie/reporting avec annee+mois ("livre_paie", "bulletin" +salarie, "declaration_cnps", "declaration_dgi", "rapport_mensuel") ; restitutions comptables de l\'exercice courant ("balance", "grand_livre" +compte, "etats_financiers").',
+    description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Pièces jointes disponibles via piece_jointe.document : avec annee+mois ("livre_paie", "bulletin" +salarie, "declaration_cnps", "declaration_dgi", "declaration_tva", "rapport_mensuel") ; restitutions comptables de l\'exercice courant ("balance", "grand_livre" +compte, "etats_financiers").',
     input_schema: {
       type: 'object',
       properties: {
@@ -350,7 +350,7 @@ const ACTION_TOOLS = [
           type: 'object',
           description: 'Pièce jointe PDF générée par Nova (optionnel).',
           properties: {
-            document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
+            document: { type: 'string', description: '"livre_paie" | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
             annee: { type: 'number' },
             mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
             salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
@@ -480,6 +480,8 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
           doc = r;
         } else if (pj.document === 'rapport_mensuel') {
           doc = await reporting.rapportMensuelPdf(c, dossierId, y, mo);
+        } else if (pj.document === 'declaration_tva') {
+          doc = await accdocs.declarationTvaPdf(c, dossierId, y, mo);
         } else if (pj.document === 'balance') {
           doc = await accdocs.balancePdf(c, dossierId, fy);
         } else if (pj.document === 'grand_livre') {
