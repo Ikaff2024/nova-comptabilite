@@ -15,8 +15,26 @@ const SOURCE_LABELS: Record<string, string> = {
   recurring: 'Récurrente', api: 'API', opening_balance: 'À-nouveaux',
 };
 
+const LEXA_LABELS: Record<string, string> = {
+  preparer_facture_vente: 'a préparé une facture de vente', preparer_facture_achat: "a préparé une facture d'achat",
+  lettrer_automatiquement: 'a lettré des comptes', preparer_relance_client: 'a préparé une relance',
+  preparer_livre_paie: 'a préparé le livre de paie', envoyer_email: 'a envoyé un email',
+  envoyer_relance_client: 'a envoyé une relance', relance_groupee: 'a relancé plusieurs clients',
+  generer_recurrences: 'a généré des écritures récurrentes', comptabiliser_tva: 'a comptabilisé la TVA',
+  generer_factures_recurrentes: 'a généré des factures récurrentes',
+};
+
+function actionMeta(action: string): { label: string; color: string } {
+  if (action.startsWith('lexa.')) {
+    const suffix = action.slice(5);
+    return { label: `Lexa ${LEXA_LABELS[suffix] ?? suffix.replace(/_/g, ' ')}`, color: 'text-emerald-300 bg-emerald-500/10' };
+  }
+  return ACTIONS[action] ?? { label: action, color: 'text-zinc-400 bg-white/10' };
+}
+
 function summarize(a: AuditEntry): string {
   const d = a.detail ?? {};
+  if (a.action.startsWith('lexa.')) return d.instruction ? `Sur instruction : « ${d.instruction} »${d.resultat && d.resultat !== 'ok' ? ` → ${d.resultat}` : ''}` : (d.resultat ?? '');
   switch (a.action) {
     case 'entry.posted': return `${d.piece_ref ?? ''} · ${SOURCE_LABELS[d.source] ?? d.source ?? ''} · ${d.description ?? ''}`;
     case 'entry.reversed': return `Extourne générée`;
@@ -51,7 +69,7 @@ export default function AuditTrail({ dossierId }: { dossierId: string }) {
             </thead>
             <tbody className="divide-y divide-white/5">
               {rows.map((a) => {
-                const meta = ACTIONS[a.action] ?? { label: a.action, color: 'text-zinc-400 bg-white/10' };
+                const meta = actionMeta(a.action);
                 return (
                   <tr key={a.id} className="hover:bg-white/5">
                     <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-zinc-400">{a.created_at.replace('T', ' ')}</td>

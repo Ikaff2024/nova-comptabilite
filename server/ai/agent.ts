@@ -11,7 +11,9 @@ import * as dash from '../domain/dossierdashboard.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
 import * as recurring from '../domain/recurring.js';
+import * as recinv from '../domain/recurringinvoices.js';
 import * as accdocs from '../documents/accounting-docs.js';
+import * as audit from '../domain/audit.js';
 import * as mail from '../email/provider.js';
 import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
 
@@ -252,6 +254,7 @@ const READ_TOOLS = [
   { name: 'echeances_fiscales', description: 'Prochaines échéances fiscales et sociales du dossier (TVA, impôts sur salaires/état 301, CNPS, DSF) dérivées du régime fiscal, avec leurs dates. Pour rappeler proactivement ce qui arrive à échéance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'analyse_mensuelle', description: 'Analyse comparée d\'un mois pour le reporting : chiffre d\'affaires, produits, charges et résultat du mois vs mois précédent (avec variations), cumul annuel, ratios (marge nette, taux de charges), situation (trésorerie, créances, dettes) et principales charges du mois. À commenter (constat → cause → recommandation). Fournir année et mois (1-12).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
   { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'factures_recurrentes_dues', description: 'Modèles de factures de vente récurrentes (abonnements) et nombre de factures DUES à générer pour chacun.', input_schema: { type: 'object', properties: {}, required: [] } },
 ];
 
 // --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
@@ -388,8 +391,15 @@ const ACTION_TOOLS = [
     description: 'Comptabilise la LIQUIDATION de TVA d\'un mois : écriture d\'OD déterministe qui solde la TVA collectée (443) et déductible (445) et constate le net (TVA due 4441, ou crédit de TVA 4449). Opération mécanique de fin de mois (aucun jugement). Montre d\'abord la situation TVA (outil tva) et CONFIRME avant. Fournir année et mois (1-12).',
     input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] },
   },
+  {
+    name: 'generer_factures_recurrentes',
+    description: 'Génère les factures de vente récurrentes (abonnements) DUES à partir des modèles définis par l\'humain : crée des FACTURES BROUILLONS (à émettre ensuite dans l\'onglet Facturation). N\'a aucun effet comptable tant qu\'elles ne sont pas émises. Confirme d\'abord ce qui va être créé (factures_recurrentes_dues), puis récapitule.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
 ];
 const ACTION_TOOL_NAMES = new Set(ACTION_TOOLS.map((t) => t.name));
+// Outils qui modifient/agissent : journalisés (qui a demandé quoi, quel résultat).
+const MUTATING_TOOL_NAMES = new Set<string>([...DRAFT_TOOL_NAMES, ...REVERSIBLE_TOOL_NAMES, ...ACTION_TOOL_NAMES]);
 
 // Tronque une sortie volumineuse pour maîtriser les tokens.
 function cap<T>(rows: T[], n = 60): T[] { return Array.isArray(rows) && rows.length > n ? rows.slice(0, n) : rows; }
@@ -436,6 +446,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     }
     case 'analyse_mensuelle': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return await reporting.monthlyReport(c, dossierId, y, mo); }
     case 'recurrences_dues': { const t = await recurring.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, frequence: x.frequencyLabel, journal: x.journalCode, montant: x.amount, tiers: x.counterpartyName ?? null, actif: x.active, echeances_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
+    case 'factures_recurrentes_dues': { const t = await recinv.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, client: x.clientName, frequence: x.frequencyLabel, montant_ttc: x.montantTtc, actif: x.active, factures_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
 
     // --- Écriture : BROUILLONS (mode assisté) ---
     case 'preparer_facture_vente': {
@@ -578,6 +589,10 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
         return { statut: 'tva_comptabilisee', periode: `${mo + 1}/${y}`, ecriture_id: r.entryId, tva_collectee: r.collectee, tva_deductible: r.deductible, tva_a_payer: r.netDue, credit_reportable: r.creditReportable, note: 'Écriture de liquidation de TVA comptabilisée (journal OD).' };
       } catch (e: any) { return { error: String(e?.message ?? e).slice(0, 200) }; }
     }
+    case 'generer_factures_recurrentes': {
+      const r = await recinv.generateAllDue(c, dossierId);
+      return { statut: 'factures_generees', factures_brouillons: r.count, modeles_concernes: r.templates, note: 'Factures BROUILLONS créées (abonnements). À émettre dans l\'onglet Facturation.' };
+    }
 
     default: return { error: `Outil inconnu : ${name}` };
   }
@@ -631,6 +646,7 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
   const messages: any[] = history.slice(-16).map((m) => ({ role: m.role, content: m.content }));
 
   const model = pickModel(history);
+  const instruction = String([...history].reverse().find((h) => h.role === 'user')?.content ?? '');
   const toolCalls: AgentToolCall[] = [];
   for (let step = 0; step < MAX_STEPS; step++) {
     const data = await callClaude({
@@ -647,6 +663,10 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
         let result: any;
         try { result = await executeTool(c, dossierId, fyId, block.name, block.input, mode); }
         catch (e: any) { result = { error: String(e?.message ?? e).slice(0, 200) }; }
+        // Journal d'audit : toute action de Lexa est tracée (instruction + acteur + résultat).
+        if (MUTATING_TOOL_NAMES.has(block.name) && !result?.error) {
+          try { await audit.recordAudit(c, { dossierId, action: `lexa.${block.name}`, entity: 'lexa_action', detail: { instruction: instruction.slice(0, 300), entrees: block.input, resultat: result?.statut ?? 'ok' } }); } catch { /* best-effort */ }
+        }
         toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
       }
       messages.push({ role: 'user', content: toolResults });
