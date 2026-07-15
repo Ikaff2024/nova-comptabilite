@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2, Wand2, BellRing, Send } from 'lucide-react';
+import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2, Wand2, BellRing, Send, FolderOpen, Mail, Hash, Building2 } from 'lucide-react';
 import { api, fmtMoney, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow, type OverdueClient } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
-type View = 'plan' | 'balance' | 'grandlivre' | 'lettrage' | 'aged' | 'relances';
+type View = 'fiche' | 'plan' | 'balance' | 'grandlivre' | 'lettrage' | 'aged' | 'relances';
 
 export default function Tiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
-  const [view, setView] = useState<View>('balance');
+  const [view, setView] = useState<View>('fiche');
   const tabs: [View, string, any][] = [
-    ['plan', 'Plan tiers', BookUser], ['balance', 'Balance', Scale], ['grandlivre', 'Grand livre', Library],
+    ['fiche', 'Dossiers tiers', FolderOpen], ['plan', 'Plan tiers', BookUser], ['balance', 'Balance', Scale], ['grandlivre', 'Grand livre', Library],
     ['lettrage', 'Lettrage', Link2], ['aged', 'Balance âgée', CalendarClock], ['relances', 'Relances', BellRing],
   ];
   return (
@@ -22,6 +22,7 @@ export default function Tiers({ dossierId, dossierName, currency }: { dossierId:
           </button>
         ))}
       </div>
+      {view === 'fiche' && <FicheTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
       {view === 'plan' && <PlanTiers dossierId={dossierId} />}
       {view === 'balance' && <BalanceTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
       {view === 'grandlivre' && <GrandLivreTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
@@ -108,6 +109,124 @@ function Relances({ dossierId, dossierName, currency }: { dossierId: string; dos
 }
 
 const TYPE_LABEL: Record<string, string> = { client: 'Client', fournisseur: 'Fournisseur', salarie: 'Salarié', etat: 'État', autre: 'Autre' };
+
+// Fiche consolidée d'un tiers (le « dossier » client/fournisseur) : identité,
+// soldes, et grand livre auxiliaire avec solde progressif — le tout en une vue.
+function FicheTiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+  const [tiers, setTiers] = useState<Counterparty[]>([]);
+  const [type, setType] = useState('');
+  const [cid, setCid] = useState('');
+  const [rows, setRows] = useState<AuxLedgerRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const m = (n: number) => fmtMoney(n, currency);
+
+  useEffect(() => { (async () => { const t = await api.counterparties(dossierId); setTiers(t); })(); }, [dossierId]);
+  useEffect(() => { if (!cid) { setRows([]); return; } (async () => { setLoading(true); try { setRows(await api.auxLedger(dossierId, cid)); } finally { setLoading(false); } })(); }, [cid, dossierId]);
+
+  const list = type ? tiers.filter((t) => t.type === type) : tiers;
+  const tp = tiers.find((t) => t.id === cid);
+
+  let solde = 0;
+  const withSolde = rows.map((r) => { solde += r.debit - r.credit; return { ...r, solde }; });
+  const totDebit = rows.reduce((s, r) => s + r.debit, 0);
+  const totCredit = rows.reduce((s, r) => s + r.credit, 0);
+  const balance = totDebit - totCredit;
+  const isSupplier = tp?.type === 'fournisseur';
+  // Un solde débiteur = le client doit ; créditeur = on doit au fournisseur.
+  const soldeLabel = balance === 0 ? 'Soldé' : isSupplier ? (balance < 0 ? 'À payer' : 'Avance/avoir') : (balance > 0 ? 'À recevoir' : 'Avance/avoir');
+
+  const exportPdf = () => {
+    if (!tp) return;
+    const body = `
+      <table style="margin-bottom:12px"><tbody>
+        <tr><td><b>DOSSIER ${TYPE_LABEL[tp.type]?.toUpperCase() ?? ''} — ${(tp.name ?? '').replace(/[&<>]/g, '')}</b></td><td class="n">${tp.aux_code ?? ''}</td></tr>
+        ${tp.tax_id ? `<tr><td>Id. fiscal : ${tp.tax_id}</td><td></td></tr>` : ''}
+        ${tp.email ? `<tr><td>Email : ${tp.email}</td><td></td></tr>` : ''}
+        <tr><td>Solde : <b>${m(balance)}</b> (${soldeLabel})</td><td class="n">au ${nowStamp()}</td></tr>
+      </tbody></table>
+      <table><thead><tr><th>Date</th><th>Jrnl</th><th>Cpte</th><th>Libellé</th><th class="n">Débit</th><th class="n">Crédit</th><th class="n">Solde</th></tr></thead><tbody>
+      ${withSolde.map((r) => `<tr><td>${r.entry_date}</td><td>${r.journal_code}</td><td>${r.account_code}</td><td>${(r.label ?? '').replace(/[&<>]/g, '')}</td><td class="n">${r.debit ? m(r.debit) : ''}</td><td class="n">${r.credit ? m(r.credit) : ''}</td><td class="n">${m(r.solde)}</td></tr>`).join('')}
+      </tbody></table>`;
+    printDocument(`Dossier tiers — ${tp.name}`, `${dossierName} · ${tp.aux_code ?? ''} · au ${nowStamp()}`, body);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <select value={type} onChange={(e) => { setType(e.target.value); setCid(''); }} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50">
+          <option value="">Tous les tiers</option><option value="client">Clients</option><option value="fournisseur">Fournisseurs</option><option value="salarie">Salariés</option>
+        </select>
+        <select value={cid} onChange={(e) => setCid(e.target.value)} className="min-w-[16rem] flex-1 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50">
+          <option value="">— Choisir un tiers —</option>
+          {list.map((t) => <option key={t.id} value={t.id}>{t.aux_code} · {t.name}</option>)}
+        </select>
+        {tp && <button onClick={exportPdf} disabled={!withSolde.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>}
+      </div>
+
+      {!tp ? (
+        <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">Sélectionnez un client ou un fournisseur pour ouvrir son dossier (identité, soldes et mouvements).</div>
+      ) : (
+        <>
+          {/* Identité + KPIs */}
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15"><Building2 className="h-5 w-5 text-emerald-400" /></div>
+                  <div>
+                    <div className="font-display text-lg font-semibold text-zinc-100">{tp.name}</div>
+                    <div className="text-xs text-zinc-500">{TYPE_LABEL[tp.type] ?? tp.type}{tp.collective ? ` · compte collectif ${tp.collective}` : ''}</div>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
+                  <span className="inline-flex items-center gap-1"><Hash className="h-3.5 w-3.5" /> {tp.aux_code}</span>
+                  {tp.tax_id && <span className="inline-flex items-center gap-1"><BookUser className="h-3.5 w-3.5" /> {tp.tax_id}</span>}
+                  {tp.email && <span className="inline-flex items-center gap-1"><Mail className="h-3.5 w-3.5" /> {tp.email}</span>}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs uppercase text-zinc-500">Solde</div>
+                <div className={cn('font-mono text-2xl font-bold', balance === 0 ? 'text-zinc-300' : isSupplier ? 'text-rose-400' : 'text-emerald-400')}>{m(Math.abs(balance))}</div>
+                <div className="text-xs text-zinc-500">{soldeLabel}</div>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-3 border-t border-white/10 pt-4 text-sm">
+              <div><div className="text-xs text-zinc-500">Total débit</div><div className="font-mono text-zinc-200">{m(totDebit)}</div></div>
+              <div><div className="text-xs text-zinc-500">Total crédit</div><div className="font-mono text-zinc-200">{m(totCredit)}</div></div>
+              <div><div className="text-xs text-zinc-500">Mouvements</div><div className="font-mono text-zinc-200">{rows.length}</div></div>
+            </div>
+          </div>
+
+          {/* Grand livre du tiers */}
+          {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : withSolde.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement pour ce tiers.</p> : (
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+              <div className="border-b border-white/10 px-4 py-2.5 text-xs uppercase text-zinc-400">Mouvements (grand livre auxiliaire)</div>
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+                  <th className="px-4 py-2.5 font-medium">Date</th><th className="px-4 py-2.5 font-medium">Jrnl</th><th className="px-4 py-2.5 font-medium">Compte</th><th className="px-4 py-2.5 font-medium">Libellé</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Débit</th><th className="px-4 py-2.5 text-right font-medium">Crédit</th><th className="px-4 py-2.5 text-right font-medium">Solde</th>
+                </tr></thead>
+                <tbody className="divide-y divide-white/5 font-mono">
+                  {withSolde.map((r, i) => (
+                    <tr key={i} className="hover:bg-white/5">
+                      <td className="px-4 py-1.5 text-zinc-400">{r.entry_date}</td>
+                      <td className="px-4 py-1.5 text-zinc-500">{r.journal_code}</td>
+                      <td className="px-4 py-1.5 text-zinc-500">{r.account_code}</td>
+                      <td className="px-4 py-1.5 font-sans text-zinc-300">{r.label}</td>
+                      <td className="px-4 py-1.5 text-right text-zinc-300">{r.debit ? m(r.debit) : ''}</td>
+                      <td className="px-4 py-1.5 text-right text-zinc-300">{r.credit ? m(r.credit) : ''}</td>
+                      <td className={cn('px-4 py-1.5 text-right', r.solde >= 0 ? 'text-zinc-200' : 'text-rose-400')}>{m(r.solde)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 function PlanTiers({ dossierId }: { dossierId: string }) {
   const [rows, setRows] = useState<Counterparty[]>([]);
