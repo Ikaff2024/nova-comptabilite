@@ -13,9 +13,22 @@ if (!url) { console.warn('[migrate-boot] DATABASE_URL absent — démarrage sans
 
 const needsSsl = /neon\.tech|sslmode=require|render\.com|supabase\.co/.test(url) || process.env.PGSSL === 'require';
 
+// La base peut ne pas être joignable à l'instant précis du démarrage du
+// conteneur (réseau interne pas encore prêt). On réessaie la connexion.
+async function connectWithRetry(pool, attempts = 6, delayMs = 2500) {
+  for (let i = 1; i <= attempts; i++) {
+    try { return await pool.connect(); }
+    catch (e) {
+      console.warn(`[migrate-boot] connexion tentative ${i}/${attempts} échouée : ${e.message}`);
+      if (i === attempts) throw e;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
 async function run() {
   const pool = new pg.Pool({ connectionString: url, ssl: needsSsl ? { rejectUnauthorized: false } : undefined });
-  const client = await pool.connect();
+  const client = await connectWithRetry(pool);
   try {
     await client.query('create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())');
     const { rows } = await client.query('select name from _migrations');
