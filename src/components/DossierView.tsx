@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -98,16 +98,30 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'portail', label: 'Portail client', icon: UserRound },
   ];
 
-  // Regroupement des modules par nature (menu latéral).
+  // Regroupement des modules par nature. Pilotage et Saisie restent en menu
+  // latéral vertical ; les catégories suivantes (comptabilité, tiers, états,
+  // paramètres) passent dans une barre horizontale à menus déroulants.
   const meta = Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<Tab, { id: Tab; label: string; icon: any }>;
-  const groups: { label: string; items: Tab[] }[] = [
-    { label: 'Pilotage', items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring', 'analytique', 'budget'] },
-    { label: 'Saisie', items: ['capture', 'facturation', 'achats', 'catalogue', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
-    { label: 'Comptabilité', items: ['balance', 'grandlivre', 'journaux', 'revision', 'plan'] },
-    { label: 'Tiers & trésorerie', items: ['tiers', 'banque', 'immos'] },
-    { label: 'États & déclarations', items: ['etats', 'fiscalite'] },
-    { label: 'Paramètres & accès', items: ['regles', 'import', 'audit', 'portail'] },
+  const groups: { label: string; items: Tab[]; icon: any }[] = [
+    { label: 'Pilotage', icon: Gauge, items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring', 'analytique', 'budget'] },
+    { label: 'Saisie', icon: PencilLine, items: ['capture', 'facturation', 'achats', 'catalogue', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
+    { label: 'Comptabilité', icon: Library, items: ['balance', 'grandlivre', 'journaux', 'revision', 'plan'] },
+    { label: 'Tiers & trésorerie', icon: Landmark, items: ['tiers', 'banque', 'immos'] },
+    { label: 'États & déclarations', icon: FileText, items: ['etats', 'fiscalite'] },
+    { label: 'Paramètres & accès', icon: Settings2, items: ['regles', 'import', 'audit', 'portail'] },
   ];
+  const sideGroups = groups.slice(0, 2);   // Pilotage, Saisie (vertical)
+  const barGroups = groups.slice(2);       // Comptabilité, Tiers, États, Paramètres (barre horizontale)
+
+  // Menu déroulant ouvert dans la barre horizontale (fermeture au clic extérieur).
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openMenu) return;
+    const onDown = (e: MouseEvent) => { if (barRef.current && !barRef.current.contains(e.target as Node)) setOpenMenu(null); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [openMenu]);
 
   return (
     <div className="space-y-8">
@@ -151,7 +165,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
       ) : (
         <div className="flex flex-col gap-6 lg:flex-row">
           <nav className="space-y-5 lg:sticky lg:top-4 lg:w-56 lg:shrink-0 lg:self-start">
-            {groups.map((g) => (
+            {sideGroups.map((g) => (
               <div key={g.label}>
                 <div className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{g.label}</div>
                 <div className="space-y-0.5">
@@ -170,7 +184,43 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             ))}
           </nav>
 
-          <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1">
+            {/* Barre horizontale : catégories comptabilité et suivantes, en menus déroulants. */}
+            <div ref={barRef} className="mb-4 flex flex-wrap gap-2">
+              {barGroups.map((g) => {
+                const active = g.items.includes(tab);
+                const open = openMenu === g.label;
+                return (
+                  <div key={g.label} className="relative">
+                    <button onClick={() => setOpenMenu(open ? null : g.label)}
+                      className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                        active ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
+                          : open ? 'border-white/15 bg-white/10 text-zinc-100' : 'border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10')}>
+                      <g.icon className="h-4 w-4 shrink-0" />
+                      {active ? meta[tab].label : g.label}
+                      <ChevronDown className={cn('h-4 w-4 opacity-60 transition-transform', open && 'rotate-180')} />
+                    </button>
+                    {open && (
+                      <div className="absolute left-0 top-full z-20 mt-1.5 min-w-[15rem] overflow-hidden rounded-xl border border-white/10 bg-zinc-900/95 p-1 shadow-xl shadow-black/40 backdrop-blur-xl">
+                        <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{g.label}</div>
+                        {g.items.map((id) => {
+                          const t = meta[id];
+                          return (
+                            <button key={id} onClick={() => { setTab(id); setOpenMenu(null); }}
+                              className={cn('flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
+                                tab === id ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-300 hover:bg-white/5 hover:text-zinc-100')}>
+                              <t.icon className="h-4 w-4 shrink-0" /> {t.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+          <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="min-w-0">
             {tab === 'synthese' && <DossierDashboard dossierId={dossier.id} currency={dossier.base_currency} onNavigate={(t) => setTab(t as Tab)} />}
             {tab === 'facturation' && <Facturation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'achats' && <Achats dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
@@ -211,6 +261,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'audit' && <AuditTrail dossierId={dossier.id} />}
             {tab === 'portail' && <ClientAccess dossierId={dossier.id} />}
           </motion.div>
+          </div>
         </div>
       )}
     </div>
