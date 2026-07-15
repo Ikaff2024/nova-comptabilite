@@ -371,8 +371,20 @@ export function createApi() {
       ]);
       const p = await extractDocument({
         mimeType, dataBase64,
-        context: { country: dossier.country, currency: dossier.base_currency, accountingSystem: dossier.accounting_system, activity: dossier.secteur_activite ?? undefined, mappings, rules, chart },
+        context: { country: dossier.country, currency: dossier.base_currency, accountingSystem: dossier.accounting_system, companyName: dossier.raison_sociale, activity: dossier.secteur_activite ?? undefined, mappings, rules, chart },
       });
+
+      // Contrôle destinataire : signale (sans bloquer) une pièce qui ne semble
+      // pas au nom de l'entreprise. Repli serveur si l'IA n'a pas levé le warning.
+      const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\b(sarl|suarl|sa|sas|sci|ei|entreprise|ets|etablissements?|societe|ste)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+      if (p.recipientName && dossier.raison_sociale) {
+        const rn = norm(p.recipientName), cn = norm(dossier.raison_sociale);
+        const matches = rn && cn && (rn.includes(cn) || cn.includes(rn) || rn.split(' ').some((w) => w.length > 3 && cn.includes(w)));
+        const already = (p.warnings ?? []).some((w) => /nom|destinataire|adress/i.test(w));
+        if (!matches && !already) {
+          p.warnings = [...(p.warnings ?? []), `Pièce au nom de « ${p.recipientName} », pas de « ${dossier.raison_sociale} » — à vérifier (elle ne concerne peut-être pas l'entreprise).`];
+        }
+      }
 
       // Ancrage : signaler les comptes proposés absents du plan du dossier
       const codes = [...new Set(p.lines.map((l) => l.accountCode).filter(Boolean))];

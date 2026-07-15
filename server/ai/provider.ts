@@ -16,6 +16,8 @@ export interface CaptureContext {
   country: string;
   currency: string;
   accountingSystem: string;
+  /** Raison sociale du dossier : sert à vérifier que la pièce lui est bien adressée. */
+  companyName?: string;
   /** Secteur/nature d'activité du dossier : oriente l'imputation (immo vs marchandise…). */
   activity?: string;
   /** Mémoire de codification du dossier (libellé/tiers -> compte), apprise des validations. */
@@ -39,6 +41,8 @@ export interface CaptureProposal {
   entryDate?: string;
   journalCode?: string;
   counterpartyName?: string;
+  /** Nom du destinataire/client figurant sur la pièce (pour vérifier qu'elle est au nom de l'entreprise). */
+  recipientName?: string;
   currency: string;
   confidence: number;
   lines: ProposedLine[];
@@ -60,6 +64,9 @@ Logique de l'écriture :
 - journalCode : 'AC' pour un achat, 'VE' pour une vente, 'BQ'/'CA' si purement trésorerie.
 - Si la TVA n'est pas visible, n'invente pas de ligne de TVA.
 - entryDate au format YYYY-MM-DD. confidence entre 0 et 1.
+- recipientName : recopie le nom du DESTINATAIRE/CLIENT figurant sur la pièce (mentions « À : », « Client : », « Facturé à », « Doit : »). Laisse vide si absent.
+
+DESTINATAIRE : si la pièce indique un destinataire/client dont le nom NE correspond PAS à l'entreprise du dossier (fournie dans le message), ajoute un warning explicite du type « Pièce au nom de "X", pas de l'entreprise — à vérifier ». Ne bloque rien : propose quand même l'écriture.
 
 IMPUTATION SELON L'ACTIVITÉ (déterminant) : la nature d'un même bien dépend de l'ACTIVITÉ de l'entreprise (fournie dans le message).
 - Un bien destiné à être REVENDU dans le cadre de l'activité est une MARCHANDISE (achat en classe 601/stocks classe 3), PAS une immobilisation. Ex. : un véhicule acheté par un concessionnaire/garage automobile = marchandise ; du matériel informatique acheté par un revendeur d'informatique = marchandise.
@@ -75,6 +82,7 @@ const RESPONSE_SCHEMA = {
     entryDate: { type: 'string', description: 'YYYY-MM-DD' },
     journalCode: { type: 'string' },
     counterpartyName: { type: 'string' },
+    recipientName: { type: 'string', description: "Nom du destinataire/client indiqué sur la pièce (À : / Client : / Facturé à). Vide si non visible." },
     currency: { type: 'string' },
     confidence: { type: 'number' },
     lines: {
@@ -128,6 +136,9 @@ export function aiProvider(): string {
 
 const userText = (ctx: CaptureContext) => {
   let t = `Dossier : pays ${ctx.country}, devise ${ctx.currency}, système ${ctx.accountingSystem}. Extrais l'écriture de cette pièce.`;
+  if (ctx.companyName?.trim()) {
+    t += `\n\nENTREPRISE DU DOSSIER : « ${ctx.companyName.trim()} ». La pièce est normalement établie à ce nom. Renseigne recipientName et, si le destinataire de la pièce ne correspond pas à cette entreprise, ajoute un warning (sans bloquer).`;
+  }
   if (ctx.activity?.trim()) {
     t += `\n\nACTIVITÉ DE L'ENTREPRISE (déterminante pour l'imputation immobilisation vs marchandise/stock) : ${ctx.activity.trim()}. Impute chaque bien en cohérence avec cette activité (voir la règle « IMPUTATION SELON L'ACTIVITÉ »).`;
   }
@@ -288,6 +299,7 @@ function normalize(parsed: any, ctx: CaptureContext): CaptureProposal {
     entryDate: parsed.entryDate,
     journalCode: parsed.journalCode,
     counterpartyName: parsed.counterpartyName,
+    recipientName: parsed.recipientName || undefined,
     currency: parsed.currency || ctx.currency,
     confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
     lines: (parsed.lines ?? []).map((l: any) => ({
