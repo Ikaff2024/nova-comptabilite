@@ -692,6 +692,13 @@ export function createApi() {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => purchases.supplierAging(c, req.params.id, (req.query.asOf as string) || undefined)));
   }));
+  // Vérifie si une facture ressemble à une déjà saisie (avant enregistrement).
+  app.post('/api/dossiers/:id/purchases/check-duplicate', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { supplierName, supplierRef, invoiceDate, totalTtc, excludeId } = req.body ?? {};
+    const duplicates = await withUser(userId, (c) => purchases.findPurchaseDuplicates(c, req.params.id, { supplierName, supplierRef, invoiceDate, totalTtc, excludeId }));
+    res.json({ duplicates });
+  }));
   app.get('/api/dossiers/:id/purchases/:pid', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => purchases.getPurchase(c, req.params.id, req.params.pid)));

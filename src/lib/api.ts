@@ -211,6 +211,7 @@ export interface Purchase {
 }
 export interface PurchaseLine { id?: string; line_no?: number; description: string; account_code: string; analytic_axis?: string | null; amount_ht: number; vat_rate: number; amount_tva?: number; }
 export interface PurchaseDetail extends Purchase { counterparty_id: string | null; notes: string | null; lines: PurchaseLine[]; }
+export interface PurchaseDuplicate { id: string; supplier_name: string; supplier_ref: string | null; invoice_date: string; total_ttc: number; status: string; reason: 'ref' | 'amount'; }
 export interface SupplierAging {
   counterpartyId: string; name: string; auxCode: string; balance: number;
   b0_30: number; b31_60: number; b61_90: number; b90_plus: number; oldestAge: number;
@@ -490,7 +491,9 @@ export const api = {
   purchases: (dossierId: string, status?: string) => req<Purchase[]>(`/api/dossiers/${dossierId}/purchases${status ? `?status=${status}` : ''}`),
   purchase: (dossierId: string, pid: string) => req<PurchaseDetail>(`/api/dossiers/${dossierId}/purchases/${pid}`),
   createPurchase: (dossierId: string, body: { supplierName: string; supplierRef?: string; invoiceDate: string; dueDate?: string; notes?: string; lines: PurchaseLine[] }) =>
-    req<{ id: string }>(`/api/dossiers/${dossierId}/purchases`, { method: 'POST', body: JSON.stringify(body) }),
+    req<{ id: string; duplicates?: PurchaseDuplicate[] }>(`/api/dossiers/${dossierId}/purchases`, { method: 'POST', body: JSON.stringify(body) }),
+  checkPurchaseDuplicate: (dossierId: string, body: { supplierName?: string; supplierRef?: string; invoiceDate?: string; totalTtc?: number; excludeId?: string }) =>
+    req<{ duplicates: PurchaseDuplicate[] }>(`/api/dossiers/${dossierId}/purchases/check-duplicate`, { method: 'POST', body: JSON.stringify(body) }),
   deletePurchase: (dossierId: string, pid: string) => req<void>(`/api/dossiers/${dossierId}/purchases/${pid}`, { method: 'DELETE' }),
   recordPurchase: (dossierId: string, pid: string) => req<{ entryId: string }>(`/api/dossiers/${dossierId}/purchases/${pid}/record`, { method: 'POST', body: '{}' }),
   payPurchase: (dossierId: string, pid: string, body: { paymentDate: string; treasuryCode: string; channel?: string }) =>

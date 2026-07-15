@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Plus, Trash2, ShoppingCart, BookCheck, Wallet, Printer, AlertTriangle, ClipboardList } from 'lucide-react';
-import { api, fmtMoney, type Purchase, type PurchaseLine, type SupplierAging, type AnalyticSection } from '../lib/api';
+import { api, fmtMoney, type Purchase, type PurchaseLine, type PurchaseDuplicate, type SupplierAging, type AnalyticSection } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -46,11 +46,11 @@ export default function Achats({ dossierId, dossierName, currency }: { dossierId
   const totalHt = lines.reduce((s, l) => s + Number(l.amount_ht), 0);
   const totalTva = lines.reduce((s, l) => s + Number(l.amount_ht) * Number(l.vat_rate), 0);
 
-  const resetForm = () => { setSupplier(''); setSupplierRef(''); setDue(''); setLines([blankLine()]); };
+  // Doublons : factures déjà saisies ressemblant à la saisie en cours.
+  const [dupes, setDupes] = useState<PurchaseDuplicate[]>([]);
+  const resetForm = () => { setSupplier(''); setSupplierRef(''); setDue(''); setLines([blankLine()]); setDupes([]); };
 
-  const create = async (e: React.FormEvent) => {
-    e.preventDefault(); setError(null);
-    if (!supplier.trim()) { setError('Fournisseur requis'); return; }
+  const doCreate = async () => {
     setBusy('create');
     try {
       await api.createPurchase(dossierId, {
@@ -59,6 +59,22 @@ export default function Achats({ dossierId, dossierName, currency }: { dossierId
       });
       setCreating(false); resetForm(); await load();
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault(); setError(null);
+    if (!supplier.trim()) { setError('Fournisseur requis'); return; }
+    // Si des doublons sont déjà affichés, l'utilisateur confirme → on enregistre.
+    if (dupes.length) { await doCreate(); return; }
+    setBusy('create');
+    try {
+      const { duplicates } = await api.checkPurchaseDuplicate(dossierId, {
+        supplierName: supplier.trim(), supplierRef: supplierRef.trim() || undefined,
+        invoiceDate: date, totalTtc: totalHt + totalTva,
+      });
+      if (duplicates.length) { setDupes(duplicates); setBusy(null); return; } // demande confirmation
+    } catch { /* la vérif est best-effort : en cas d'échec, on n'empêche pas la saisie */ }
+    await doCreate();
   };
 
   const act = async (fn: () => Promise<any>, key: string) => {
@@ -135,8 +151,8 @@ export default function Achats({ dossierId, dossierName, currency }: { dossierId
       {creating && (
         <motion.form initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} onSubmit={create} className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
           <div className="grid gap-3 sm:grid-cols-4">
-            <div className="sm:col-span-2"><label className="mb-1 block text-xs text-zinc-500">Fournisseur</label><input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Raison sociale" className={inputCls} /></div>
-            <div><label className="mb-1 block text-xs text-zinc-500">N° facture fournisseur</label><input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} placeholder="ex. FA-2026-014" className={inputCls} /></div>
+            <div className="sm:col-span-2"><label className="mb-1 block text-xs text-zinc-500">Fournisseur</label><input value={supplier} onChange={(e) => { setSupplier(e.target.value); setDupes([]); }} placeholder="Raison sociale" className={inputCls} /></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">N° facture fournisseur</label><input value={supplierRef} onChange={(e) => { setSupplierRef(e.target.value); setDupes([]); }} placeholder="ex. FA-2026-014" className={inputCls} /></div>
             <div className="grid grid-cols-2 gap-2">
               <div><label className="mb-1 block text-xs text-zinc-500">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} /></div>
               <div><label className="mb-1 block text-xs text-zinc-500">Échéance</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} className={inputCls} /></div>
@@ -163,10 +179,28 @@ export default function Achats({ dossierId, dossierName, currency }: { dossierId
             <button type="button" onClick={() => setLines((ls) => [...ls, blankLine()])} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-emerald-400"><Plus className="h-4 w-4" /> Ligne</button>
             <div className="flex items-center gap-6 font-mono text-sm text-zinc-400">HT <b className="text-zinc-100">{fmtMoney(totalHt, currency)}</b> · TVA <b className="text-zinc-100">{fmtMoney(totalTva, currency)}</b> · TTC <b className="text-emerald-400">{fmtMoney(totalHt + totalTva, currency)}</b></div>
           </div>
+          {dupes.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] p-3 text-sm">
+              <div className="flex items-center gap-2 font-semibold text-amber-300"><AlertTriangle className="h-4 w-4" /> Facture peut-être déjà saisie</div>
+              <ul className="mt-1.5 space-y-1 text-amber-200/90">
+                {dupes.map((d) => (
+                  <li key={d.id} className="flex flex-wrap items-center gap-x-2">
+                    <span className="font-medium">{d.supplier_name}</span>
+                    {d.supplier_ref && <span className="font-mono text-xs">{d.supplier_ref}</span>}
+                    <span>· {d.invoice_date}</span>
+                    <span className="font-mono">· {fmtMoney(d.total_ttc, currency)}</span>
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[11px]">{STATUS[d.status]?.label ?? d.status}</span>
+                    <span className="text-[11px] text-amber-300/70">{d.reason === 'ref' ? '(même n° de facture)' : '(même montant, date proche)'}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-xs text-amber-200/70">Vérifiez qu'il ne s'agit pas d'un doublon. Vous pouvez enregistrer quand même si la facture est bien distincte.</p>
+            </div>
+          )}
           {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setCreating(false)} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
-            <button type="submit" disabled={busy === 'create'} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy === 'create' && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer la facture</button>
+            <button type="submit" disabled={busy === 'create'} className={cn('flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-50', dupes.length ? 'bg-amber-500 hover:bg-amber-400' : 'bg-emerald-500 hover:bg-emerald-400')}>{busy === 'create' && <Loader2 className="h-4 w-4 animate-spin" />} {dupes.length ? 'Enregistrer quand même' : 'Enregistrer la facture'}</button>
           </div>
         </motion.form>
       )}

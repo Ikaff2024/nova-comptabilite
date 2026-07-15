@@ -69,12 +69,58 @@ export async function getPurchase(c: Client, dossierId: string, id: string): Pro
   };
 }
 
-export async function createPurchase(c: Client, dossierId: string, input: CreatePurchaseInput): Promise<{ id: string }> {
+// Détecte les factures fournisseurs ressemblant à un doublon de saisie.
+// Deux signaux : (fort) même fournisseur + même n° de facture fournisseur ;
+// (probable) même fournisseur + même montant TTC à ±4 jours. On exclut la
+// facture en cours d'édition (excludeId) le cas échéant.
+export interface DuplicateMatch {
+  id: string; supplier_name: string; supplier_ref: string | null; invoice_date: string;
+  total_ttc: number; status: string; reason: 'ref' | 'amount';
+}
+export async function findPurchaseDuplicates(
+  c: Client, dossierId: string,
+  crit: { supplierName?: string; supplierRef?: string; invoiceDate?: string; totalTtc?: number; excludeId?: string },
+): Promise<DuplicateMatch[]> {
+  const name = (crit.supplierName ?? '').trim().toLowerCase();
+  const ref = (crit.supplierRef ?? '').trim().toLowerCase();
+  const ttc = Number(crit.totalTtc ?? 0);
+  const date = crit.invoiceDate ?? null;
+  if (!name && !ref) return [];
+  const { rows } = await c.query(
+    `select id, supplier_name, supplier_ref, to_char(invoice_date,'YYYY-MM-DD') as invoice_date,
+            total_ttc, status,
+            (lower(trim(supplier_ref)) = $3 and $3 <> '') as ref_match,
+            (abs(total_ttc - $4) < 0.5 and $4 > 0 and ($5::date is null or abs(invoice_date - $5::date) <= 4)) as amount_match
+       from purchase_invoices
+      where dossier_id = $1
+        and ($6::uuid is null or id <> $6::uuid)
+        and status <> 'cancelled'
+        and lower(trim(supplier_name)) = $2
+        and (
+          (lower(trim(supplier_ref)) = $3 and $3 <> '')
+          or (abs(total_ttc - $4) < 0.5 and $4 > 0 and ($5::date is null or abs(invoice_date - $5::date) <= 4))
+        )
+      order by invoice_date desc limit 5`,
+    [dossierId, name, ref, ttc, date, crit.excludeId ?? null],
+  );
+  return rows.map((r: any) => ({
+    id: r.id, supplier_name: r.supplier_name, supplier_ref: r.supplier_ref,
+    invoice_date: r.invoice_date, total_ttc: Number(r.total_ttc), status: r.status,
+    reason: r.ref_match ? 'ref' : 'amount',
+  }));
+}
+
+export async function createPurchase(c: Client, dossierId: string, input: CreatePurchaseInput): Promise<{ id: string; duplicates?: DuplicateMatch[] }> {
   if (!input.supplierName?.trim()) throw new Error('Fournisseur requis');
   if (!input.lines?.length) throw new Error('Au moins une ligne requise');
   const lines = computeLines(input.lines);
   const totalHt = lines.reduce((s, l) => s + l.amount_ht, 0);
   const totalTva = lines.reduce((s, l) => s + l.amount_tva, 0);
+  // Signale (sans bloquer) une éventuelle facture déjà saisie.
+  const duplicates = await findPurchaseDuplicates(c, dossierId, {
+    supplierName: input.supplierName, supplierRef: input.supplierRef,
+    invoiceDate: input.invoiceDate, totalTtc: totalHt + totalTva,
+  });
   const { rows } = await c.query(
     `insert into purchase_invoices(dossier_id, supplier_name, supplier_ref, invoice_date, due_date, currency, notes, total_ht, total_tva, total_ttc)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
@@ -89,7 +135,7 @@ export async function createPurchase(c: Client, dossierId: string, input: Create
       [id, dossierId, l.line_no, l.description, l.accountCode, l.analyticAxis, l.amount_ht, l.vat_rate, l.amount_tva],
     );
   }
-  return { id };
+  return duplicates.length ? { id, duplicates } : { id };
 }
 
 export async function deletePurchase(c: Client, dossierId: string, id: string): Promise<void> {
