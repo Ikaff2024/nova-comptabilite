@@ -15,6 +15,7 @@ RUN npm run build
 ENV NODE_ENV=production
 ENV SERVE_STATIC=true
 EXPOSE 4000
-# Applique les migrations en attente (idempotent, suivi dans _migrations) avant
-# de démarrer l'API : le schéma reste toujours synchronisé avec le code déployé.
-CMD ["sh", "-c", "npm run migrate && npm run start"]
+# Applique les migrations en attente en mode « best-effort » (ne bloque JAMAIS
+# le démarrage : une migration en erreur est ignorée), puis démarre l'API. Le
+# schéma se synchronise au déploiement sans risquer un conteneur qui ne boote pas.
+CMD ["sh", "-c", "node scripts/migrate-boot.mjs; npm run start"]
