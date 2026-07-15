@@ -23,6 +23,7 @@ import * as bank from './domain/bank.js';
 import * as tiers from './domain/tiers.js';
 import * as invoicing from './domain/invoicing.js';
 import * as purchases from './domain/purchases.js';
+import * as catalog from './domain/catalog.js';
 import * as tax from './domain/tax.js';
 import * as importbalance from './domain/importbalance.js';
 import * as assets from './domain/assets.js';
@@ -657,6 +658,26 @@ export function createApi() {
   }));
 
   // --- Facturation de vente + FNE --------------------------------------------
+  // --- Catalogue des articles/services vendus ---------------------------------
+  app.get('/api/dossiers/:id/catalog', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => catalog.listCatalog(c, req.params.id, req.query.all === '1')));
+  }));
+  app.post('/api/dossiers/:id/catalog', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => catalog.createCatalogItem(c, req.params.id, req.body ?? {})));
+  }));
+  app.patch('/api/dossiers/:id/catalog/:cid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => catalog.updateCatalogItem(c, req.params.id, req.params.cid, req.body ?? {}));
+    res.status(204).end();
+  }));
+  app.delete('/api/dossiers/:id/catalog/:cid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => catalog.deleteCatalogItem(c, req.params.id, req.params.cid));
+    res.status(204).end();
+  }));
+
   app.get('/api/dossiers/:id/invoices', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => invoicing.listInvoices(c, req.params.id, (req.query.status as string) || undefined, (req.query.docType as string) || undefined)));

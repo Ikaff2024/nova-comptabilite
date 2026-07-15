@@ -212,6 +212,8 @@ export interface Purchase {
 export interface PurchaseLine { id?: string; line_no?: number; description: string; account_code: string; analytic_axis?: string | null; amount_ht: number; vat_rate: number; amount_tva?: number; }
 export interface PurchaseDetail extends Purchase { counterparty_id: string | null; notes: string | null; lines: PurchaseLine[]; }
 export interface PurchaseDuplicate { id: string; supplier_name: string; supplier_ref: string | null; invoice_date: string; total_ttc: number; status: string; reason: 'ref' | 'amount'; }
+export interface CatalogItem { id: string; kind: 'bien' | 'service'; reference: string | null; label: string; unit: string | null; unit_price: number; vat_rate: number; account_code: string; active: boolean; }
+export interface CatalogItemInput { kind?: 'bien' | 'service'; reference?: string; label: string; unit?: string; unitPrice?: number; vatRate?: number; accountCode?: string; active?: boolean; }
 export interface SupplierAging {
   counterpartyId: string; name: string; auxCode: string; balance: number;
   b0_30: number; b31_60: number; b61_90: number; b90_plus: number; oldestAge: number;
@@ -494,6 +496,10 @@ export const api = {
     req<{ id: string; duplicates?: PurchaseDuplicate[] }>(`/api/dossiers/${dossierId}/purchases`, { method: 'POST', body: JSON.stringify(body) }),
   checkPurchaseDuplicate: (dossierId: string, body: { supplierName?: string; supplierRef?: string; invoiceDate?: string; totalTtc?: number; excludeId?: string }) =>
     req<{ duplicates: PurchaseDuplicate[] }>(`/api/dossiers/${dossierId}/purchases/check-duplicate`, { method: 'POST', body: JSON.stringify(body) }),
+  catalog: (dossierId: string, all?: boolean) => req<CatalogItem[]>(`/api/dossiers/${dossierId}/catalog${all ? '?all=1' : ''}`),
+  createCatalogItem: (dossierId: string, body: CatalogItemInput) => req<{ id: string }>(`/api/dossiers/${dossierId}/catalog`, { method: 'POST', body: JSON.stringify(body) }),
+  updateCatalogItem: (dossierId: string, cid: string, body: CatalogItemInput) => req<void>(`/api/dossiers/${dossierId}/catalog/${cid}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteCatalogItem: (dossierId: string, cid: string) => req<void>(`/api/dossiers/${dossierId}/catalog/${cid}`, { method: 'DELETE' }),
   deletePurchase: (dossierId: string, pid: string) => req<void>(`/api/dossiers/${dossierId}/purchases/${pid}`, { method: 'DELETE' }),
   recordPurchase: (dossierId: string, pid: string) => req<{ entryId: string }>(`/api/dossiers/${dossierId}/purchases/${pid}/record`, { method: 'POST', body: '{}' }),
   payPurchase: (dossierId: string, pid: string, body: { paymentDate: string; treasuryCode: string; channel?: string }) =>

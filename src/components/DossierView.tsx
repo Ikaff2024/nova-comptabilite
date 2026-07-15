@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -15,6 +15,7 @@ import BankReconciliation from './BankReconciliation';
 import Journaux from './Journaux';
 import Facturation from './Facturation';
 import Achats from './Achats';
+import Catalogue from './Catalogue';
 import Assistant from './Assistant';
 import Paie from './Paie';
 import ClientAccess from './ClientAccess';
@@ -32,7 +33,7 @@ import Revision from './Revision';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
+type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -70,6 +71,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'analyse', label: 'Analyse & révision', icon: Gauge },
     { id: 'facturation', label: 'Facturation', icon: ReceiptText },
     { id: 'achats', label: 'Achats', icon: ShoppingCart },
+    { id: 'catalogue', label: 'Catalogue', icon: Package },
     { id: 'paie', label: 'Paie', icon: Wallet },
     { id: 'capture', label: 'Capture IA', icon: ScanLine },
     { id: 'mobilemoney', label: 'Mobile Money', icon: Smartphone },
@@ -100,7 +102,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const meta = Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<Tab, { id: Tab; label: string; icon: any }>;
   const groups: { label: string; items: Tab[] }[] = [
     { label: 'Pilotage', items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring', 'analytique', 'budget'] },
-    { label: 'Saisie', items: ['capture', 'facturation', 'achats', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
+    { label: 'Saisie', items: ['capture', 'facturation', 'achats', 'catalogue', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
     { label: 'Comptabilité', items: ['balance', 'grandlivre', 'journaux', 'revision', 'plan'] },
     { label: 'Tiers & trésorerie', items: ['tiers', 'banque', 'immos'] },
     { label: 'États & déclarations', items: ['etats', 'fiscalite'] },
@@ -172,6 +174,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'synthese' && <DossierDashboard dossierId={dossier.id} currency={dossier.base_currency} onNavigate={(t) => setTab(t as Tab)} />}
             {tab === 'facturation' && <Facturation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'achats' && <Achats dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'catalogue' && <Catalogue dossierId={dossier.id} currency={dossier.base_currency} />}
             {tab === 'paie' && <Paie dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'assistant' && <Assistant dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'analyse' && <AnalyseFinanciere dossierId={dossier.id} currency={dossier.base_currency} />}

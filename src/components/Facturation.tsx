@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Plus, Trash2, FileCheck2, Send, Printer, ShieldCheck, ArrowRightLeft, Undo2, FileClock, ReceiptText } from 'lucide-react';
-import { api, fmtMoney, type Invoice, type InvoiceLine, type AnalyticSection } from '../lib/api';
+import { api, fmtMoney, type Invoice, type InvoiceLine, type AnalyticSection, type CatalogItem } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -34,9 +34,18 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   const doc = DOCS.find((d) => d.type === docType)!;
 
   const [sections, setSections] = useState<AnalyticSection[]>([]);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const load = async () => { setLoading(true); try { setRows(await api.invoices(dossierId, docType)); } finally { setLoading(false); } };
   useEffect(() => { load(); setCreating(false); }, [dossierId, docType]);
   useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
+  useEffect(() => { api.catalog(dossierId).then(setCatalog).catch(() => {}); }, [dossierId]);
+
+  // Choix d'un article du catalogue → pré-remplit la ligne (désignation, prix, TVA, compte).
+  const pickCatalog = (k: number, itemId: string) => {
+    const it = catalog.find((x) => x.id === itemId);
+    if (!it) return;
+    setLine(k, { description: it.label, unit_price: it.unit_price, vat_rate: it.vat_rate, account_code: it.account_code });
+  };
 
   const [client, setClient] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -108,7 +117,18 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
             <tbody>
               {lines.map((l) => (
                 <tr key={l._k}>
-                  <td className="py-1 pr-2"><input value={l.description} onChange={(e) => setLine(l._k, { description: e.target.value })} placeholder="Prestation…" className="w-full min-w-[9rem] rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50" /></td>
+                  <td className="py-1 pr-2">
+                    <div className="flex items-center gap-1.5">
+                      {catalog.length > 0 && (
+                        <select value="" onChange={(e) => { pickCatalog(l._k, e.target.value); e.target.value = ''; }} title="Choisir un article du catalogue"
+                          className="w-8 shrink-0 rounded-md border border-white/10 bg-zinc-900/60 px-1 py-1.5 text-sm text-emerald-300 outline-none focus:border-emerald-500/50">
+                          <option value="">＋</option>
+                          {catalog.map((it) => <option key={it.id} value={it.id}>{it.reference ? `[${it.reference}] ` : ''}{it.label} — {fmtMoney(it.unit_price, currency)}</option>)}
+                        </select>
+                      )}
+                      <input value={l.description} onChange={(e) => setLine(l._k, { description: e.target.value })} placeholder="Prestation…" className="w-full min-w-[8rem] rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50" />
+                    </div>
+                  </td>
                   <td className="py-1 px-2"><input value={l.account_code} onChange={(e) => setLine(l._k, { account_code: e.target.value })} className="w-16 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
                   {sections.length > 0 && (
                     <td className="py-1 px-2"><select value={l.analytic_axis ?? ''} onChange={(e) => setLine(l._k, { analytic_axis: e.target.value || null })} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"><option value="">—</option>{sections.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}</select></td>

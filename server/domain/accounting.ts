@@ -546,6 +546,10 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   const { seedDemoPurchases } = await import('./purchases.js');
   await seedDemoPurchases(c, id);
 
+  // Catalogue des articles/services vendus (prix, TVA, comptes de produit).
+  const { seedDemoCatalog } = await import('./catalog.js');
+  await seedDemoCatalog(c, id);
+
   // Immobilisation reprise (bien acquis avant la bascule, à mi-vie) : illustre la
   // reprise d'antériorité — cumul déjà amorti + dotations futures uniquement.
   const { createAsset } = await import('./assets.js');
