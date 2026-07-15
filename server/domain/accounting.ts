@@ -864,14 +864,20 @@ export async function closeExercise(
   if (fy[0].status === 'closed') throw new Error('Exercice déjà clôturé');
   const year = new Date(fy[0].start_date).getFullYear();
 
-  // Soldes de bilan (classes 1-5) de l'exercice
+  // Soldes de bilan (classes 1-5) de l'exercice. On ventile PAR TIERS sur les
+  // comptes détenant une contrepartie : les à-nouveaux des comptes clients/
+  // fournisseurs (40x/41x/42x) portent ainsi un solde d'ouverture par tiers,
+  // et la balance auxiliaire reprend correctement à l'ouverture. Les comptes
+  // sans tiers sont agrégés (counterparty_id = null).
   const { rows: bals } = await c.query(
-    `select a.account_code, coalesce(sum(l.amount_debit - l.amount_credit), 0) as balance
+    `select a.account_code, l.counterparty_id, cp.name as counterparty_name,
+            coalesce(sum(l.amount_debit - l.amount_credit), 0) as balance
        from entry_lines l
        join entries e on e.id = l.entry_id and e.status='posted' and e.fiscal_year_id = $2
        join accounts a on a.id = l.account_id and a.class_no between 1 and 5
+       left join counterparties cp on cp.id = l.counterparty_id
       where l.dossier_id = $1
-      group by a.account_code
+      group by a.account_code, l.counterparty_id, cp.name
      having coalesce(sum(l.amount_debit - l.amount_credit), 0) <> 0`,
     [dossierId, fiscalYearId],
   );
@@ -897,7 +903,13 @@ export async function closeExercise(
 
   const lines: EntryLineInput[] = bals.map((b: any) => {
     const bal = Number(b.balance);
-    return { accountCode: b.account_code, debit: bal > 0 ? bal : 0, credit: bal < 0 ? -bal : 0 };
+    return {
+      accountCode: b.account_code,
+      counterpartyId: b.counterparty_id ?? undefined,
+      label: b.counterparty_name ? `À-nouveau ${b.counterparty_name}` : undefined,
+      debit: bal > 0 ? bal : 0,
+      credit: bal < 0 ? -bal : 0,
+    };
   });
   if (Math.abs(resultat) > 0.001) {
     if (resultat > 0) lines.push({ accountCode: '121', credit: resultat });
