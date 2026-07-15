@@ -498,6 +498,9 @@ export const api = {
     req<{ id: string; duplicates?: PurchaseDuplicate[] }>(`/api/dossiers/${dossierId}/purchases`, { method: 'POST', body: JSON.stringify(body) }),
   checkPurchaseDuplicate: (dossierId: string, body: { supplierName?: string; supplierRef?: string; invoiceDate?: string; totalTtc?: number; excludeId?: string }) =>
     req<{ duplicates: PurchaseDuplicate[] }>(`/api/dossiers/${dossierId}/purchases/check-duplicate`, { method: 'POST', body: JSON.stringify(body) }),
+  closures: (dossierId: string) => req<ClosuresData>(`/api/dossiers/${dossierId}/closures`),
+  closePeriod: (dossierId: string, year: number, month: number) => req<void>(`/api/dossiers/${dossierId}/closures`, { method: 'POST', body: JSON.stringify({ year, month }) }),
+  reopenPeriod: (dossierId: string, year: number, month: number) => req<void>(`/api/dossiers/${dossierId}/closures/${year}/${month}`, { method: 'DELETE' }),
   catalog: (dossierId: string, all?: boolean) => req<CatalogItem[]>(`/api/dossiers/${dossierId}/catalog${all ? '?all=1' : ''}`),
   createCatalogItem: (dossierId: string, body: CatalogItemInput) => req<{ id: string }>(`/api/dossiers/${dossierId}/catalog`, { method: 'POST', body: JSON.stringify(body) }),
   updateCatalogItem: (dossierId: string, cid: string, body: CatalogItemInput) => req<void>(`/api/dossiers/${dossierId}/catalog/${cid}`, { method: 'PATCH', body: JSON.stringify(body) }),

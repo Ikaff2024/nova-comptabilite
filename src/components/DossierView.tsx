@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown, Lock } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -16,6 +16,7 @@ import Journaux from './Journaux';
 import Facturation from './Facturation';
 import Achats from './Achats';
 import Catalogue from './Catalogue';
+import Clotures from './Clotures';
 import Assistant from './Assistant';
 import Paie from './Paie';
 import ClientAccess from './ClientAccess';
@@ -33,7 +34,7 @@ import Revision from './Revision';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
+type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'clotures' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -82,6 +83,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'grandlivre', label: 'Grand livre', icon: Library },
     { id: 'journaux', label: 'Journaux', icon: BookMarked },
     { id: 'revision', label: 'Révision', icon: ClipboardCheck },
+    { id: 'clotures', label: 'Clôtures', icon: Lock },
     { id: 'tiers', label: 'Tiers', icon: Users },
     { id: 'immos', label: 'Immobilisations', icon: Building2 },
     { id: 'banque', label: 'Banque', icon: Landmark },
@@ -105,7 +107,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const groups: { label: string; items: Tab[]; icon: any }[] = [
     { label: 'Pilotage', icon: Gauge, items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring', 'analytique', 'budget'] },
     { label: 'Saisie', icon: PencilLine, items: ['capture', 'facturation', 'achats', 'catalogue', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
-    { label: 'Comptabilité', icon: Library, items: ['balance', 'grandlivre', 'journaux', 'revision', 'plan'] },
+    { label: 'Comptabilité', icon: Library, items: ['balance', 'grandlivre', 'journaux', 'revision', 'clotures', 'plan'] },
     { label: 'Tiers & trésorerie', icon: Landmark, items: ['tiers', 'banque', 'immos'] },
     { label: 'États & déclarations', icon: FileText, items: ['etats', 'fiscalite'] },
     { label: 'Paramètres & accès', icon: Settings2, items: ['regles', 'import', 'audit', 'portail'] },
@@ -250,6 +252,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'analytique' && <Analytique dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
             {tab === 'budget' && <Budget dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
             {tab === 'revision' && <Revision dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
+            {tab === 'clotures' && <Clotures dossierId={dossier.id} />}
             {tab === 'previsionnel' && <Previsionnel dossierId={dossier.id} currency={dossier.base_currency} />}
             {tab === 'scoring' && <Scoring dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
             {tab === 'fiscalite' && <Fiscalite dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
