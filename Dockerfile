@@ -15,4 +15,6 @@ RUN npm run build
 ENV NODE_ENV=production
 ENV SERVE_STATIC=true
 EXPOSE 4000
-CMD ["npm", "run", "start"]
+# Applique les migrations en attente (idempotent, suivi dans _migrations) avant
+# de démarrer l'API : le schéma reste toujours synchronisé avec le code déployé.
+CMD ["sh", "-c", "npm run migrate && npm run start"]

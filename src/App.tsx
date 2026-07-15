@@ -35,9 +35,14 @@ export default function App() {
   });
 
   const openDossierById = async (id: string) => {
-    const list = await api.dossiers();
-    const d = list.find((x) => x.id === id);
-    if (d) setSelected(d);
+    try {
+      const list = await api.dossiers();
+      const d = list.find((x) => x.id === id);
+      if (d) setSelected(d);
+      else setError("Dossier introuvable ou accès refusé.");
+    } catch (e: any) {
+      setError(e?.message ? `Ouverture impossible : ${e.message}` : 'Ouverture du dossier impossible.');
+    }
   };
 
   const loadCabinets = async () => {
