@@ -16,6 +16,8 @@ export interface CaptureContext {
   country: string;
   currency: string;
   accountingSystem: string;
+  /** Secteur/nature d'activité du dossier : oriente l'imputation (immo vs marchandise…). */
+  activity?: string;
   /** Mémoire de codification du dossier (libellé/tiers -> compte), apprise des validations. */
   mappings?: { keyword: string; accountCode: string }[];
   /** Règles manuelles du cabinet : priorité absolue. */
@@ -57,7 +59,13 @@ Logique de l'écriture :
 - VENTE / encaissement : crédit du/des compte(s) de produit (classe 7) pour le HT ; crédit du compte de TVA facturée (classe 4) ; débit du moyen de paiement (classe 5) ou du compte clients (classe 4).
 - journalCode : 'AC' pour un achat, 'VE' pour une vente, 'BQ'/'CA' si purement trésorerie.
 - Si la TVA n'est pas visible, n'invente pas de ligne de TVA.
-- entryDate au format YYYY-MM-DD. confidence entre 0 et 1.`;
+- entryDate au format YYYY-MM-DD. confidence entre 0 et 1.
+
+IMPUTATION SELON L'ACTIVITÉ (déterminant) : la nature d'un même bien dépend de l'ACTIVITÉ de l'entreprise (fournie dans le message).
+- Un bien destiné à être REVENDU dans le cadre de l'activité est une MARCHANDISE (achat en classe 601/stocks classe 3), PAS une immobilisation. Ex. : un véhicule acheté par un concessionnaire/garage automobile = marchandise ; du matériel informatique acheté par un revendeur d'informatique = marchandise.
+- Le MÊME bien, s'il sert durablement l'exploitation (pas revendu), est une IMMOBILISATION (classe 2). Ex. : un véhicule utilisé par un cabinet de services = immobilisation (2451) ; un ordinateur utilisé au bureau = immobilisation (2444).
+- Matières premières/intrants transformés par l'activité = classe 602/stocks. Consommables non stockés = classe 60/61/62 selon l'intitulé.
+En cas de doute, choisis l'imputation cohérente avec l'activité déclarée et signale-le dans un warning.`;
 
 // Schéma partagé : responseSchema Gemini ET input_schema de l'outil Claude.
 const RESPONSE_SCHEMA = {
@@ -120,6 +128,9 @@ export function aiProvider(): string {
 
 const userText = (ctx: CaptureContext) => {
   let t = `Dossier : pays ${ctx.country}, devise ${ctx.currency}, système ${ctx.accountingSystem}. Extrais l'écriture de cette pièce.`;
+  if (ctx.activity?.trim()) {
+    t += `\n\nACTIVITÉ DE L'ENTREPRISE (déterminante pour l'imputation immobilisation vs marchandise/stock) : ${ctx.activity.trim()}. Impute chaque bien en cohérence avec cette activité (voir la règle « IMPUTATION SELON L'ACTIVITÉ »).`;
+  }
   if (ctx.rules?.length) {
     const rules = ctx.rules.map((r) => `- "${r.keyword}" => ${r.accountCode}`).join('\n');
     t += `\n\nRÈGLES DE CODIFICATION DU CABINET — PRIORITÉ ABSOLUE. Si le libellé ou le tiers de la pièce correspond à l'une de ces règles, tu DOIS utiliser le compte indiqué (elles priment sur tout le reste) :\n${rules}`;

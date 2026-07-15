@@ -295,6 +295,13 @@ export function createApi() {
     res.status(201).json(out);
   }));
 
+  // Profil métier du dossier (secteur d'activité → oriente l'imputation IA).
+  app.patch('/api/dossiers/:id/profil', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => acc.updateDossierProfil(c, req.params.id, req.body ?? {}));
+    res.status(204).end();
+  }));
+
   app.get('/api/dossiers/:id/accounts', h(async (req, res) => {
     const userId = requireUser(req);
     const classNo = req.query.class ? Number(req.query.class) : undefined;
@@ -364,7 +371,7 @@ export function createApi() {
       ]);
       const p = await extractDocument({
         mimeType, dataBase64,
-        context: { country: dossier.country, currency: dossier.base_currency, accountingSystem: dossier.accounting_system, mappings, rules, chart },
+        context: { country: dossier.country, currency: dossier.base_currency, accountingSystem: dossier.accounting_system, activity: dossier.secteur_activite ?? undefined, mappings, rules, chart },
       });
 
       // Ancrage : signaler les comptes proposés absents du plan du dossier

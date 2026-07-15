@@ -40,6 +40,15 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const [journals, setJournals] = useState<Journal[]>([]);
   const [ready, setReady] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
+  // Secteur d'activité éditable (oriente l'imputation IA : immo vs marchandise…).
+  const [secteur, setSecteur] = useState(dossier.secteur_activite ?? '');
+  const [editSecteur, setEditSecteur] = useState(false);
+  const [savingSecteur, setSavingSecteur] = useState(false);
+  const saveSecteur = async () => {
+    setSavingSecteur(true);
+    try { await api.updateDossierProfil(dossier.id, { secteurActivite: secteur }); setEditSecteur(false); }
+    finally { setSavingSecteur(false); }
+  };
 
   const loadStructures = async () => {
     const [fys, js] = await Promise.all([api.fiscalYears(dossier.id), api.journals(dossier.id)]);
@@ -106,6 +115,24 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
         </button>
         <h1 className="font-display text-3xl font-bold tracking-tight">{dossier.raison_sociale}</h1>
         <p className="mt-1 text-zinc-400">{dossier.base_currency} · {dossier.accounting_system === 'smt' ? 'Système Minimal de Trésorerie' : 'Système normal'}</p>
+        {editSecteur ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input value={secteur} onChange={(e) => setSecteur(e.target.value)} autoFocus
+              placeholder="Secteur d'activité (ex. commerce de textile, garage auto, conseil…)"
+              className="w-full max-w-xl rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50" />
+            <button onClick={saveSecteur} disabled={savingSecteur} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">
+              {savingSecteur && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Enregistrer
+            </button>
+            <button onClick={() => { setSecteur(dossier.secteur_activite ?? ''); setEditSecteur(false); }} className="rounded-lg px-2 py-1.5 text-xs text-zinc-400 hover:text-zinc-200">Annuler</button>
+          </div>
+        ) : (
+          <button onClick={() => setEditSecteur(true)} title="Renseigner le secteur d'activité — aide Lexa à imputer correctement"
+            className="mt-2 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-emerald-300">
+            <Sparkles className="h-3.5 w-3.5 text-emerald-400/70" />
+            {secteur ? <span>Activité : {secteur}</span> : <span className="italic">Renseigner le secteur d'activité (pour une meilleure imputation)</span>}
+            <PencilLine className="h-3.5 w-3.5 opacity-60" />
+          </button>
+        )}
       </div>
 
       {!ready ? (

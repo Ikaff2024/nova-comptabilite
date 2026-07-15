@@ -7,7 +7,7 @@ export default function Dossiers({ cabinet, onOpen }: { cabinet: Cabinet; onOpen
   const [dossiers, setDossiers] = useState<Dossier[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ raisonSociale: '', country: cabinet.country, accountingSystem: 'normal', taxId: '' });
+  const [form, setForm] = useState({ raisonSociale: '', country: cabinet.country, accountingSystem: 'normal', taxId: '', secteurActivite: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,8 +25,9 @@ export default function Dossiers({ cabinet, onOpen }: { cabinet: Cabinet; onOpen
       await api.createDossier({
         cabinetId: cabinet.id, raisonSociale: form.raisonSociale.trim(),
         country: form.country, accountingSystem: form.accountingSystem, taxId: form.taxId || undefined,
+        secteurActivite: form.secteurActivite.trim() || undefined,
       });
-      setForm({ raisonSociale: '', country: cabinet.country, accountingSystem: 'normal', taxId: '' });
+      setForm({ raisonSociale: '', country: cabinet.country, accountingSystem: 'normal', taxId: '', secteurActivite: '' });
       setCreating(false);
       await load();
     } catch (err: any) { setError(err.message); } finally { setBusy(false); }
@@ -77,6 +78,14 @@ export default function Dossiers({ cabinet, onOpen }: { cabinet: Cabinet; onOpen
               <option value="normal">Système normal</option>
               <option value="smt">Système Minimal de Trésorerie</option>
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 block text-sm font-medium text-zinc-300">Secteur d'activité <span className="font-normal text-zinc-500">— aide Lexa à imputer correctement (immobilisation vs marchandise…)</span></label>
+            <input
+              value={form.secteurActivite} onChange={(e) => setForm({ ...form, secteurActivite: e.target.value })}
+              placeholder="Ex. : Commerce de détail de textile · Garage automobile · Cabinet de conseil"
+              className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2.5 text-sm outline-none focus:border-emerald-500/50"
+            />
           </div>
           {error && <p className="sm:col-span-2 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
           <div className="sm:col-span-2 flex justify-end gap-3">

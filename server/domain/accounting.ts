@@ -81,7 +81,7 @@ export async function listCabinets(c: Client): Promise<any[]> {
 
 export async function listDossiers(c: Client): Promise<any[]> {
   const { rows } = await c.query(
-    `select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, is_active,
+    `select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, secteur_activite, is_active,
             dossier_role_for(id) as role
        from dossiers order by raison_sociale`,
   );
@@ -96,18 +96,20 @@ export interface OpenDossierInput {
   accountingSystem?: AccountingSystem;
   taxId?: string;
   rccm?: string;
+  /** Secteur/nature d'activité (oriente l'imputation : immo vs marchandise…). */
+  secteurActivite?: string;
   /** Instancie le plan SYSCOHADA dans le dossier (défaut: true). */
   instantiateChart?: boolean;
 }
 
 export async function openDossier(c: Client, input: OpenDossierInput): Promise<{ id: string; accounts: number }> {
   const { rows } = await c.query(
-    `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm)
-     values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+    `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm, secteur_activite)
+     values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
     [
       input.cabinetId, input.raisonSociale, input.country,
       input.currency ?? 'XOF', input.accountingSystem ?? 'normal',
-      input.taxId ?? null, input.rccm ?? null,
+      input.taxId ?? null, input.rccm ?? null, input.secteurActivite?.trim() || null,
     ],
   );
   const id = rows[0].id;
@@ -117,6 +119,12 @@ export async function openDossier(c: Client, input: OpenDossierInput): Promise<{
     accounts = r.rows[0].n;
   }
   return { id, accounts };
+}
+
+// Met à jour le profil « métier » du dossier (secteur d'activité, qui oriente
+// l'imputation). Extensible aux autres champs de profil ultérieurement.
+export async function updateDossierProfil(c: Client, dossierId: string, input: { secteurActivite?: string }): Promise<void> {
+  await c.query('update dossiers set secteur_activite=$2 where id=$1', [dossierId, (input.secteurActivite ?? '').trim() || null]);
 }
 
 export async function createFiscalYear(
