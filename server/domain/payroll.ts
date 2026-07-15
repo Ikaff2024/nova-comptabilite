@@ -2,6 +2,7 @@ import type { Client } from '../db.js';
 import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, computeSTC, referenceSalaryFromPayslips, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry, type STCInput } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
 import { tablePdf, sectionsPdf, letterPdf } from '../documents/pdf.js';
+import { renderPayslipPdf } from '../payroll/payslip-pdf.js';
 
 // ============================================================================
 // Paie : salariés + bulletins, branchés sur le moteur porté (payroll/core).
@@ -336,28 +337,39 @@ export async function bulletinPdf(c: Client, dossierId: string, who: string, yea
   const q = String(who ?? '').trim().toLowerCase();
   const p: any = slips.find((s: any) => String(s.matricule ?? '').toLowerCase() === q) ?? slips.find((s: any) => `${s.nom} ${s.prenoms}`.toLowerCase().includes(q));
   if (!p) return { filename: '', buffer: Buffer.alloc(0), found: false, candidates: slips.map((s: any) => `${s.matricule} ${s.nom} ${s.prenoms}`) };
-  const x = p.calculation; const period = `${getMonthName(month)} ${year}`;
+  // Récupère les variables du mois + la fiche complète du salarié (le calcul est
+  // déjà figé dans p.calculation) pour reproduire le bulletin modèle Ivoire Paie.
+  const { rows: er } = await c.query(
+    `select p.variables, e.* from payroll_payslips p
+       join payroll_employees e on e.id = p.employee_id
+      where p.dossier_id=$1 and p.employee_id=$2 and p.period_year=$3 and p.period_month=$4 limit 1`,
+    [dossierId, p.employeeId, year, month]);
+  const emp = toEmployee(er[0] ?? {});
+  const variables: MonthlyVariables = { employeeId: p.employeeId, year, month, heuresSup15: 0, heuresSup50: 0, heuresSup75: 0, heuresSup100: 0, joursAbsence: 0, primesExceptionnelles: 0, retenuesDiverses: 0, acompte: 0, ...(er[0]?.variables ?? {}) };
 
-  const gains: [string, string][] = [['Salaire de base + sursalaire', money(num(x.salaireBase) + num(x.sursalaire))]];
-  if (num(x.primeAnciennete) > 0) gains.push([`Prime d'ancienneté (${x.tauxAnciennete}%)`, money(x.primeAnciennete)]);
-  if (num(x.heuresSupMontant) > 0) gains.push(['Heures supplémentaires', money(x.heuresSupMontant)]);
-  if (num(x.indemniteLogement) > 0) gains.push(['Indemnité de logement', money(x.indemniteLogement)]);
-  if (num(x.transportExonere) > 0) gains.push(['Indemnité de transport (exonérée)', money(x.transportExonere)]);
-  if (num(x.autresPrimes) > 0) gains.push(['Autres primes', money(x.autresPrimes)]);
+  // Ancienneté (années) à la fin de la période.
+  const periodEnd = new Date(Date.UTC(year, month + 1, 0));
+  const embauche = new Date(emp.dateEmbauche || periodEnd);
+  const tenureYears = Math.max(0, (periodEnd.getTime() - embauche.getTime()) / (365.25 * 24 * 3600 * 1000));
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const now = new Date();
 
-  const buffer = await sectionsPdf({
-    title: 'Bulletin de paie',
-    subtitle: `${p.nom} ${p.prenoms} (${p.matricule}) · ${period}`,
-    meta,
-    sections: [
-      { heading: 'Gains', rows: gains, total: ['Salaire brut', money(x.salaireBrutTotal)] },
-      { heading: 'Retenues salariales', rows: [['CNPS (6,3%)', money(x.cnpsSalarial)], ['ITS', money(x.itsSalarial)], ['Contribution nationale', money(x.cnSalarial)], ['IGR', money(x.igrSalarial)], ['CMU', money(x.cmuSalarial)]], total: ['Total retenues', money(x.totalRetenuesSalariales)] },
-      { heading: 'Charges patronales', rows: [['CNPS prestations familiales', money(x.cnpsFamille)], ['CNPS accident du travail', money(x.cnpsAccident)], ['CNPS retraite (patronal)', money(x.cnpsRetraitePatronal)], ["Taxe d'apprentissage", money(x.taxeApprentissage)], ['Formation continue (FDFP)', money(x.formationContinue)]], total: ['Total charges patronales', money(x.totalChargesPatronales)] },
-    ],
-    grandTotal: ['NET À PAYER', money(x.salaireNetPaye)],
-    footNote: `Coût total employeur : ${money(x.totalCoutEmployeur)}. Document généré par Nova. Barèmes sous réserve d'attestation.`,
+  const bytes = await renderPayslipPdf({
+    employer: { name: d.raison_sociale ?? '—', numeroCc: d.tax_id ?? undefined },
+    employee: {
+      matricule: emp.matricule, nom: emp.nom, prenoms: emp.prenoms, poste: emp.poste, categorie: String(emp.categorie ?? ''),
+      dateEmbauche: emp.dateEmbauche, statutMatrimonial: String(emp.statutMatrimonial ?? ''),
+      nombrePartsIGR: emp.nombrePartsIGR, nombreEnfants: emp.nombreEnfants,
+      salaireBase: emp.salaireBase, sursalaire: emp.sursalaire, indemniteLogement: emp.indemniteLogement, autresPrimes: emp.autresPrimes,
+    },
+    period: { month, year },
+    numBulletin: `${emp.matricule}/${year}${pad2(month + 1)}`,
+    dateEdition: `${pad2(now.getUTCDate())}/${pad2(now.getUTCMonth() + 1)}/${now.getUTCFullYear()}`,
+    tenureYears,
+    variables,
+    calc: p.calculation,
   });
-  return { filename: `bulletin-${p.matricule}-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, found: true };
+  return { filename: `bulletin-${p.matricule}-${year}-${pad2(month + 1)}.pdf`, buffer: Buffer.from(bytes), found: true };
 }
 
 // --- Déclarations annuelles (DISA CNPS, récap impôts) ----------------------
