@@ -1,7 +1,7 @@
 import type { Client } from '../db.js';
 import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, computeSTC, referenceSalaryFromPayslips, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry, type STCInput } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
-import { tablePdf, sectionsPdf } from '../documents/pdf.js';
+import { tablePdf, sectionsPdf, letterPdf } from '../documents/pdf.js';
 
 // ============================================================================
 // Paie : salariés + bulletins, branchés sur le moteur porté (payroll/core).
@@ -236,6 +236,60 @@ export async function ordreVirementPdf(c: Client, dossierId: string, year: numbe
     footNote: `${rr.length} bénéficiaire(s) · ${period}. Ordre de paiement des salaires à transmettre à la banque. Généré par Lexa (Nova Comptabilité) — à vérifier et signer avant exécution.`,
   });
   return { filename: `ordre-virement-salaires-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: rr.length };
+}
+
+const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const dateFr = (d = new Date()) => `${d.getUTCDate()} ${MOIS_FR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+
+// Courrier en bonne et due forme adressé à la banque, demandant l'exécution des
+// virements de salaires du mois. Reprend la liste des bénéficiaires en annexe.
+export async function courrierVirementPdf(c: Client, dossierId: string, year: number, month: number): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, money } = await employerMeta(c, dossierId);
+  const period = `${getMonthName(month)} ${year}`;
+  const { rows: rr } = await c.query(
+    `select e.nom, e.prenoms, e.banque, e.rib, e.mode_paiement, e.mobile_money_numero, e.mobile_money_operateur, p.calculation
+       from payroll_payslips p join payroll_employees e on e.id = p.employee_id
+      where p.dossier_id = $1 and p.period_year = $2 and p.period_month = $3
+      order by e.nom, e.prenoms`, [dossierId, year, month]);
+
+  const coord = (r: any): string => r.rib ? String(r.rib)
+    : r.mobile_money_numero ? `${r.mobile_money_operateur ? r.mobile_money_operateur + ' ' : ''}${r.mobile_money_numero}` : '—';
+  const total = rr.reduce((s: number, r: any) => s + num(r.calculation?.salaireNetPaye), 0);
+
+  const sender = [d.raison_sociale ?? '—'];
+  if (d.tax_id) sender.push(`NCC/IFU : ${d.tax_id}`);
+  if (d.rccm) sender.push(`RCCM : ${d.rccm}`);
+
+  const recipient = [d.bank_name ? `À l'attention de ${d.bank_name}` : "À l'attention de la Banque"];
+  recipient.push('Service des virements');
+
+  const cptDebit = d.rib ? `de notre compte n° ${d.rib}` : 'de notre compte';
+  const bodyBefore = [
+    'Madame, Monsieur,',
+    `Par la présente, nous vous prions de bien vouloir procéder au virement des salaires de notre personnel au titre du mois de ${period}, pour un montant total de ${money(total)}, par le débit ${cptDebit} ouvert dans vos livres.`,
+    'Les bénéficiaires ainsi que les montants correspondants sont détaillés dans le tableau ci-dessous :',
+  ];
+  const bodyAfter = [
+    'Nous vous saurions gré de bien vouloir exécuter ces opérations dans les meilleurs délais et de nous en faire parvenir la confirmation.',
+    'Nous vous prions d\'agréer, Madame, Monsieur, l\'expression de nos salutations distinguées.',
+  ];
+
+  const buffer = await letterPdf({
+    sender, recipient, date: dateFr(), subject: `Ordre de virement des salaires — ${period}`,
+    bodyBefore,
+    table: {
+      columns: [
+        { label: 'Bénéficiaire', width: 150 }, { label: 'Banque', width: 90 },
+        { label: 'RIB / N° compte', width: 150 }, { label: 'Montant', width: 90, align: 'right' },
+      ],
+      rows: rr.map((r: any) => [`${r.nom} ${r.prenoms}`, r.banque || '—', coord(r), money(num(r.calculation?.salaireNetPaye))]),
+      totals: ['', '', 'TOTAL', money(total)],
+    },
+    bodyAfter,
+    signature: ['Pour ' + (d.raison_sociale ?? "l'entreprise"), 'La Direction', '', '(signature et cachet)'],
+    footNote: `Document généré par Lexa (Nova Comptabilité) le ${dateFr()} — à vérifier et signer avant transmission à la banque.`,
+  });
+  return { filename: `courrier-virement-salaires-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: rr.length };
 }
 
 async function employerMeta(c: Client, dossierId: string): Promise<{ d: any; cur: string; money: (n: number) => string; meta: string[] }> {

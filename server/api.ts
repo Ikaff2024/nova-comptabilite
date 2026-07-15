@@ -1191,6 +1191,7 @@ export function createApi() {
     const month = Math.max(0, Math.min(11, Number(req.query.month) || 0));
     const out = await withUser(userId, (c) => {
       if (kind === 'ordre_virement') return payroll.ordreVirementPdf(c, req.params.id, year, month);
+      if (kind === 'courrier_virement') return payroll.courrierVirementPdf(c, req.params.id, year, month);
       if (kind === 'livre_paie') return payroll.livrePaiePdf(c, req.params.id, year, month);
       const e: any = new Error('Type de document inconnu'); e.status = 400; throw e;
     });

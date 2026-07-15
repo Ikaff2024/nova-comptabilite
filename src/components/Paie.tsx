@@ -120,6 +120,13 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
     finally { setBusy(null); }
   };
 
+  const downloadCourrierVirement = async () => {
+    setBusy('courrier'); setError(null);
+    try { await downloadAuthed(`/api/dossiers/${dossierId}/payroll/document?kind=courrier_virement&year=${year}&month=${month}`, `courrier-virement-salaires-${year}-${String(month + 1).padStart(2, '0')}.pdf`); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(null); }
+  };
+
   const totals = payslips.reduce((a, p) => ({ brut: a.brut + p.brut, net: a.net + p.net, cout: a.cout + p.cout }), { brut: 0, net: 0, cout: 0 });
   const comptabilise = payslips.length > 0 && payslips.every((p) => p.comptabilise);
   const activeCount = employees.filter((e) => e.actif).length;
@@ -192,6 +199,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
                 <button onClick={() => printDeclaration('cnps')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10"><FileText className="h-3.5 w-3.5" /> Bordereau CNPS</button>
                 <button onClick={() => printDeclaration('dgi')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10"><FileText className="h-3.5 w-3.5" /> Impôts sur salaires (DGI)</button>
                 <button onClick={downloadOrdreVirement} disabled={busy === 'ordre'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'ordre' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Banknote className="h-3.5 w-3.5" />} Ordre de virement</button>
+                <button onClick={downloadCourrierVirement} disabled={busy === 'courrier'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'courrier' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Courrier à la banque</button>
               </div>
               {comptabilise ? <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> OD de paie comptabilisée</span>
                 : <button onClick={post} disabled={busy === 'post'} className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">{busy === 'post' ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookCheck className="h-4 w-4" />} Comptabiliser l'OD de paie</button>}
