@@ -40,6 +40,8 @@ export function ttsEnabled(): boolean { return providersAvailable().length > 0; 
 export function cleanForTts(s: string): string {
   return (s || '')
     .replace(/\*\*/g, '').replace(/^#{1,4}\s+/gm, '')
+    .replace(/^[ \t]*[-*_=]{2,}[ \t]*$/gm, '')   // lignes de séparation --- *** ___ (non lues)
+    .replace(/\s[-–—]{2,}\s/g, ' ')              // tirets de séparation en ligne
     .replace(/^\s*[-•*]\s+/gm, '').replace(/^\s*\d+[.)]\s+/gm, '')
     .replace(/\|/g, ', ').replace(/[_`>]/g, '')
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{2190}-\u{21FF}]/gu, '')

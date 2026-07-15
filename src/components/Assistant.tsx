@@ -18,6 +18,8 @@ const TTS_OK = typeof window !== 'undefined' && 'speechSynthesis' in window;
 // mille »), et remplace devise/symboles par des mots.
 const forSpeech = (s: string) => s
   .replace(/\*\*/g, '').replace(/^#{1,4}\s+/gm, '')
+  .replace(/^[ \t]*[-*_=]{2,}[ \t]*$/gm, '')     // lignes de séparation --- *** ___ (non lues)
+  .replace(/\s[-–—]{2,}\s/g, ' ')                // tirets de séparation en ligne
   .replace(/^\s*[-•*]\s+/gm, '')                 // puces
   .replace(/^\s*\d+[.)]\s+/gm, '')               // listes numérotées (« 1. » lu « un point »)
   .replace(/\|/g, ', ').replace(/[_`>]/g, '')
@@ -67,6 +69,7 @@ function RichText({ text }: { text: string }) {
       continue;
     }
     if (isHead(line)) { blocks.push(<div key={blocks.length} className="mb-0.5 mt-2 font-semibold text-zinc-100">{inlineMd(line.replace(/^#{1,4}\s/, ''))}</div>); i++; continue; }
+    if (/^\s*[-*_]{3,}\s*$/.test(line)) { blocks.push(<hr key={blocks.length} className="my-2 border-white/10" />); i++; continue; }
     if (line.trim() === '') { i++; continue; }
     const para: string[] = [];
     while (i < lines.length && lines[i].trim() !== '' && !isTable(lines[i]) && !isBullet(lines[i]) && !isHead(lines[i])) { para.push(lines[i]); i++; }
