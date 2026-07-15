@@ -106,8 +106,21 @@ export function createApi() {
   });
 
   app.get('/api/health', async (_req, res) => {
-    try { await pool.query('select 1'); res.json({ ok: true, db: true, agent: agent.agentEnabled(), tts: tts.ttsEnabled(), telegram: telegram.telegramEnabled(), email: mail.emailEnabled(), service: 'nova-comptabilite-api' }); }
-    catch { res.status(503).json({ ok: false, db: false, agent: agent.agentEnabled(), tts: tts.ttsEnabled(), telegram: telegram.telegramEnabled(), email: mail.emailEnabled(), service: 'nova-comptabilite-api' }); }
+    const base = { agent: agent.agentEnabled(), tts: tts.ttsEnabled(), telegram: telegram.telegramEnabled(), email: mail.emailEnabled(), service: 'nova-comptabilite-api' };
+    try {
+      await pool.query('select 1');
+      // Diagnostic de schéma : confirme l'application des migrations récentes.
+      let schema: Record<string, boolean> = {};
+      try {
+        const { rows } = await pool.query(
+          `select
+             (select count(*) from information_schema.columns where table_schema='public' and table_name='dossiers' and column_name='secteur_activite') > 0 as secteur_activite,
+             (select count(*) from information_schema.tables  where table_schema='public' and table_name='catalog_items')   > 0 as catalog_items,
+             (select count(*) from information_schema.tables  where table_schema='public' and table_name='period_closures') > 0 as period_closures`);
+        schema = rows[0] ?? {};
+      } catch { /* diagnostic best-effort */ }
+      res.json({ ok: true, db: true, ...base, schema });
+    } catch { res.status(503).json({ ok: false, db: false, ...base }); }
   });
 
   // --- Agent nocturne : digest quotidien (déclenché par un cron externe) ------
