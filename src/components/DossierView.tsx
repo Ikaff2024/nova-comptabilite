@@ -415,10 +415,13 @@ function PlanTab({ dossierId }: { dossierId: string }) {
       </div>
 
       {creating && (
-        <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div><label className="mb-1 block text-xs text-zinc-500">Code</label><input value={code} onChange={(e) => setCode(e.target.value)} placeholder="6288" className="w-28 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
-          <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Intitulé</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Autres frais de télécommunication" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
-          <button type="submit" className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">Créer</button>
+        <form onSubmit={create} className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div><label className="mb-1 block text-xs text-zinc-500">Code (jusqu'à 8 chiffres)</label><input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" maxLength={8} placeholder="60110000" className="w-36 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
+            <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Intitulé</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Achat de tissu wax — fournisseur X" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+            <button type="submit" className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">Créer</button>
+          </div>
+          <p className="text-xs text-zinc-500">Le compte doit se rattacher au plan SYSCOHADA : créez un sous-compte détaillé en prolongeant un compte officiel (ex. <span className="font-mono text-zinc-400">6011</span> ou <span className="font-mono text-zinc-400">60110000</span> sous <span className="font-mono text-zinc-400">601</span>). Les codes non conformes sont refusés.</p>
         </form>
       )}
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}

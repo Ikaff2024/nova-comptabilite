@@ -209,35 +209,47 @@ export async function listAccounts(
 
 // --- Édition du plan comptable ----------------------------------------------
 
-// Dérive type/sens d'un compte à partir de sa classe (SYSCOHADA).
-function deriveAccountMeta(code: string): { classNo: number; type: string; side: string } {
-  const classNo = Number(code[0]);
-  switch (classNo) {
-    case 1: return { classNo, type: 'equity', side: 'credit' };
-    case 2: return { classNo, type: 'asset', side: 'debit' };
-    case 3: return { classNo, type: 'asset', side: 'debit' };
-    case 4: return { classNo, type: 'liability', side: 'credit' };
-    case 5: return { classNo, type: 'asset', side: 'debit' };
-    case 6: return { classNo, type: 'expense', side: 'debit' };
-    case 7: return { classNo, type: 'income', side: 'credit' };
-    case 8: return { classNo, type: 'income', side: 'credit' };
-    default: return { classNo: classNo || 9, type: 'analytic', side: 'debit' };
-  }
+// Cherche, dans le plan SYSCOHADA officiel (gabarit par défaut), le compte dont
+// le code est le plus long préfixe du code fourni. Sert à garantir qu'un compte
+// créé se rattache bien au référentiel SYSCOHADA (conformité), et à hériter sa
+// nature (classe, type, sens) du compte officiel parent.
+async function syscohadaReference(
+  c: Client, code: string,
+): Promise<{ account_code: string; class_no: number; account_type: string; normal_side: string; is_collective: boolean } | null> {
+  const prefixes: string[] = [];
+  for (let i = code.length; i >= 2; i--) prefixes.push(code.slice(0, i));
+  const { rows } = await c.query(
+    `select cta.account_code, cta.class_no, cta.account_type, cta.normal_side, cta.is_collective
+       from chart_template_accounts cta
+       join chart_templates t on t.id = cta.template_id and t.is_default
+      where cta.account_code = any($1)
+      order by length(cta.account_code) desc
+      limit 1`, [prefixes]);
+  return rows[0] ?? null;
 }
 
 export async function createAccount(
   c: Client, dossierId: string, input: { accountCode: string; label: string; isCollective?: boolean },
 ): Promise<{ id: string }> {
   const code = String(input.accountCode ?? '').trim();
-  if (!/^\d{2,}$/.test(code)) throw new Error('Code de compte invalide (au moins 2 chiffres).');
+  // Plan à 8 chiffres : un compte détaillé peut aller jusqu'à 8 positions.
+  if (!/^\d{2,8}$/.test(code)) throw new Error('Code de compte invalide : de 2 à 8 chiffres.');
   if (!input.label?.trim()) throw new Error('Intitulé requis.');
   const { rows: ex } = await c.query('select 1 from accounts where dossier_id=$1 and account_code=$2', [dossierId, code]);
   if (ex[0]) throw new Error(`Le compte ${code} existe déjà.`);
-  const d = deriveAccountMeta(code);
+
+  // Conformité SYSCOHADA : le compte doit se rattacher à un compte officiel
+  // (soit être ce compte, soit le prolonger — ex. 60110000 sous 601).
+  const ref = await syscohadaReference(c, code);
+  if (!ref) {
+    throw new Error(`Compte non conforme au plan SYSCOHADA : « ${code} » ne se rattache à aucun compte officiel. Un compte créé doit prolonger un compte SYSCOHADA existant (ex. 6011 ou 60110000 sous 601).`);
+  }
+  // Hérite la nature du compte officiel racine (plus fiable que la seule classe).
+  const meta = { classNo: ref.class_no, type: ref.account_type, side: ref.normal_side };
   const { rows } = await c.query(
     `insert into accounts(dossier_id, account_code, label, class_no, account_type, normal_side, is_collective, is_postable)
      values ($1,$2,$3,$4,$5::account_type,$6::account_nature,$7,true) returning id`,
-    [dossierId, code, input.label.trim(), d.classNo, d.type, d.side, !!input.isCollective || /^(40|41|42)/.test(code)],
+    [dossierId, code, input.label.trim(), meta.classNo, meta.type, meta.side, !!input.isCollective || ref.is_collective || /^(40|41|42)/.test(code)],
   );
   return { id: rows[0].id };
 }
