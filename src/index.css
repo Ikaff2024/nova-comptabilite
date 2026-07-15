@@ -5,6 +5,13 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --animate-lexa-typing: lexa-typing 1.2s ease-in-out infinite;
+}
+
+/* Bulle « Lexa écrit… » : points qui rebondissent façon messagerie. */
+@keyframes lexa-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-4px); opacity: 1; }
 }
 
 @layer base {

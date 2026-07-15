@@ -2,7 +2,7 @@ import { withUser } from '../db.js';
 import * as tg from '../domain/telegram.js';
 import * as agent from '../ai/agent.js';
 import * as usage from '../domain/usage.js';
-import { sendMessage, downloadFile, type TelegramUpdate } from './provider.js';
+import { sendMessage, sendTyping, downloadFile, type TelegramUpdate } from './provider.js';
 import { transcribeAudio } from '../ai/transcribe.js';
 import { mdToPlain } from '../textfmt.js';
 
@@ -50,13 +50,19 @@ export async function handleUpdate(up: TelegramUpdate): Promise<void> {
       return;
     }
 
-    const reply = await withUser(link.userId, async (c) => {
-      if (fromVoice) await usage.recordUsage(c, link.dossierId, 'whisper', 'whisper-1', { units: up.voiceDuration ?? 0 });
-      const history = await agent.loadHistory(c, link.dossierId, link.userId, 12);
-      const r = await agent.runAgent(c, link.dossierId, [...history, { role: 'user', content: message }]);
-      await agent.saveTurns(c, link.dossierId, link.userId, [{ role: 'user', content: message }, { role: 'assistant', content: r.reply }]);
-      return r.reply;
-    });
+    // « Lexa écrit… » : bulle animée maintenue tant que la réponse se prépare.
+    await sendTyping(up.chatId);
+    const typingTimer = setInterval(() => { sendTyping(up.chatId).catch(() => {}); }, 4500);
+    let reply: string;
+    try {
+      reply = await withUser(link.userId, async (c) => {
+        if (fromVoice) await usage.recordUsage(c, link.dossierId, 'whisper', 'whisper-1', { units: up.voiceDuration ?? 0 });
+        const history = await agent.loadHistory(c, link.dossierId, link.userId, 12);
+        const r = await agent.runAgent(c, link.dossierId, [...history, { role: 'user', content: message }]);
+        await agent.saveTurns(c, link.dossierId, link.userId, [{ role: 'user', content: message }, { role: 'assistant', content: r.reply }]);
+        return r.reply;
+      });
+    } finally { clearInterval(typingTimer); }
     // Sur note vocale, confirme ce qui a été compris (les STT peuvent se tromper).
     const out = fromVoice ? `🎤 J'ai compris : « ${message} »\n\n${mdToPlain(reply)}` : mdToPlain(reply);
     await sendMessage(up.chatId, out);

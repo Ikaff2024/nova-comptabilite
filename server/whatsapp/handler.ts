@@ -1,7 +1,7 @@
 import { withUser } from '../db.js';
 import * as wa from '../domain/whatsapp.js';
 import * as agent from '../ai/agent.js';
-import { sendText, type InboundMessage } from './provider.js';
+import { sendText, sendTyping, type InboundMessage } from './provider.js';
 import { mdToPlain } from '../textfmt.js';
 
 // ============================================================================
@@ -20,6 +20,8 @@ export async function handleInbound(messages: InboundMessage[]): Promise<void> {
       }
       if (m.type === 'text' && m.text?.trim()) {
         const text = m.text.trim();
+        // « Lexa écrit… » : indicateur de saisie pendant qu'elle prépare sa réponse.
+        if (m.id) await sendTyping(m.id);
         const reply = await withUser(link.userId, async (c) => {
           const history = await agent.loadHistory(c, link.dossierId, link.userId, 12);
           const r = await agent.runAgent(c, link.dossierId, [...history, { role: 'user', content: text }]);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle, BookOpen, Building2, Gauge } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle, BookOpen, Building2, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { api, type Cabinet, type Dossier, type AuthUser } from './lib/api';
 import { getToken, clearToken, isWelcomed } from './lib/session';
 import Auth from './components/Auth';
@@ -24,6 +24,15 @@ export default function App() {
   const refreshMe = async () => { try { setUser(await api.me()); } catch { /* ignore */ } };
   const [showGuide, setShowGuide] = useState(false);
   const [dashKey, setDashKey] = useState(0); // force refresh du dashboard après démo
+  // Barre latérale masquable (pour un écran plus dégagé) — préférence mémorisée.
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try { return localStorage.getItem('nova.sidebar') !== 'closed'; } catch { return true; }
+  });
+  const toggleSidebar = () => setSidebarOpen((o) => {
+    const next = !o;
+    try { localStorage.setItem('nova.sidebar', next ? 'open' : 'closed'); } catch { /* ignore */ }
+    return next;
+  });
 
   const openDossierById = async (id: string) => {
     const list = await api.dossiers();
@@ -84,12 +93,17 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-zinc-950 font-sans text-zinc-50 selection:bg-emerald-500/30">
-      <aside className="flex w-64 flex-col border-r border-white/5 bg-zinc-950/50 p-6 backdrop-blur-2xl">
+      {sidebarOpen && (
+      <aside className="flex w-64 shrink-0 flex-col border-r border-white/5 bg-zinc-950/50 p-6 backdrop-blur-2xl">
         <div className="flex items-center gap-3 px-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg shadow-emerald-500/20">
             <Hexagon className="h-6 w-6 text-zinc-950" fill="currentColor" />
           </div>
           <span className="font-display text-xl font-bold tracking-tight text-white">Nova</span>
+          <button onClick={toggleSidebar} title="Masquer la barre latérale"
+            className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-200">
+            <PanelLeftClose className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="mt-8 rounded-xl border border-white/5 bg-white/5 px-3 py-2.5">
@@ -132,8 +146,15 @@ export default function App() {
           </button>
         </div>
       </aside>
+      )}
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
+      <main className="relative flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
+        {!sidebarOpen && (
+          <button onClick={toggleSidebar} title="Afficher la barre latérale"
+            className="sticky top-0 z-10 -mt-2 mb-2 flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900/80 text-zinc-300 backdrop-blur-xl transition-colors hover:bg-white/10 hover:text-white">
+            <PanelLeftOpen className="h-5 w-5" />
+          </button>
+        )}
         <div className="mx-auto max-w-[1760px]">
           {selected
             ? (selected.role === 'client' || selected.role === 'lecture')

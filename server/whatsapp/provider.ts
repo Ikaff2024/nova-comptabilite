@@ -40,6 +40,7 @@ export function verifySignature(rawBody: string, header?: string): boolean {
 
 export interface InboundMessage {
   from: string;                 // numéro E.164 sans '+'
+  id?: string;                  // id du message entrant (requis pour l'indicateur de saisie)
   type: 'text' | 'image' | 'document' | 'audio' | 'other';
   text?: string;
   mediaId?: string;
@@ -52,7 +53,7 @@ export function parseInbound(body: any): InboundMessage[] {
   for (const entry of body?.entry ?? []) {
     for (const change of entry?.changes ?? []) {
       for (const m of change?.value?.messages ?? []) {
-        const base = { from: normalizePhone(m.from) };
+        const base = { from: normalizePhone(m.from), id: m.id as string | undefined };
         if (m.type === 'text') out.push({ ...base, type: 'text', text: m.text?.body ?? '' });
         else if (m.type === 'image') out.push({ ...base, type: 'image', mediaId: m.image?.id, mimeType: m.image?.mime_type });
         else if (m.type === 'document') out.push({ ...base, type: 'document', mediaId: m.document?.id, mimeType: m.document?.mime_type });
@@ -87,6 +88,20 @@ export async function sendText(to: string, body: string): Promise<void> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text, preview_url: false } }),
   });
+}
+
+// Accuse réception d'un message entrant en affichant l'indicateur « en train
+// d'écrire… » côté WhatsApp. Il reste visible ~25 s ou jusqu'à l'envoi de la
+// réponse. Best-effort : ne bloque jamais le traitement du message.
+export async function sendTyping(messageId: string): Promise<void> {
+  if (!whatsappEnabled() || !messageId) return;
+  try {
+    await graph(`${phoneId()}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: messageId, typing_indicator: { type: 'text' } }),
+    });
+  } catch { /* best-effort */ }
 }
 
 // Télécharge un média entrant (2 appels Graph : métadonnée -> URL -> binaire).

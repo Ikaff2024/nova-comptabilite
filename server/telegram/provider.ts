@@ -42,6 +42,22 @@ export async function downloadFile(fileId: string): Promise<Buffer | null> {
   } catch { return null; }
 }
 
+// Indicateur « en train d'écrire… » (bulle animée côté Telegram). Dure ~5 s
+// puis disparaît : à ré-émettre périodiquement tant que Lexa réfléchit.
+export async function sendTyping(chatId: string): Promise<void> {
+  if (!telegramEnabled()) return;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 8000);
+  try {
+    await fetch(`https://api.telegram.org/bot${token()}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
+      signal: controller.signal,
+    });
+  } catch { /* best-effort */ } finally { clearTimeout(t); }
+}
+
 export async function sendMessage(chatId: string, text: string): Promise<void> {
   if (!telegramEnabled()) return;
   const controller = new AbortController();

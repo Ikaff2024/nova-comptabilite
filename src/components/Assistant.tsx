@@ -237,7 +237,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   }
 
   return (
-    <div className="flex h-[70vh] flex-col rounded-2xl border border-white/10 bg-white/5">
+    <div className="flex h-[calc(100dvh-8.5rem)] min-h-[460px] flex-col rounded-2xl border border-white/10 bg-white/5">
       <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15"><Sparkles className="h-4.5 w-4.5 text-emerald-400" /></div>
         <div>
@@ -332,7 +332,14 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
         {loading && (
           <div className="flex gap-3">
             <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15"><Sparkles className="h-4 w-4 text-emerald-400" /></div>
-            <div className="flex items-center gap-2 rounded-2xl bg-zinc-900/70 px-3.5 py-2.5 text-sm text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Analyse en cours…</div>
+            <div className="flex items-center gap-2 rounded-2xl bg-zinc-900/70 px-3.5 py-3 text-sm text-zinc-400">
+              <span className="flex items-end gap-1" aria-label="Lexa est en train d'écrire" role="status">
+                <span className="h-1.5 w-1.5 animate-lexa-typing rounded-full bg-emerald-400" style={{ animationDelay: '0ms' }} />
+                <span className="h-1.5 w-1.5 animate-lexa-typing rounded-full bg-emerald-400" style={{ animationDelay: '150ms' }} />
+                <span className="h-1.5 w-1.5 animate-lexa-typing rounded-full bg-emerald-400" style={{ animationDelay: '300ms' }} />
+              </span>
+              <span className="text-zinc-500">Lexa écrit…</span>
+            </div>
           </div>
         )}
       </div>
