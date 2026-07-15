@@ -161,7 +161,6 @@ async function dossierContext(c: Client, dossierId: string): Promise<{ text: str
     synthetique: 'relève de l\'impôt synthétique (pas de TVA à collecter) ; obligations déclaratives allégées.',
   };
   const idBits: string[] = [];
-  if (d.secteur_activite) idBits.push(`activité : ${d.secteur_activite}`);
   if (d.forme_juridique) idBits.push(`forme ${d.forme_juridique}`);
   if (d.regime_fiscal) idBits.push(`régime fiscal ${REGIME_FR[d.regime_fiscal] ?? d.regime_fiscal}`);
   idBits.push(`système comptable SYSCOHADA ${d.accounting_system === 'smt' ? 'minimal de trésorerie (SMT)' : 'normal'}`);
@@ -456,7 +455,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'personnel': return cap(await payroll.listEmployees(c, dossierId), 100);
     case 'livre_paie': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return { annee: y, mois: mo + 1, bulletins: await payroll.listPayslips(c, dossierId, y, mo) }; }
     case 'etat_rh': { const abs = await payroll.listAbsences(c, dossierId); const adv = await payroll.listAdvances(c, dossierId); return { absences_non_payees: abs.filter((a: any) => !a.paye), avances_en_cours: adv.filter((a: any) => a.restant > 0) }; }
-    case 'profil_entreprise': { const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]); const d: any = rows[0]?.j ?? {}; return { raison_sociale: d.raison_sociale, secteur_activite: d.secteur_activite ?? null, forme_juridique: d.forme_juridique ?? null, regime_fiscal: d.regime_fiscal ?? null, ncc_ifu: d.tax_id ?? null, rccm: d.rccm ?? null, banque: d.bank_name ?? null, rib: d.rib ?? null, pays: d.country ?? 'CI', systeme_comptable: d.accounting_system }; }
+    case 'profil_entreprise': { const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]); const d: any = rows[0]?.j ?? {}; return { raison_sociale: d.raison_sociale, forme_juridique: d.forme_juridique ?? null, regime_fiscal: d.regime_fiscal ?? null, ncc_ifu: d.tax_id ?? null, rccm: d.rccm ?? null, banque: d.bank_name ?? null, rib: d.rib ?? null, pays: d.country ?? 'CI', systeme_comptable: d.accounting_system }; }
     case 'catalogue': {
       const { rows } = await c.query(
         `select kind, reference, label, unit, unit_price, vat_rate, account_code

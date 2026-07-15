@@ -114,7 +114,6 @@ export function createApi() {
       try {
         const { rows } = await pool.query(
           `select
-             (select count(*) from information_schema.columns where table_schema='public' and table_name='dossiers' and column_name='secteur_activite') > 0 as secteur_activite,
              (select count(*) from information_schema.tables  where table_schema='public' and table_name='catalog_items')   > 0 as catalog_items,
              (select count(*) from information_schema.tables  where table_schema='public' and table_name='period_closures') > 0 as period_closures`);
         schema = rows[0] ?? {};
@@ -310,12 +309,6 @@ export function createApi() {
     res.status(201).json(out);
   }));
 
-  // Profil métier du dossier (secteur d'activité → oriente l'imputation IA).
-  app.patch('/api/dossiers/:id/profil', h(async (req, res) => {
-    const userId = requireUser(req);
-    await withUser(userId, (c) => acc.updateDossierProfil(c, req.params.id, req.body ?? {}));
-    res.status(204).end();
-  }));
 
   app.get('/api/dossiers/:id/accounts', h(async (req, res) => {
     const userId = requireUser(req);
@@ -404,7 +397,7 @@ export function createApi() {
       ]);
       const p = await extractDocument({
         mimeType, dataBase64,
-        context: { country: dossier.country, currency: dossier.base_currency, accountingSystem: dossier.accounting_system, companyName: dossier.raison_sociale, activity: dossier.secteur_activite ?? undefined, mappings, rules, chart },
+        context: { country: dossier.country, currency: dossier.base_currency, accountingSystem: dossier.accounting_system, companyName: dossier.raison_sociale, mappings, rules, chart },
       });
 
       // Contrôle destinataire : signale (sans bloquer) une pièce qui ne semble

@@ -52,7 +52,7 @@ export async function downloadAuthed(path: string, filename: string): Promise<vo
 export interface Cabinet { id: string; name: string; country: string; base_currency: string; }
 export interface Dossier {
   id: string; cabinet_id: string; raison_sociale: string; country: string;
-  base_currency: string; accounting_system: string; secteur_activite?: string | null; is_active: boolean;
+  base_currency: string; accounting_system: string; is_active: boolean;
   role?: string | null; // rôle du demandeur : 'staff' | 'client' | 'lecture' | …
 }
 export interface DossierClient { userId: string; email: string; name: string | null; role: string; createdAt: string; }
@@ -357,10 +357,8 @@ export const api = {
   onboard: (name: string, country: string) =>
     req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country }) }),
   dossiers: () => req<Dossier[]>('/api/dossiers'),
-  createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string; secteurActivite?: string }) =>
+  createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string }) =>
     req<{ id: string; accounts: number }>('/api/dossiers', { method: 'POST', body: JSON.stringify(input) }),
-  updateDossierProfil: (dossierId: string, input: { secteurActivite?: string }) =>
-    req<void>(`/api/dossiers/${dossierId}/profil`, { method: 'PATCH', body: JSON.stringify(input) }),
   accounts: (dossierId: string, q?: string, all?: boolean) =>
     req<Account[]>(`/api/dossiers/${dossierId}/accounts?${q ? `q=${encodeURIComponent(q)}&` : ''}${all ? 'all=1' : ''}`),
   createAccount: (dossierId: string, body: { accountCode: string; label: string; isCollective?: boolean }) =>

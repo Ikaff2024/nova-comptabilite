@@ -21,6 +21,9 @@ export default function Clotures({ dossierId }: { dossierId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<{ year: number; month: number }>({ year: new Date().getUTCFullYear(), month: new Date().getUTCMonth() + 1 });
+  // Double validation de la clôture (action lourde) : étape de confirmation + case à cocher.
+  const [confirming, setConfirming] = useState(false);
+  const [ack, setAck] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -30,10 +33,12 @@ export default function Clotures({ dossierId }: { dossierId: string }) {
   };
   useEffect(() => { load(); }, [dossierId]);
 
-  const close = async () => {
-    if (!confirm(`Clôturer ${MOIS[sel.month - 1]} ${sel.year} ? Plus aucune écriture ne pourra y être ajoutée (ni dans les mois antérieurs).`)) return;
+  const startClose = () => { setError(null); setAck(false); setConfirming(true); };
+  const cancelClose = () => { setConfirming(false); setAck(false); };
+  const confirmClose = async () => {
+    if (!ack) return;
     setBusy(true); setError(null);
-    try { await api.closePeriod(dossierId, sel.year, sel.month); await load(); }
+    try { await api.closePeriod(dossierId, sel.year, sel.month); setConfirming(false); setAck(false); await load(); }
     catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const reopen = async (year: number, month: number) => {
@@ -75,11 +80,33 @@ export default function Clotures({ dossierId }: { dossierId: string }) {
             <input type="number" value={sel.year} onChange={(e) => setSel((s) => ({ ...s, year: Number(e.target.value) }))}
               className="w-24 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" />
           </div>
-          <button onClick={close} disabled={busy}
+          <button onClick={startClose} disabled={busy || confirming}
             className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />} Clôturer ce mois
+            <Lock className="h-4 w-4" /> Clôturer ce mois
           </button>
         </div>
+
+        {/* Double validation : confirmation explicite (case à cocher + bouton). */}
+        {confirming && (
+          <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/[0.07] p-4">
+            <div className="flex items-center gap-2 font-semibold text-amber-300"><AlertTriangle className="h-4 w-4" /> Confirmer la clôture de {MOIS[sel.month - 1]} {sel.year}</div>
+            <p className="mt-1.5 text-sm text-amber-200/90">
+              Cette opération verrouille {MOIS[sel.month - 1]} {sel.year} et tous les mois antérieurs : plus aucune écriture ne pourra y être saisie ni modifiée.
+              Seul le dernier mois clôturé pourra être rouvert.
+            </p>
+            <label className="mt-3 flex items-center gap-2 text-sm text-amber-100">
+              <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="accent-amber-500" />
+              Je comprends et je confirme vouloir clôturer cette période.
+            </label>
+            <div className="mt-3 flex items-center gap-3">
+              <button onClick={confirmClose} disabled={!ack || busy}
+                className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-amber-400 disabled:opacity-40">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />} Confirmer la clôture
+              </button>
+              <button onClick={cancelClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {data && data.closures.length > 0 && (

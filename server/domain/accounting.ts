@@ -1,6 +1,6 @@
 import type { Client } from '../db.js';
 import { recordAudit } from './audit.js';
-import { columnExists, tableExists } from '../schema-cache.js';
+import { tableExists } from '../schema-cache.js';
 
 // ============================================================================
 // Couche domaine comptable — opérations sûres au-dessus du ledger Postgres.
@@ -81,13 +81,8 @@ export async function listCabinets(c: Client): Promise<any[]> {
 }
 
 export async function listDossiers(c: Client): Promise<any[]> {
-  // Tolère un schéma en retard : la colonne secteur_activite peut ne pas encore
-  // exister en prod (migration non appliquée). On ne la sélectionne que si elle
-  // existe, sinon on renvoie null — l'API ne casse jamais.
-  const hasSecteur = await columnExists('dossiers', 'secteur_activite');
-  const secteurSel = hasSecteur ? 'secteur_activite' : 'null::text as secteur_activite';
   const { rows } = await c.query(
-    `select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, ${secteurSel}, is_active,
+    `select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, is_active,
             dossier_role_for(id) as role
        from dossiers order by raison_sociale`,
   );
@@ -102,26 +97,16 @@ export interface OpenDossierInput {
   accountingSystem?: AccountingSystem;
   taxId?: string;
   rccm?: string;
-  /** Secteur/nature d'activité (oriente l'imputation : immo vs marchandise…). */
-  secteurActivite?: string;
   /** Instancie le plan SYSCOHADA dans le dossier (défaut: true). */
   instantiateChart?: boolean;
 }
 
 export async function openDossier(c: Client, input: OpenDossierInput): Promise<{ id: string; accounts: number }> {
-  // Insère secteur_activite seulement si la colonne existe (schéma tolérant).
-  const hasSecteur = await columnExists('dossiers', 'secteur_activite');
-  const { rows } = hasSecteur
-    ? await c.query(
-        `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm, secteur_activite)
-         values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
-        [input.cabinetId, input.raisonSociale, input.country, input.currency ?? 'XOF', input.accountingSystem ?? 'normal',
-         input.taxId ?? null, input.rccm ?? null, input.secteurActivite?.trim() || null])
-    : await c.query(
-        `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm)
-         values ($1,$2,$3,$4,$5,$6,$7) returning id`,
-        [input.cabinetId, input.raisonSociale, input.country, input.currency ?? 'XOF', input.accountingSystem ?? 'normal',
-         input.taxId ?? null, input.rccm ?? null]);
+  const { rows } = await c.query(
+    `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm)
+     values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+    [input.cabinetId, input.raisonSociale, input.country, input.currency ?? 'XOF', input.accountingSystem ?? 'normal',
+     input.taxId ?? null, input.rccm ?? null]);
   const id = rows[0].id;
   let accounts = 0;
   if (input.instantiateChart !== false) {
@@ -129,15 +114,6 @@ export async function openDossier(c: Client, input: OpenDossierInput): Promise<{
     accounts = r.rows[0].n;
   }
   return { id, accounts };
-}
-
-// Met à jour le profil « métier » du dossier (secteur d'activité, qui oriente
-// l'imputation). Extensible aux autres champs de profil ultérieurement.
-export async function updateDossierProfil(c: Client, dossierId: string, input: { secteurActivite?: string }): Promise<void> {
-  if (!(await columnExists('dossiers', 'secteur_activite'))) {
-    throw new Error("Le secteur d'activité n'est pas encore disponible (mise à jour de la base requise). Réessayez plus tard.");
-  }
-  await c.query('update dossiers set secteur_activite=$2 where id=$1', [dossierId, (input.secteurActivite ?? '').trim() || null]);
 }
 
 export async function createFiscalYear(

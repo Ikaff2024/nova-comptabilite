@@ -18,8 +18,6 @@ export interface CaptureContext {
   accountingSystem: string;
   /** Raison sociale du dossier : sert à vérifier que la pièce lui est bien adressée. */
   companyName?: string;
-  /** Secteur/nature d'activité du dossier : oriente l'imputation (immo vs marchandise…). */
-  activity?: string;
   /** Mémoire de codification du dossier (libellé/tiers -> compte), apprise des validations. */
   mappings?: { keyword: string; accountCode: string }[];
   /** Règles manuelles du cabinet : priorité absolue. */
@@ -66,13 +64,7 @@ Logique de l'écriture :
 - entryDate au format YYYY-MM-DD. confidence entre 0 et 1.
 - recipientName : recopie le nom du DESTINATAIRE/CLIENT figurant sur la pièce (mentions « À : », « Client : », « Facturé à », « Doit : »). Laisse vide si absent.
 
-DESTINATAIRE : si la pièce indique un destinataire/client dont le nom NE correspond PAS à l'entreprise du dossier (fournie dans le message), ajoute un warning explicite du type « Pièce au nom de "X", pas de l'entreprise — à vérifier ». Ne bloque rien : propose quand même l'écriture.
-
-IMPUTATION SELON L'ACTIVITÉ (déterminant) : la nature d'un même bien dépend de l'ACTIVITÉ de l'entreprise (fournie dans le message).
-- Un bien destiné à être REVENDU dans le cadre de l'activité est une MARCHANDISE (achat en classe 601/stocks classe 3), PAS une immobilisation. Ex. : un véhicule acheté par un concessionnaire/garage automobile = marchandise ; du matériel informatique acheté par un revendeur d'informatique = marchandise.
-- Le MÊME bien, s'il sert durablement l'exploitation (pas revendu), est une IMMOBILISATION (classe 2). Ex. : un véhicule utilisé par un cabinet de services = immobilisation (2451) ; un ordinateur utilisé au bureau = immobilisation (2444).
-- Matières premières/intrants transformés par l'activité = classe 602/stocks. Consommables non stockés = classe 60/61/62 selon l'intitulé.
-En cas de doute, choisis l'imputation cohérente avec l'activité déclarée et signale-le dans un warning.`;
+DESTINATAIRE : si la pièce indique un destinataire/client dont le nom NE correspond PAS à l'entreprise du dossier (fournie dans le message), ajoute un warning explicite du type « Pièce au nom de "X", pas de l'entreprise — à vérifier ». Ne bloque rien : propose quand même l'écriture.`;
 
 // Schéma partagé : responseSchema Gemini ET input_schema de l'outil Claude.
 const RESPONSE_SCHEMA = {
@@ -138,9 +130,6 @@ const userText = (ctx: CaptureContext) => {
   let t = `Dossier : pays ${ctx.country}, devise ${ctx.currency}, système ${ctx.accountingSystem}. Extrais l'écriture de cette pièce.`;
   if (ctx.companyName?.trim()) {
     t += `\n\nENTREPRISE DU DOSSIER : « ${ctx.companyName.trim()} ». La pièce est normalement établie à ce nom. Renseigne recipientName et, si le destinataire de la pièce ne correspond pas à cette entreprise, ajoute un warning (sans bloquer).`;
-  }
-  if (ctx.activity?.trim()) {
-    t += `\n\nACTIVITÉ DE L'ENTREPRISE (déterminante pour l'imputation immobilisation vs marchandise/stock) : ${ctx.activity.trim()}. Impute chaque bien en cohérence avec cette activité (voir la règle « IMPUTATION SELON L'ACTIVITÉ »).`;
   }
   if (ctx.rules?.length) {
     const rules = ctx.rules.map((r) => `- "${r.keyword}" => ${r.accountCode}`).join('\n');
