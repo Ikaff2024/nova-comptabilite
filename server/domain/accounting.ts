@@ -1,5 +1,6 @@
 import type { Client } from '../db.js';
 import { recordAudit } from './audit.js';
+import { columnExists, tableExists } from '../schema-cache.js';
 
 // ============================================================================
 // Couche domaine comptable — opérations sûres au-dessus du ledger Postgres.
@@ -80,8 +81,13 @@ export async function listCabinets(c: Client): Promise<any[]> {
 }
 
 export async function listDossiers(c: Client): Promise<any[]> {
+  // Tolère un schéma en retard : la colonne secteur_activite peut ne pas encore
+  // exister en prod (migration non appliquée). On ne la sélectionne que si elle
+  // existe, sinon on renvoie null — l'API ne casse jamais.
+  const hasSecteur = await columnExists('dossiers', 'secteur_activite');
+  const secteurSel = hasSecteur ? 'secteur_activite' : 'null::text as secteur_activite';
   const { rows } = await c.query(
-    `select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, secteur_activite, is_active,
+    `select id, cabinet_id, raison_sociale, country, base_currency, accounting_system, ${secteurSel}, is_active,
             dossier_role_for(id) as role
        from dossiers order by raison_sociale`,
   );
@@ -103,15 +109,19 @@ export interface OpenDossierInput {
 }
 
 export async function openDossier(c: Client, input: OpenDossierInput): Promise<{ id: string; accounts: number }> {
-  const { rows } = await c.query(
-    `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm, secteur_activite)
-     values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
-    [
-      input.cabinetId, input.raisonSociale, input.country,
-      input.currency ?? 'XOF', input.accountingSystem ?? 'normal',
-      input.taxId ?? null, input.rccm ?? null, input.secteurActivite?.trim() || null,
-    ],
-  );
+  // Insère secteur_activite seulement si la colonne existe (schéma tolérant).
+  const hasSecteur = await columnExists('dossiers', 'secteur_activite');
+  const { rows } = hasSecteur
+    ? await c.query(
+        `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm, secteur_activite)
+         values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+        [input.cabinetId, input.raisonSociale, input.country, input.currency ?? 'XOF', input.accountingSystem ?? 'normal',
+         input.taxId ?? null, input.rccm ?? null, input.secteurActivite?.trim() || null])
+    : await c.query(
+        `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm)
+         values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+        [input.cabinetId, input.raisonSociale, input.country, input.currency ?? 'XOF', input.accountingSystem ?? 'normal',
+         input.taxId ?? null, input.rccm ?? null]);
   const id = rows[0].id;
   let accounts = 0;
   if (input.instantiateChart !== false) {
@@ -124,6 +134,9 @@ export async function openDossier(c: Client, input: OpenDossierInput): Promise<{
 // Met à jour le profil « métier » du dossier (secteur d'activité, qui oriente
 // l'imputation). Extensible aux autres champs de profil ultérieurement.
 export async function updateDossierProfil(c: Client, dossierId: string, input: { secteurActivite?: string }): Promise<void> {
+  if (!(await columnExists('dossiers', 'secteur_activite'))) {
+    throw new Error("Le secteur d'activité n'est pas encore disponible (mise à jour de la base requise). Réessayez plus tard.");
+  }
   await c.query('update dossiers set secteur_activite=$2 where id=$1', [dossierId, (input.secteurActivite ?? '').trim() || null]);
 }
 
@@ -292,6 +305,20 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
   if (input.entryDate < fyr[0].start || input.entryDate > fyr[0].end) {
     const fr = (s: string) => s.split('-').reverse().join('/');
     throw new Error(`La date ${fr(input.entryDate)} est hors de l'exercice « ${fyr[0].label} » (${fr(fyr[0].start)} – ${fr(fyr[0].end)}). Choisissez l'exercice correspondant ou une date dans l'exercice.`);
+  }
+
+  // Garde-fou : refuser une écriture dans un mois clôturé (clôtures mensuelles).
+  // Tolérant : si la table n'existe pas encore (migration non appliquée), on saute.
+  if (await tableExists('period_closures')) {
+    const ey = Number(input.entryDate.slice(0, 4)), em = Number(input.entryDate.slice(5, 7));
+    const { rows: closed } = await c.query(
+      'select 1 from period_closures where dossier_id=$1 and (year*12 + month) >= ($2*12 + $3) limit 1',
+      [input.dossierId, ey, em],
+    );
+    if (closed[0]) {
+      const fr = (s: string) => s.split('-').reverse().join('/');
+      throw new Error(`La période ${em}/${ey} est clôturée : aucune écriture ne peut y être ajoutée (date ${fr(input.entryDate)}). Rouvrez le mois pour saisir.`);
+    }
   }
 
   // Résolution des comptes par code (dans le périmètre RLS du dossier)

@@ -212,6 +212,8 @@ export interface Purchase {
 export interface PurchaseLine { id?: string; line_no?: number; description: string; account_code: string; analytic_axis?: string | null; amount_ht: number; vat_rate: number; amount_tva?: number; }
 export interface PurchaseDetail extends Purchase { counterparty_id: string | null; notes: string | null; lines: PurchaseLine[]; }
 export interface PurchaseDuplicate { id: string; supplier_name: string; supplier_ref: string | null; invoice_date: string; total_ttc: number; status: string; reason: 'ref' | 'amount'; }
+export interface PeriodClosure { year: number; month: number; label: string; closed_at: string; }
+export interface ClosuresData { closures: PeriodClosure[]; closedThrough: { year: number; month: number; label: string } | null; }
 export interface CatalogItem { id: string; kind: 'bien' | 'service'; reference: string | null; label: string; unit: string | null; unit_price: number; vat_rate: number; account_code: string; active: boolean; }
 export interface CatalogItemInput { kind?: 'bien' | 'service'; reference?: string; label: string; unit?: string; unitPrice?: number; vatRate?: number; accountCode?: string; active?: boolean; }
 export interface SupplierAging {

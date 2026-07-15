@@ -24,6 +24,7 @@ import * as tiers from './domain/tiers.js';
 import * as invoicing from './domain/invoicing.js';
 import * as purchases from './domain/purchases.js';
 import * as catalog from './domain/catalog.js';
+import * as closures from './domain/closures.js';
 import * as tax from './domain/tax.js';
 import * as importbalance from './domain/importbalance.js';
 import * as assets from './domain/assets.js';
@@ -352,6 +353,24 @@ export function createApi() {
   app.post('/api/dossiers/:id/setup', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => acc.setupDossierDefaults(c, req.params.id)));
+  }));
+
+  // --- Clôtures mensuelles (verrouillage de période) --------------------------
+  app.get('/api/dossiers/:id/closures', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => closures.listClosures(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/closures', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { year, month } = req.body ?? {};
+    if (!year || !month) { const e: any = new Error('year et month requis'); e.status = 400; throw e; }
+    await withUser(userId, (c) => closures.closePeriod(c, req.params.id, Number(year), Number(month), userId));
+    res.status(201).end();
+  }));
+  app.delete('/api/dossiers/:id/closures/:year/:month', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => closures.reopenPeriod(c, req.params.id, Number(req.params.year), Number(req.params.month)));
+    res.status(204).end();
   }));
 
   // Capture IA : pièce -> proposition d'écriture (NE valide pas, ne poste pas).

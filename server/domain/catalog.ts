@@ -1,4 +1,5 @@
 import type { Client } from '../db.js';
+import { tableExists } from '../schema-cache.js';
 
 // ============================================================================
 // Catalogue des articles/services vendus. Enregistré en amont (désignation,
@@ -22,6 +23,7 @@ const SELECT = `id, kind, reference, label, unit, unit_price, vat_rate, account_
 const mapRow = (r: any) => ({ ...r, unit_price: Number(r.unit_price), vat_rate: Number(r.vat_rate) });
 
 export async function listCatalog(c: Client, dossierId: string, includeInactive = false): Promise<any[]> {
+  if (!(await tableExists('catalog_items'))) return []; // schéma en retard : catalogue vide
   const { rows } = await c.query(
     `select ${SELECT} from catalog_items where dossier_id=$1 ${includeInactive ? '' : 'and active'}
       order by active desc, label`, [dossierId]);
@@ -37,6 +39,7 @@ function defaultAccount(kind: string | undefined, provided?: string): string {
 }
 
 export async function createCatalogItem(c: Client, dossierId: string, input: CatalogItemInput): Promise<{ id: string }> {
+  if (!(await tableExists('catalog_items'))) throw new Error('Le catalogue n\'est pas encore disponible (mise à jour de la base requise).');
   if (!input.label?.trim()) throw new Error('Désignation requise');
   const kind = input.kind === 'service' ? 'service' : 'bien';
   const { rows } = await c.query(
@@ -71,6 +74,7 @@ export async function deleteCatalogItem(c: Client, dossierId: string, id: string
 // Données de démonstration : articles/services réalistes (commerce de textile
 // + prestations), avec prix, TVA et comptes de produit cohérents.
 export async function seedDemoCatalog(c: Client, dossierId: string): Promise<void> {
+  if (!(await tableExists('catalog_items'))) return; // schéma en retard : on saute le seed
   const { rows } = await c.query('select count(*)::int as n from catalog_items where dossier_id=$1', [dossierId]);
   if (rows[0].n > 0) return;
   const items: CatalogItemInput[] = [
