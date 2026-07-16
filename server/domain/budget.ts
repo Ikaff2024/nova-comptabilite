@@ -130,3 +130,47 @@ export async function budgetReport(c: Client, dossierId: string, fiscalYearId: s
     },
   };
 }
+
+// --- Forecast glissant (MVP copilote budgétaire) -----------------------------
+// Prend le budget annuel + le réalisé à date, et PROJETTE la fin d'année par
+// extrapolation linéaire du rythme (run-rate) : projeté = réalisé / fraction
+// d'année écoulée. Compare aussi le réalisé au budget « au prorata temporel »
+// (écart de rythme : en avance / en retard). Moteur 100 % déterministe : Lexa
+// se contente d'expliquer ces chiffres, elle n'en invente aucun.
+export async function rollingForecast(c: Client, dossierId: string, fiscalYearId: string, asOf?: string) {
+  const { rows: fy } = await c.query(
+    "select label, to_char(start_date,'YYYY-MM-DD') as s, to_char(end_date,'YYYY-MM-DD') as e from fiscal_years where dossier_id=$1 and id=$2",
+    [dossierId, fiscalYearId]);
+  if (!fy[0]) throw new Error('Exercice introuvable');
+  const start = new Date(`${fy[0].s}T00:00:00Z`).getTime();
+  const end = new Date(`${fy[0].e}T00:00:00Z`).getTime();
+  const now = new Date(`${(asOf || new Date().toISOString().slice(0, 10))}T00:00:00Z`).getTime();
+  const total = Math.max(1, end - start);
+  const frac = Math.min(1, Math.max(0, (now - start) / total)); // fraction d'année écoulée (0..1)
+  const monthsElapsed = Math.round(frac * 12 * 10) / 10;
+  const project = (realise: number) => (frac > 0 ? Math.round(realise / frac) : Math.round(realise));
+
+  const base = await budgetReport(c, dossierId, fiscalYearId);
+  const rows = base.rows.map((r) => {
+    const budgetProrata = Math.round(r.budget * frac);
+    const projete = project(r.realise);
+    return {
+      ...r,
+      budgetProrata,                                   // budget attendu à ce stade (prorata temporel)
+      ecartRythme: Math.round(r.realise - budgetProrata), // >0 : au-dessus du rythme prévu
+      projete,                                         // projection fin d'année (run-rate)
+      ecartProjete: Math.round(projete - r.budget),    // projeté vs budget annuel
+    };
+  });
+  const t = base.totals;
+  const produitsProjete = project(t.produitsRealise), chargesProjete = project(t.chargesRealise);
+  return {
+    period: { label: fy[0].label, start: fy[0].s, end: fy[0].e, monthsElapsed, fractionElapsed: Math.round(frac * 100) / 100 },
+    rows,
+    totals: {
+      ...t,
+      produitsProjete, chargesProjete, resultatProjete: produitsProjete - chargesProjete,
+    },
+    hasBudget: base.rows.some((r) => r.budget !== 0),
+  };
+}

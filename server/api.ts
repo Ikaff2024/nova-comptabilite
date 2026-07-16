@@ -1055,6 +1055,13 @@ export function createApi() {
     if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
     res.json(await withUser(userId, (c) => budget.budgetReport(c, req.params.id, fy)));
   }));
+  // Forecast glissant : réel à date + projection fin d'année (run-rate).
+  app.get('/api/dossiers/:id/budget/forecast', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || '';
+    if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => budget.rollingForecast(c, req.params.id, fy, (req.query.asOf as string) || undefined)));
+  }));
   app.post('/api/dossiers/:id/budget', h(async (req, res) => {
     const userId = requireUser(req);
     const { fiscalYearId, accountCode, amount } = req.body ?? {};

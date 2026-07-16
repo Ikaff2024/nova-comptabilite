@@ -264,6 +264,13 @@ export interface BudgetReport {
   rows: BudgetRow[];
   totals: { chargesBudget: number; chargesRealise: number; produitsBudget: number; produitsRealise: number; resultatBudget: number; resultatRealise: number };
 }
+export interface ForecastRow extends BudgetRow { budgetProrata: number; ecartRythme: number; projete: number; ecartProjete: number; }
+export interface RollingForecast {
+  period: { label: string; start: string; end: string; monthsElapsed: number; fractionElapsed: number };
+  rows: ForecastRow[];
+  totals: BudgetReport['totals'] & { produitsProjete: number; chargesProjete: number; resultatProjete: number };
+  hasBudget: boolean;
+}
 export interface AnalyticSection { id: string; code: string; label: string; }
 export interface AnalyticReport {
   sections: { code: string; label: string; produits: number; charges: number; resultat: number }[];
@@ -550,6 +557,7 @@ export const api = {
   postCutoff: (dossierId: string, body: { type: string; date: string; accountCode: string; amount: number; label: string; autoReverse?: boolean }) =>
     req<{ entryId: string; reversalId: string | null }>(`/api/dossiers/${dossierId}/cutoff`, { method: 'POST', body: JSON.stringify(body) }),
   budgetReport: (dossierId: string, fiscalYearId: string) => req<BudgetReport>(`/api/dossiers/${dossierId}/budget?fiscalYearId=${fiscalYearId}`),
+  rollingForecast: (dossierId: string, fiscalYearId: string) => req<RollingForecast>(`/api/dossiers/${dossierId}/budget/forecast?fiscalYearId=${fiscalYearId}`),
   setBudget: (dossierId: string, fiscalYearId: string, accountCode: string, amount: number) => req<void>(`/api/dossiers/${dossierId}/budget`, { method: 'POST', body: JSON.stringify({ fiscalYearId, accountCode, amount }) }),
   importBudget: (dossierId: string, fiscalYearId: string, csv: string) =>
     req<{ imported: number; errors: { accountCode: string; reason: string }[] }>(`/api/dossiers/${dossierId}/budget/import`, { method: 'POST', body: JSON.stringify({ fiscalYearId, csv }) }),

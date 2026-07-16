@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Target, Plus, Trash2, FileSpreadsheet, Upload, Printer, CheckCircle2 } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type BudgetReport } from '../lib/api';
+import { Loader2, Target, Plus, Trash2, FileSpreadsheet, Upload, Printer, CheckCircle2, TrendingUp, Gauge } from 'lucide-react';
+import { api, fmtMoney, type FiscalYear, type BudgetReport, type RollingForecast } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -27,6 +27,16 @@ export default function Budget({ dossierId, dossierName, currency, fiscalYears }
 
   const load = async () => { if (!fy) return; setLoading(true); try { setData(await api.budgetReport(dossierId, fy)); } finally { setLoading(false); } };
   useEffect(() => { load(); }, [dossierId, fy]);
+
+  // Forecast glissant (réel à date → projection fin d'année).
+  const [view, setView] = useState<'budget' | 'forecast'>('budget');
+  const [fc, setFc] = useState<RollingForecast | null>(null);
+  const [fcLoading, setFcLoading] = useState(false);
+  useEffect(() => {
+    if (view !== 'forecast' || !fy) return;
+    setFcLoading(true); setFc(null);
+    api.rollingForecast(dossierId, fy).then(setFc).catch((e) => setError(e.message)).finally(() => setFcLoading(false));
+  }, [view, dossierId, fy]);
 
   const doImport = async () => {
     setImporting(true); setError(null); setImportMsg(null);
@@ -132,7 +142,14 @@ export default function Budget({ dossierId, dossierName, currency, fiscalYears }
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Target className="h-4 w-4 text-emerald-400" /> Budget &amp; suivi budgétaire</div>
+        <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
+          {([['budget', 'Budget vs réalisé', Target], ['forecast', 'Forecast glissant', TrendingUp]] as const).map(([k, label, Icon]) => (
+            <button key={k} onClick={() => setView(k)}
+              className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition-colors', view === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
+              <Icon className="h-4 w-4" /> {label}
+            </button>
+          ))}
+        </div>
         <div className="flex items-center gap-2">
           <select value={fy} onChange={(e) => setFy(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
             {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
@@ -143,6 +160,7 @@ export default function Budget({ dossierId, dossierName, currency, fiscalYears }
         </div>
       </div>
 
+      {view === 'budget' ? (<>
       {showImport && (
         <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -182,6 +200,77 @@ export default function Budget({ dossierId, dossierName, currency, fiscalYears }
           <Section title="Produits" rows={produits} kind="produits" />
         </div>
       )}
+      </>) : (
+        <ForecastView fc={fc} loading={fcLoading} currency={currency} />
+      )}
+    </div>
+  );
+}
+
+// Forecast glissant : réel à date, écart de rythme, et projection de fin d'année.
+function ForecastView({ fc, loading, currency }: { fc: RollingForecast | null; loading: boolean; currency: string }) {
+  const m = (n: number) => fmtMoney(n, currency);
+  if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Projection…</div>;
+  if (!fc) return null;
+  const t = fc.totals;
+  const p = fc.period;
+  const charges = fc.rows.filter((r) => r.classNo === 6);
+  const produits = fc.rows.filter((r) => r.classNo === 7);
+
+  const Table = ({ title, rows }: { title: string; rows: RollingForecast['rows'] }) => (
+    <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+      <div className="border-b border-white/10 px-4 py-2.5 text-xs uppercase text-zinc-400">{title}</div>
+      <table className="w-full min-w-[640px] text-sm">
+        <thead className="text-xs uppercase text-zinc-500"><tr className="border-b border-white/10">
+          <th className="px-3 py-2 text-left font-medium">Compte</th><th className="px-3 py-2 text-left font-medium">Intitulé</th>
+          <th className="px-3 py-2 text-right font-medium">Budget an.</th><th className="px-3 py-2 text-right font-medium">Réel à date</th>
+          <th className="px-3 py-2 text-right font-medium">Écart rythme</th><th className="px-3 py-2 text-right font-medium">Projeté fin d'année</th>
+          <th className="px-3 py-2 text-right font-medium">vs budget</th>
+        </tr></thead>
+        <tbody>{rows.map((r) => (
+          <tr key={r.account_code} className="border-b border-white/5">
+            <td className="px-3 py-1.5 font-mono text-xs text-zinc-400">{r.account_code}</td>
+            <td className="px-3 py-1.5 text-zinc-300">{r.label}</td>
+            <td className="px-3 py-1.5 text-right font-mono text-zinc-400">{r.budget ? m(r.budget) : '—'}</td>
+            <td className="px-3 py-1.5 text-right font-mono text-zinc-200">{m(r.realise)}</td>
+            <td className={cn('px-3 py-1.5 text-right font-mono', r.ecartRythme > 0 ? 'text-amber-400' : 'text-zinc-500')}>{r.budget ? (r.ecartRythme > 0 ? '+' : '') + m(r.ecartRythme) : '—'}</td>
+            <td className="px-3 py-1.5 text-right font-mono font-semibold text-emerald-300">{m(r.projete)}</td>
+            <td className={cn('px-3 py-1.5 text-right font-mono', !r.budget ? 'text-zinc-600' : r.ecartProjete > 0 ? 'text-rose-400' : 'text-emerald-400')}>{r.budget ? (r.ecartProjete > 0 ? '+' : '') + m(r.ecartProjete) : '—'}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-zinc-300">
+        <Gauge className="h-4 w-4 text-emerald-400" />
+        <span><b className="text-zinc-100">{p.monthsElapsed} mois</b> écoulés sur « {p.label} » ({Math.round(p.fractionElapsed * 100)} %).</span>
+        <span className="text-zinc-500">Projection = extrapolation linéaire du rythme (run-rate), hors saisonnalité.</span>
+      </div>
+
+      {!fc.hasBudget && (
+        <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-300">Aucun budget saisi pour cet exercice : la projection s'appuie sur le seul rythme du réalisé. Saisissez un budget (onglet « Budget vs réalisé ») pour obtenir les écarts.</p>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <FCard label="Résultat réalisé à date" value={m(t.resultatRealise)} tone={t.resultatRealise >= 0 ? 'pos' : 'neg'} />
+        <FCard label="Résultat projeté (fin d'année)" value={m(t.resultatProjete)} tone={t.resultatProjete >= 0 ? 'pos' : 'neg'} highlight />
+        {fc.hasBudget && <FCard label="Projeté − budget" value={(t.resultatProjete - t.resultatBudget >= 0 ? '+' : '') + m(t.resultatProjete - t.resultatBudget)} tone={t.resultatProjete - t.resultatBudget >= 0 ? 'pos' : 'neg'} />}
+      </div>
+
+      <Table title="Produits (classe 7)" rows={produits} />
+      <Table title="Charges (classe 6)" rows={charges} />
+    </div>
+  );
+}
+
+function FCard({ label, value, tone, highlight }: { label: string; value: string; tone?: 'pos' | 'neg'; highlight?: boolean }) {
+  return (
+    <div className={cn('rounded-2xl border p-4', highlight ? 'border-emerald-500/40 bg-emerald-500/[0.07]' : 'border-white/10 bg-white/5')}>
+      <div className="text-xs text-zinc-500">{label}</div>
+      <div className={cn('mt-1 font-mono text-xl font-bold', tone === 'pos' ? 'text-emerald-400' : tone === 'neg' ? 'text-rose-400' : 'text-zinc-100')}>{value}</div>
     </div>
   );
 }
