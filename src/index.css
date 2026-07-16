@@ -62,6 +62,8 @@
 :root[data-theme="light"] .border-white\/20 { border-color: rgba(30,22,8,.19); }
 
 /* --- Textes neutres (échelle inversée) --- */
+:root[data-theme="light"] .text-white,
+:root[data-theme="light"] .hover\:text-white:hover { color: #1c1811; }
 :root[data-theme="light"] .text-zinc-50 { color: #1c1811; }
 :root[data-theme="light"] .text-zinc-100 { color: #241f17; }
 :root[data-theme="light"] .text-zinc-200 { color: #2f2920; }
