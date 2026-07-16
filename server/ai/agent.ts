@@ -13,6 +13,8 @@ import * as ratios from '../domain/ratios.js';
 import * as controls from '../domain/controls.js';
 import * as budget from '../domain/budget.js';
 import * as budgetcopilot from '../domain/budgetcopilot.js';
+import * as clotureworks from '../domain/clotureworks.js';
+import * as assets from '../domain/assets.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
 import * as recurring from '../domain/recurring.js';
@@ -234,7 +236,14 @@ ACTIONS À EFFET RÉEL (palier assisté+) — tu peux exécuter des tâches de b
 
 - "generer_recurrences" : génère les échéances dues des modèles d'écritures récurrentes (loyers, abonnements…). Les écritures proviennent de modèles PRÉ-VALIDÉS par l'humain, tu ne fais qu'appliquer un échéancier déjà décidé. Montre d'abord ce qui va être généré (recurrences_dues) et confirme avant. Tu ne crées jamais toi-même un nouveau modèle récurrent.
 - "comptabiliser_tva" : passe l'écriture de liquidation de TVA du mois (opération MÉCANIQUE et déterministe : solde 443/445, constate 4441/4449). Montre d'abord la situation TVA du mois (outil tva) et CONFIRME avant de comptabiliser.
-Ces deux seules écritures au grand livre (récurrences validées, liquidation TVA mécanique) sont autorisées après confirmation ; pour tout le reste, tu ne postes/émets/règles/clôtures JAMAIS toi-même — tu prépares des brouillons que l'humain valide.
+- "comptabiliser_dotations_dues" : poste les dotations aux amortissements DUES (681 → 28x), montants DÉTERMINISTES issus du plan d'amortissement. Montre d'abord le détail (travaux_de_cloture) et CONFIRME avant.
+Ces seules écritures au grand livre (récurrences validées, liquidation TVA mécanique, dotations d'amortissement déterministes) sont autorisées après confirmation ; pour tout le reste, tu ne postes/émets/règles/clôtures JAMAIS toi-même — tu prépares des brouillons que l'humain valide.
+
+TRAVAUX DE FIN D'EXERCICE / CLÔTURE — méthode « plan → approbation → exécution » :
+1. VÉRIFIE d'abord le grand livre avec "travaux_de_cloture" (brouillons, dotations dues, comptes d'attente 47x, caisse, TVA, créances anciennes, résultat provisoire).
+2. PRÉSENTE un PLAN numéroté, étape par étape : pour chaque point → CONSTAT (le chiffre) · ACTION recommandée · qui l'exécute (toi via un outil, ou l'utilisateur dans un onglet). Distingue clairement ce que tu peux faire de ce qui reste manuel (émission de factures, cut-off, provisions, clôture de l'exercice = 100 % humain).
+3. DEMANDE l'approbation avant d'exécuter quoi que ce soit.
+4. EXÉCUTE seulement les étapes automatisables et approuvées (ex. comptabiliser_dotations_dues, comptabiliser_tva, lettrer_automatiquement), une par une, en récapitulant après chaque. Renvoie ensuite l'état mis à jour et ce qu'il reste à faire manuellement.
 
 Tu peux ENCHAÎNER ces outils pour accomplir une consigne dictée (ex. « prépare le livre de paie de juillet et envoie-le-moi » → preparer_livre_paie, puis — après confirmation du destinataire — envoyer_email avec piece_jointe { document: "livre_paie", annee, mois } et une courte synthèse dans le corps). Tu ne postes/émets/règles/clôtures d'écritures au grand livre JAMAIS toi-même.`;
 
@@ -267,6 +276,7 @@ const READ_TOOLS = [
   { name: 'forecast_glissant', description: "Forecast glissant de l'exercice courant : réel à date, budget attendu au prorata du temps écoulé (écart de rythme : en avance/en retard), et PROJECTION de fin d'année par extrapolation du rythme (run-rate), par compte (classes 6 et 7) et en total (produits, charges, résultat projeté). Pour commenter la tendance : « où finit-on l'année si le rythme se maintient ? », expliquer les écarts vs budget et alerter sur les dérapages. La projection est linéaire (ne tient pas compte de la saisonnalité) — dis-le si pertinent.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'preparer_budget', description: "Copilote budget : PROPOSE un budget pour l'exercice courant à partir du réalisé de l'exercice précédent, avec la provenance de chaque montant (base réalisée N-1 + taux appliqué). Hypothèses par défaut : croissance des produits +5 %, inflation des charges +3 % — surchargeable via croissance_produits / inflation_charges (en décimal, ex. 0.08). Renvoie aussi des QUESTIONS à poser à la direction (prix, recrutements, investissements, charges non reconductibles). Ne saisit rien : la validation reste humaine (onglet Budget › Copilote).", input_schema: { type: 'object', properties: { croissance_produits: { type: 'number', description: 'décimal, ex. 0.05 pour +5%' }, inflation_charges: { type: 'number', description: 'décimal, ex. 0.03' } }, required: [] } },
   { name: 'comparer_scenarios', description: "Compare 3 scénarios budgétaires (prudent, central, ambitieux) projetés depuis le réalisé N-1 : produits, charges, résultat et marge nette pour chacun. Pour éclairer une décision (« combien coûte l'hypothèse ambitieuse ? », « quel résultat en prudent ? »).", input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'travaux_de_cloture', description: "Contrôle du grand livre pour préparer les travaux de FIN D'EXERCICE / CLÔTURE : renvoie une checklist des points à traiter (brouillons non validés, dotations aux amortissements dues, comptes d'attente 47x non soldés, caisse créditrice, TVA à régulariser, créances anciennes non lettrées) avec pour chacun le statut, le montant et l'action recommandée, plus le résultat provisoire. Utilise-le pour dresser un PLAN de clôture étape par étape.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'previsionnel', description: "États prévisionnels d'un scénario : compte de résultat prévisionnel, budget de TRÉSORERIE mensuel (position de départ = trésorerie actuelle), indicateurs (marge nette, BFR, trésorerie minimale) et alerte si la trésorerie devient négative. Paramètres : scenario (prudent|central|ambitieux, défaut central) et stress (décimal, ex. 0.15 = baisse produits -15% et hausse charges +15% pour un stress test). Étalement linéaire (MVP).", input_schema: { type: 'object', properties: { scenario: { type: 'string' }, stress: { type: 'number', description: 'décimal, ex. 0.15' } }, required: [] } },
   { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'factures_recurrentes_dues', description: 'Modèles de factures de vente récurrentes (abonnements) et nombre de factures DUES à générer pour chacun.', input_schema: { type: 'object', properties: {}, required: [] } },
@@ -358,6 +368,11 @@ const REVERSIBLE_TOOL_NAMES = new Set(REVERSIBLE_TOOLS.map((t) => t.name));
 // Actions à effet réel/externe : exécuter la paie (bulletins brouillons) et
 // envoyer un email. Toujours gatés assist_plus. L'envoi d'email est irréversible.
 const ACTION_TOOLS = [
+  {
+    name: 'comptabiliser_dotations_dues',
+    description: "Comptabilise (poste au grand livre) toutes les dotations aux amortissements DUES à ce jour : écritures 681 → 28x, dont les montants sont DÉTERMINISTES (issus du plan d'amortissement, jamais inventés). À n'appeler qu'APRÈS accord explicite de l'utilisateur, dans le cadre des travaux de clôture. Annonce le nombre de dotations comptabilisées et le total. Réversibilité : comme toute écriture, elle se contre-passe si besoin.",
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
   {
     name: 'preparer_livre_paie',
     description: 'Calcule (prépare) la paie d\'une période : génère les bulletins BROUILLONS de tous les salariés (avec absences, heures sup et avances déjà branchées). N\'écrit PAS au grand livre — la comptabilisation reste une action humaine dans l\'onglet Paie. Fournir année et mois (1-12).',
@@ -480,6 +495,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'preparer_budget': { if (!fy) return { note: 'Aucun exercice ouvert.' }; const g: any = await budgetcopilot.generateBudgetFromHistory(c, dossierId, fy, { growthProduits: input?.croissance_produits, inflationCharges: input?.inflation_charges }); if (!g.priorYear) return { note: "Aucun exercice précédent avec des mouvements : impossible de générer depuis l'historique. Il faut saisir les hypothèses manuellement.", questions: g.questions }; return { ...g, lines: cap(g.lines ?? [], 80) }; }
     case 'comparer_scenarios': { if (!fy) return { note: 'Aucun exercice ouvert.' }; return await budgetcopilot.compareScenarios(c, dossierId, fy); }
     case 'previsionnel': { if (!fy) return { note: 'Aucun exercice ouvert.' }; const p: any = await budgetcopilot.provisionalStatements(c, dossierId, fy, String(input?.scenario ?? 'central'), Number(input?.stress) || 0); return { ...p, tresorerie: { ...p.tresorerie, mensuel: cap(p.tresorerie?.mensuel ?? [], 12) } }; }
+    case 'travaux_de_cloture': { return await clotureworks.clotureChecklist(c, dossierId, fy); }
     case 'recurrences_dues': { const t = await recurring.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, frequence: x.frequencyLabel, journal: x.journalCode, montant: x.amount, tiers: x.counterpartyName ?? null, actif: x.active, echeances_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
     case 'factures_recurrentes_dues': { const t = await recinv.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, client: x.clientName, frequence: x.frequencyLabel, montant_ttc: x.montantTtc, actif: x.active, factures_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
 
@@ -516,6 +532,11 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     }
 
     // --- Actions (palier assist_plus) ---
+    case 'comptabiliser_dotations_dues': {
+      const r = await assets.postDepreciationDue(c, dossierId);
+      if (r.count === 0) return { statut: 'rien_a_faire', note: 'Aucune dotation due à comptabiliser.' };
+      return { statut: 'dotations_comptabilisees', dotations: r.count, total: r.total, ignorees: r.skipped, note: `${r.count} dotation(s) comptabilisée(s) (681 → 28x) pour ${r.total}. ${r.skipped ? r.skipped + ' ignorée(s) (exercice manquant).' : ''}` };
+    }
     case 'preparer_livre_paie': {
       const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois);
       const r = await payroll.runPayroll(c, dossierId, y, mo);

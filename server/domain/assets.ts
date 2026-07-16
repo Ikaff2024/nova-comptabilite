@@ -245,7 +245,9 @@ export async function listAssets(c: Client, dossierId: string) {
     const posted = postedByAsset.get(a.id) ?? new Map<string, number>();
     // Le cumul repris (amortissements antérieurs à la bascule) compte comme déjà pratiqué.
     const cumulPosted = round2(repris + [...posted.values()].reduce((s, v) => s + v, 0));
-    const pending = schedule.filter((r) => r.periodDate <= today && !posted.has(r.periodDate)).length;
+    const pendingRows = schedule.filter((r) => r.periodDate <= today && !posted.has(r.periodDate));
+    const pending = pendingRows.length;
+    const pendingAmount = round2(pendingRows.reduce((s, r) => s + r.dotation, 0));
     return {
       id: a.id, label: a.label,
       assetAccountCode: a.asset_account_code, amortAccountCode: a.amort_account_code, expenseAccountCode: a.expense_account_code,
@@ -254,7 +256,7 @@ export async function listAssets(c: Client, dossierId: string) {
       counterpartyName: a.counterparty_name, notes: a.notes, status: a.status,
       repriseCumul: repris, repriseDate: a.reprise_date ? isoDate(a.reprise_date) : null,
       cumulPosted, vnc: round2(amount - cumulPosted),
-      pending: a.status === 'disposed' ? 0 : pending, fullyAmortized: cumulPosted >= round2(amount - residual) - 0.005,
+      pending: a.status === 'disposed' ? 0 : pending, pendingAmount: a.status === 'disposed' ? 0 : pendingAmount, fullyAmortized: cumulPosted >= round2(amount - residual) - 0.005,
       disposalDate: a.disposal_date, salePrice: a.sale_price != null ? Number(a.sale_price) : null,
       plusValue: a.plus_value != null ? Number(a.plus_value) : null,
     };

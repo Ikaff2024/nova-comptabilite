@@ -39,6 +39,7 @@ import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
 import * as budget from './domain/budget.js';
 import * as budgetcopilot from './domain/budgetcopilot.js';
+import * as clotureworks from './domain/clotureworks.js';
 import { postCutoff } from './domain/cutoff.js';
 import * as obligations from './domain/obligations.js';
 import * as entrytemplates from './domain/entrytemplates.js';
@@ -361,6 +362,12 @@ export function createApi() {
   app.post('/api/dossiers/:id/setup', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => acc.setupDossierDefaults(c, req.params.id)));
+  }));
+
+  // Travaux de fin d'exercice : checklist de contrôle du grand livre.
+  app.get('/api/dossiers/:id/cloture-works', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => clotureworks.clotureChecklist(c, req.params.id, (req.query.fiscalYearId as string) || undefined)));
   }));
 
   // --- Clôtures mensuelles (verrouillage de période) --------------------------
