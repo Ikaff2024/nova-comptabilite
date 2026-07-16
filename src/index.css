@@ -40,9 +40,13 @@
 :root[data-theme="light"] .bg-zinc-950 { background-color: #f8f5ef; }
 :root[data-theme="light"] .bg-zinc-950\/50 { background-color: rgba(248,245,239,.72); }
 :root[data-theme="light"] .bg-zinc-900,
+:root[data-theme="light"] .bg-zinc-900\/95,
+:root[data-theme="light"] .bg-zinc-900\/80,
 :root[data-theme="light"] .bg-zinc-900\/70,
 :root[data-theme="light"] .bg-zinc-900\/60,
-:root[data-theme="light"] .bg-zinc-900\/50 { background-color: #ffffff; }
+:root[data-theme="light"] .bg-zinc-900\/50,
+:root[data-theme="light"] .bg-zinc-900\/40 { background-color: #ffffff; }
+:root[data-theme="light"] .bg-black\/30 { background-color: rgba(30,22,8,.32); }
 :root[data-theme="light"] .bg-white\/5 { background-color: #ffffff; }
 :root[data-theme="light"] .bg-white\/10 { background-color: rgba(30,22,8,.05); }
 :root[data-theme="light"] .bg-white\/20 { background-color: rgba(30,22,8,.09); }
