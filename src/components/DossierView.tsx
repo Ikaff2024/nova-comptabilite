@@ -96,8 +96,9 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   // paramètres) passent dans une barre horizontale à menus déroulants.
   const meta = Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<Tab, { id: Tab; label: string; icon: any }>;
   const groups: { label: string; items: Tab[]; icon: any }[] = [
-    { label: 'Pilotage', icon: Gauge, items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring', 'analytique', 'budget'] },
+    { label: 'Pilotage', icon: Gauge, items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring'] },
     { label: 'Saisie', icon: PencilLine, items: ['capture', 'facturation', 'achats', 'catalogue', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
+    { label: 'Analyse & budget', icon: PieChart, items: ['analytique', 'budget'] },
     { label: 'Comptabilité', icon: Library, items: ['balance', 'grandlivre', 'journaux', 'revision', 'clotures', 'plan'] },
     { label: 'Tiers & trésorerie', icon: Landmark, items: ['tiers', 'banque', 'immos'] },
     { label: 'États & déclarations', icon: FileText, items: ['etats', 'fiscalite'] },
