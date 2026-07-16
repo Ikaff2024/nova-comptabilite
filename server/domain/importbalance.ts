@@ -66,16 +66,21 @@ export function parseBalanceCsv(text: string): ImportLineInput[] {
   let map = { code: 0, label: 1, debit: 2, credit: 3, solde: -1 } as Record<string, number>;
   let start = 0;
   const first = splitDelim(rows[0]).map(norm);
-  const looksHeader = first.some((h) => /compte|code|libell|intitul|debit|credit|solde/.test(h));
+  // Tolérant aux accents CORROMPUS : un fichier Latin-1 lu en UTF-8 transforme
+  // « Débit »/« Crédit » en « D�bit »/« Cr�dit ». On matche donc sur des motifs
+  // qui acceptent n'importe quel caractère à la place de l'accent (d.?bit, cr.?dit).
+  const reDebit = /d.?bit/, reCredit = /cr.?dit/, reSolde = /sold/;
+  const looksHeader = first.some((h) => /compte|code|libell|intitul|sold/.test(h) || reDebit.test(h) || reCredit.test(h));
   if (looksHeader) {
     start = 1;
     const find = (...keys: string[]) => first.findIndex((h) => keys.some((k) => h.includes(k)));
+    const findRe = (re: RegExp) => first.findIndex((h) => re.test(h));
     map = {
       code: Math.max(find('compte', 'code', 'numero'), 0),
       label: find('libell', 'intitul', 'nom', 'desig'),
-      debit: find('debit'),
-      credit: find('credit'),
-      solde: find('solde'),
+      debit: findRe(reDebit),
+      credit: findRe(reCredit),
+      solde: findRe(reSolde),
     };
   }
 

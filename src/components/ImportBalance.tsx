@@ -217,6 +217,12 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
             </button>
           </div>
           {missingBlocked && <p className="text-right text-xs text-amber-400">Import bloqué tant que des comptes sont absents.</p>}
+          {analysis && !analysis.balanced && (
+            <p className="text-right text-xs text-rose-400">Balance déséquilibrée (écart {fmtMoney(analysis.diff, currency)}) : impossible de comptabiliser. Vérifiez que Σ débit = Σ crédit dans votre fichier, et que les colonnes Débit / Crédit sont bien renseignées.</p>
+          )}
+          {analysis && analysis.alreadyImported && (
+            <p className="text-right text-xs text-amber-400">Une reprise (à-nouveaux) existe déjà pour cet exercice.</p>
+          )}
         </div>
       )}
     </div>
