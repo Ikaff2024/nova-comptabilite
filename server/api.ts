@@ -38,6 +38,7 @@ import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
 import * as budget from './domain/budget.js';
+import * as budgetcopilot from './domain/budgetcopilot.js';
 import { postCutoff } from './domain/cutoff.js';
 import * as obligations from './domain/obligations.js';
 import * as entrytemplates from './domain/entrytemplates.js';
@@ -1061,6 +1062,38 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || '';
     if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
     res.json(await withUser(userId, (c) => budget.rollingForecast(c, req.params.id, fy, (req.query.asOf as string) || undefined)));
+  }));
+  // Copilote budgétaire — génération depuis l'historique (Phase 2).
+  app.get('/api/dossiers/:id/budget/generate', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || '';
+    if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    const a = { growthProduits: req.query.growthProduits != null ? Number(req.query.growthProduits) : undefined, inflationCharges: req.query.inflationCharges != null ? Number(req.query.inflationCharges) : undefined };
+    res.json(await withUser(userId, (c) => budgetcopilot.generateBudgetFromHistory(c, req.params.id, fy, a)));
+  }));
+  // Applique un budget proposé (écrit les montants retenus dans budgets).
+  app.post('/api/dossiers/:id/budget/apply', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { fiscalYearId, lines } = req.body ?? {};
+    if (!fiscalYearId || !Array.isArray(lines)) { const e: any = new Error('fiscalYearId et lines requis'); e.status = 400; throw e; }
+    await withUser(userId, async (c) => {
+      for (const l of lines) if (l?.accountCode) await budget.setBudget(c, req.params.id, fiscalYearId, String(l.accountCode).trim(), Number(l.amount) || 0);
+    });
+    res.json({ applied: lines.length });
+  }));
+  // Comparaison de scénarios (Phase 3).
+  app.get('/api/dossiers/:id/budget/scenarios', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || '';
+    if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => budgetcopilot.compareScenarios(c, req.params.id, fy)));
+  }));
+  // États prévisionnels + trésorerie mensuelle + stress test (Phase 4).
+  app.get('/api/dossiers/:id/budget/provisional', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || '';
+    if (!fy) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => budgetcopilot.provisionalStatements(c, req.params.id, fy, (req.query.scenario as string) || 'central', Number(req.query.stress) || 0)));
   }));
   app.post('/api/dossiers/:id/budget', h(async (req, res) => {
     const userId = requireUser(req);

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Target, Plus, Trash2, FileSpreadsheet, Upload, Printer, CheckCircle2, TrendingUp, Gauge } from 'lucide-react';
+import { Loader2, Target, Plus, Trash2, FileSpreadsheet, Upload, Printer, CheckCircle2, TrendingUp, Gauge, Sparkles } from 'lucide-react';
 import { api, fmtMoney, type FiscalYear, type BudgetReport, type RollingForecast } from '../lib/api';
+import BudgetCopilot from './BudgetCopilot';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -29,7 +30,7 @@ export default function Budget({ dossierId, dossierName, currency, fiscalYears }
   useEffect(() => { load(); }, [dossierId, fy]);
 
   // Forecast glissant (réel à date → projection fin d'année).
-  const [view, setView] = useState<'budget' | 'forecast'>('budget');
+  const [view, setView] = useState<'budget' | 'forecast' | 'copilote'>('budget');
   const [fc, setFc] = useState<RollingForecast | null>(null);
   const [fcLoading, setFcLoading] = useState(false);
   useEffect(() => {
@@ -143,7 +144,7 @@ export default function Budget({ dossierId, dossierName, currency, fiscalYears }
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
-          {([['budget', 'Budget vs réalisé', Target], ['forecast', 'Forecast glissant', TrendingUp]] as const).map(([k, label, Icon]) => (
+          {([['budget', 'Budget vs réalisé', Target], ['forecast', 'Forecast glissant', TrendingUp], ['copilote', 'Copilote Lexa', Sparkles]] as const).map(([k, label, Icon]) => (
             <button key={k} onClick={() => setView(k)}
               className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition-colors', view === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
               <Icon className="h-4 w-4" /> {label}
@@ -200,8 +201,10 @@ export default function Budget({ dossierId, dossierName, currency, fiscalYears }
           <Section title="Produits" rows={produits} kind="produits" />
         </div>
       )}
-      </>) : (
+      </>) : view === 'forecast' ? (
         <ForecastView fc={fc} loading={fcLoading} currency={currency} />
+      ) : (
+        <BudgetCopilot dossierId={dossierId} fy={fy} currency={currency} onApplied={() => { setView('budget'); load(); }} />
       )}
     </div>
   );

@@ -264,6 +264,17 @@ export interface BudgetReport {
   rows: BudgetRow[];
   totals: { chargesBudget: number; chargesRealise: number; produitsBudget: number; produitsRealise: number; resultatBudget: number; resultatRealise: number };
 }
+export interface GeneratedLine { account_code: string; label: string; classNo: number; base: number; taux: number; montant: number; provenance: { base_realise: number; annee_base: string; taux_applique: number; confiance: string }; }
+export interface GeneratedBudget { priorYear: string | null; assumptions: { growthProduits: number; inflationCharges: number }; lines: GeneratedLine[]; totals: { produits: number; charges: number; resultat: number }; questions: string[]; }
+export interface ScenarioRow { key: string; label: string; hypotheses: string; growthProduits: number; inflationCharges: number; produits: number; charges: number; resultat: number; margeNette: number | null; }
+export interface ScenariosReport { priorYear: string | null; base: { produits: number; charges: number }; scenarios: ScenarioRow[]; }
+export interface ProvisionalReport {
+  scenario: { key: string; label: string }; stress: number; priorYear: string | null;
+  compteResultat: { produits: number; charges: number; resultat: number; margeNette: number | null };
+  tresorerie: { position_actuelle: number; net_mensuel: number; mensuel: { mois: string; encaissements: number; decaissements: number; solde_fin: number }[]; tresorerie_mini: number };
+  indicateurs: { marge_nette_pct: number | null; resultat_projete: number; bfr: number | null; tresorerie_mini: number; alerte_tresorerie: boolean };
+  bilanSimplifie: { capitaux_propres_actuels: number; resultat_projete: number; capitaux_propres_projetes: number; bfr_actuel: number | null; tresorerie_actuelle: number; tresorerie_projetee_fin: number };
+}
 export interface ForecastRow extends BudgetRow { budgetProrata: number; ecartRythme: number; projete: number; ecartProjete: number; }
 export interface RollingForecast {
   period: { label: string; start: string; end: string; monthsElapsed: number; fractionElapsed: number };
@@ -558,6 +569,13 @@ export const api = {
     req<{ entryId: string; reversalId: string | null }>(`/api/dossiers/${dossierId}/cutoff`, { method: 'POST', body: JSON.stringify(body) }),
   budgetReport: (dossierId: string, fiscalYearId: string) => req<BudgetReport>(`/api/dossiers/${dossierId}/budget?fiscalYearId=${fiscalYearId}`),
   rollingForecast: (dossierId: string, fiscalYearId: string) => req<RollingForecast>(`/api/dossiers/${dossierId}/budget/forecast?fiscalYearId=${fiscalYearId}`),
+  generateBudget: (dossierId: string, fiscalYearId: string, growthProduits?: number, inflationCharges?: number) =>
+    req<GeneratedBudget>(`/api/dossiers/${dossierId}/budget/generate?fiscalYearId=${fiscalYearId}${growthProduits != null ? `&growthProduits=${growthProduits}` : ''}${inflationCharges != null ? `&inflationCharges=${inflationCharges}` : ''}`),
+  applyBudget: (dossierId: string, fiscalYearId: string, lines: { accountCode: string; amount: number }[]) =>
+    req<{ applied: number }>(`/api/dossiers/${dossierId}/budget/apply`, { method: 'POST', body: JSON.stringify({ fiscalYearId, lines }) }),
+  budgetScenarios: (dossierId: string, fiscalYearId: string) => req<ScenariosReport>(`/api/dossiers/${dossierId}/budget/scenarios?fiscalYearId=${fiscalYearId}`),
+  budgetProvisional: (dossierId: string, fiscalYearId: string, scenario = 'central', stress = 0) =>
+    req<ProvisionalReport>(`/api/dossiers/${dossierId}/budget/provisional?fiscalYearId=${fiscalYearId}&scenario=${scenario}&stress=${stress}`),
   setBudget: (dossierId: string, fiscalYearId: string, accountCode: string, amount: number) => req<void>(`/api/dossiers/${dossierId}/budget`, { method: 'POST', body: JSON.stringify({ fiscalYearId, accountCode, amount }) }),
   importBudget: (dossierId: string, fiscalYearId: string, csv: string) =>
     req<{ imported: number; errors: { accountCode: string; reason: string }[] }>(`/api/dossiers/${dossierId}/budget/import`, { method: 'POST', body: JSON.stringify({ fiscalYearId, csv }) }),
