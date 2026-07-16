@@ -6,8 +6,9 @@
 // ============================================================================
 import { elevenlabsEnabled, synthElevenLabs } from './elevenlabs.js';
 import { openaiEnabled, synthOpenAI } from './openai.js';
+import { xaiEnabled, synthXai } from './xai.js';
 
-export type TtsProvider = 'elevenlabs' | 'openai';
+export type TtsProvider = 'elevenlabs' | 'openai' | 'xai';
 
 // Catalogue de voix proposées dans la page propriétaire (voix féminines posées).
 export const VOICE_CATALOG: Record<TtsProvider, { id: string; name: string; desc: string }[]> = {
@@ -24,12 +25,22 @@ export const VOICE_CATALOG: Record<TtsProvider, { id: string; name: string; desc
     { id: 'coral', name: 'Coral', desc: 'Chaleureuse' },
     { id: 'sage', name: 'Sage', desc: 'Calme, mature' },
   ],
+  // xAI (Grok TTS) — en test. Voix à évaluer en français avant adoption.
+  xai: [
+    { id: 'eve', name: 'Eve', desc: 'Posée (défaut)' },
+    { id: 'ara', name: 'Ara', desc: 'Claire' },
+    { id: 'luna', name: 'Luna', desc: 'Douce' },
+    { id: 'celeste', name: 'Celeste', desc: 'Chaleureuse' },
+    { id: 'iris', name: 'Iris', desc: 'Professionnelle' },
+    { id: 'lux', name: 'Lux', desc: 'Lumineuse' },
+  ],
 };
 
 export function providersAvailable(): TtsProvider[] {
   const a: TtsProvider[] = [];
   if (elevenlabsEnabled()) a.push('elevenlabs');
   if (openaiEnabled()) a.push('openai');
+  if (xaiEnabled()) a.push('xai');
   return a;
 }
 
@@ -59,6 +70,15 @@ export async function synthesize(text: string, provider?: TtsProvider, voiceId?:
   if (!clean) return null;
   const avail = providersAvailable();
   if (!avail.length) return null;
-  const p: TtsProvider = provider && avail.includes(provider) ? provider : avail[0];
-  return p === 'openai' ? synthOpenAI(clean, voiceId) : synthElevenLabs(clean, voiceId);
+  // Override de TEST : TTS_FORCE_PROVIDER=xai bascule tout le monde sur Grok TTS
+  // sans toucher au choix stocké par dossier (utile pour comparer en aveugle).
+  const forced = (process.env.TTS_FORCE_PROVIDER ?? '').toLowerCase() as TtsProvider;
+  const p: TtsProvider = forced && avail.includes(forced) ? forced
+    : provider && avail.includes(provider) ? provider : avail[0];
+  // Un choix de voix stocké pour un autre fournisseur n'est pas valide ici :
+  // on ne passe voiceId que s'il appartient au catalogue du fournisseur retenu.
+  const okVoice = voiceId && VOICE_CATALOG[p]?.some((v) => v.id === voiceId) ? voiceId : undefined;
+  if (p === 'xai') return synthXai(clean, okVoice);
+  if (p === 'openai') return synthOpenAI(clean, okVoice);
+  return synthElevenLabs(clean, okVoice);
 }

@@ -30,6 +30,17 @@ const forSpeech = (s: string) => s
   .replace(/(\.\s*){2,}/g, '. ')                  // pas de points enchaînés
   .replace(/[ \t]{2,}/g, ' ').trim();
 
+// Découpe le texte pour une lecture progressive : 1re phrase (chunk court, prêt
+// vite) + le reste. Réduit le délai avant le premier son sur les longues réponses.
+function splitForSpeech(text: string): [string, string] {
+  const t = (text ?? '').trim();
+  if (t.length <= 180) return [t, ''];
+  const m = t.slice(40).search(/[.!?…](\s|$)|\n/);
+  if (m === -1) return [t, ''];
+  const cut = 40 + m + 1;
+  return [t.slice(0, cut).trim(), t.slice(cut).trim()];
+}
+
 // --- Rendu markdown léger (gras, titres, listes, tableaux) — sans dépendance ---
 function inlineMd(s: string): React.ReactNode[] {
   return s.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
@@ -109,7 +120,8 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   const [speakOn, setSpeakOn] = useState(false);
   const recRef = useRef<any>(null);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null); // lecture ElevenLabs en cours
+  const audioRef = useRef<HTMLAudioElement | null>(null); // lecture serveur (ElevenLabs/OpenAI/xAI) en cours
+  const speakGenRef = useRef(0); // jeton de session vocale : invalidé à chaque arrêt/nouvelle prise de parole
   const transcriptRef = useRef('');
   // Effet « machine à écrire » sur la dernière réponse
   const [typing, setTyping] = useState<{ idx: number; len: number } | null>(null);
@@ -152,6 +164,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
   }, [typing, turns]);
 
   const stopSpeaking = () => {
+    speakGenRef.current++; // invalide toute session de lecture en cours (chunks à venir)
     if (TTS_OK) window.speechSynthesis.cancel();
     if (audioRef.current) { try { audioRef.current.pause(); } catch { /* ignore */ } audioRef.current = null; }
   };
@@ -163,22 +176,36 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     if (voiceRef.current) u.voice = voiceRef.current;
     window.speechSynthesis.speak(u);
   };
-  // Voix ElevenLabs si disponible (naturelle), sinon repli sur le navigateur.
+  // Joue un blob audio et résout à la fin (ou à l'arrêt/erreur).
+  const playBlob = (blob: Blob, gen: number) => new Promise<void>((resolve) => {
+    if (gen !== speakGenRef.current) return resolve();
+    const audio = new Audio(URL.createObjectURL(blob));
+    audioRef.current = audio;
+    const done = () => { if (audioRef.current === audio) audioRef.current = null; resolve(); };
+    audio.onended = done; audio.onerror = done;
+    audio.play().catch(done);
+  });
+  // Voix serveur (ElevenLabs/OpenAI/xAI) sinon repli navigateur. LATENCE : on
+  // synthétise la 1re phrase ET le reste EN PARALLÈLE, et on lance la 1re dès
+  // qu'elle est prête — le premier son démarre bien plus vite sur les réponses
+  // longues, pendant que la suite se prépare.
   const speak = async (text: string) => {
     stopSpeaking();
-    if (status?.tts) {
-      try {
-        const blob = await lexaSpeak(dossierId, text);
-        if (blob) {
-          const audio = new Audio(URL.createObjectURL(blob));
-          audioRef.current = audio;
-          audio.onended = () => { if (audioRef.current === audio) audioRef.current = null; };
-          await audio.play();
-          return;
-        }
-      } catch { /* repli navigateur ci-dessous */ }
-    }
-    speakBrowser(text);
+    if (!status?.tts) { speakBrowser(text); return; }
+    const gen = speakGenRef.current;
+    const [first, rest] = splitForSpeech(text);
+    try {
+      const firstP = lexaSpeak(dossierId, first);
+      const restP = rest ? lexaSpeak(dossierId, rest) : Promise.resolve(null);
+      const firstBlob = await firstP;
+      if (gen !== speakGenRef.current) return;
+      if (!firstBlob) { speakBrowser(text); return; }
+      await playBlob(firstBlob, gen);
+      if (gen !== speakGenRef.current) return;
+      const restBlob = await restP;
+      if (gen !== speakGenRef.current || !restBlob) return;
+      await playBlob(restBlob, gen);
+    } catch { if (gen === speakGenRef.current) speakBrowser(text); }
   };
   const toggleSpeak = () => setSpeakOn((s) => { if (s) stopSpeaking(); return !s; });
 
