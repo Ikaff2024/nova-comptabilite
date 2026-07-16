@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle, BookOpen, Building2, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, LogOut, Hexagon, Loader2, RotateCcw, HelpCircle, BookOpen, Building2, Gauge, PanelLeftClose, PanelLeftOpen, Sun, Moon } from 'lucide-react';
 import { api, type Cabinet, type Dossier, type AuthUser } from './lib/api';
 import { getToken, clearToken, isWelcomed } from './lib/session';
 import Auth from './components/Auth';
@@ -33,6 +33,15 @@ export default function App() {
     try { localStorage.setItem('nova.sidebar', next ? 'open' : 'closed'); } catch { /* ignore */ }
     return next;
   });
+  // Thème clair/sombre (« choix 2 » pour ceux qui préfèrent le clair). Appliqué
+  // sur la racine dès le montage, même sur les écrans de connexion.
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try { return localStorage.getItem('nova.theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('nova.theme', theme); } catch { /* ignore */ }
+  }, [theme]);
 
   const openDossierById = async (id: string) => {
     try {
@@ -136,6 +145,15 @@ export default function App() {
         </nav>
 
         <div className="mt-auto space-y-1 border-t border-white/5 pt-6">
+          <div className="mb-2 flex rounded-xl border border-white/10 bg-white/5 p-0.5">
+            {([['dark', 'Sombre', Moon], ['light', 'Clair', Sun]] as const).map(([k, label, Icon]) => (
+              <button key={k} onClick={() => setTheme(k)}
+                className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors',
+                  theme === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
+                <Icon className="h-3.5 w-3.5" /> {label}
+              </button>
+            ))}
+          </div>
           <div className="truncate px-2 pb-2 text-xs text-zinc-500">{user.name || user.email}</div>
           <button onClick={() => setShowGuide(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-emerald-400">
             <HelpCircle className="h-5 w-5" />

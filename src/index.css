@@ -19,3 +19,76 @@
     @apply bg-zinc-950 text-zinc-50 antialiased selection:bg-emerald-500/30;
   }
 }
+
+/* =========================================================================
+   THÈME CLAIR (« choix 2 ») — surcharge crème/beige pour les utilisateurs
+   qui préfèrent le clair. L'app est écrite en sombre ; on remappe ici les
+   utilitaires neutres (fonds, bordures, textes) quand data-theme="light".
+   L'accent émeraude et les couleurs sémantiques sont conservés (ajustés
+   pour le contraste sur fond clair). Spécificité [data-theme] .classe > .classe.
+   ========================================================================= */
+:root[data-theme="light"] body { background-color: #f8f5ef; color: #211d16; }
+
+:root[data-theme="light"] {
+  /* Fonds sombres -> clairs */
+  --l-ground: #f8f5ef;   /* crème (fond général) */
+  --l-surface: #ffffff;  /* cartes / champs */
+  --l-ink: #211d16;      /* texte principal */
+}
+
+/* --- Fonds --- */
+:root[data-theme="light"] .bg-zinc-950 { background-color: #f8f5ef; }
+:root[data-theme="light"] .bg-zinc-950\/50 { background-color: rgba(248,245,239,.72); }
+:root[data-theme="light"] .bg-zinc-900,
+:root[data-theme="light"] .bg-zinc-900\/70,
+:root[data-theme="light"] .bg-zinc-900\/60,
+:root[data-theme="light"] .bg-zinc-900\/50 { background-color: #ffffff; }
+:root[data-theme="light"] .bg-white\/5 { background-color: #ffffff; }
+:root[data-theme="light"] .bg-white\/10 { background-color: rgba(30,22,8,.05); }
+:root[data-theme="light"] .bg-white\/20 { background-color: rgba(30,22,8,.09); }
+:root[data-theme="light"] .bg-black\/20 { background-color: rgba(30,22,8,.28); }
+:root[data-theme="light"] .bg-black\/70 { background-color: rgba(30,22,8,.45); }
+:root[data-theme="light"] .bg-zinc-600 { background-color: #c7bda9; }
+:root[data-theme="light"] .bg-zinc-500\/15 { background-color: rgba(30,22,8,.08); }
+
+/* --- Bordures --- */
+:root[data-theme="light"] .border-white\/5 { border-color: rgba(30,22,8,.07); }
+:root[data-theme="light"] .border-white\/10 { border-color: rgba(30,22,8,.11); }
+:root[data-theme="light"] .border-white\/15 { border-color: rgba(30,22,8,.15); }
+:root[data-theme="light"] .border-white\/20 { border-color: rgba(30,22,8,.19); }
+
+/* --- Textes neutres (échelle inversée) --- */
+:root[data-theme="light"] .text-zinc-50 { color: #1c1811; }
+:root[data-theme="light"] .text-zinc-100 { color: #241f17; }
+:root[data-theme="light"] .text-zinc-200 { color: #2f2920; }
+:root[data-theme="light"] .text-zinc-300 { color: #423a2d; }
+:root[data-theme="light"] .text-zinc-400 { color: #6f6656; }
+:root[data-theme="light"] .text-zinc-500 { color: #8c8271; }
+:root[data-theme="light"] .text-zinc-600 { color: #a89d89; }
+:root[data-theme="light"] .text-zinc-700 { color: #bcb19c; }
+/* text-zinc-950 reste sombre : c'est le texte sur les boutons émeraude. */
+:root[data-theme="light"] .placeholder-zinc-500::placeholder { color: #a89d89; }
+
+/* --- Accent émeraude : plus soutenu pour le contraste sur crème --- */
+:root[data-theme="light"] .text-emerald-200 { color: #0b8f5e; }
+:root[data-theme="light"] .text-emerald-300 { color: #0a875a; }
+:root[data-theme="light"] .text-emerald-400 { color: #0a7d52; }
+:root[data-theme="light"] .text-emerald-400\/80 { color: rgba(10,125,82,.8); }
+:root[data-theme="light"] .text-emerald-400\/70 { color: rgba(10,125,82,.7); }
+
+/* --- Sémantique (contraste sur clair) --- */
+:root[data-theme="light"] .text-rose-400 { color: #d61f3f; }
+:root[data-theme="light"] .text-rose-300 { color: #e11d48; }
+:root[data-theme="light"] .text-amber-400 { color: #b45309; }
+:root[data-theme="light"] .text-amber-300 { color: #b7791f; }
+:root[data-theme="light"] .text-amber-500 { color: #a4711f; }
+:root[data-theme="light"] .text-amber-200 { color: #92400e; }
+:root[data-theme="light"] .text-amber-200\/90 { color: rgba(146,64,14,.9); }
+:root[data-theme="light"] .text-amber-200\/70 { color: rgba(146,64,14,.7); }
+:root[data-theme="light"] .text-sky-400 { color: #0284c7; }
+:root[data-theme="light"] .text-sky-300 { color: #0369a1; }
+:root[data-theme="light"] .text-emerald-400 svg { color: inherit; }
+
+/* Ombres portées un peu plus présentes sur clair (les cartes ressortent). */
+:root[data-theme="light"] .bg-white\/5,
+:root[data-theme="light"] .bg-zinc-900\/60 { box-shadow: 0 1px 2px rgba(40,30,10,.05); }
