@@ -1173,7 +1173,7 @@ export function createApi() {
   app.patch('/api/dossiers/:id/lexa/voice', h(async (req: any, res) => {
     const userId = requireUser(req);
     const { provider, voiceId } = req.body ?? {};
-    if (provider != null && provider !== 'elevenlabs' && provider !== 'openai') { const e: any = new Error('Fournisseur invalide'); e.status = 400; throw e; }
+    if (provider != null && !['elevenlabs', 'openai', 'xai'].includes(provider)) { const e: any = new Error('Fournisseur invalide'); e.status = 400; throw e; }
     await withUser(userId, (c) => agent.setVoice(c, req.params.id, provider ?? null, voiceId ?? null));
     res.json(await withUser(userId, (c) => agent.getVoice(c, req.params.id)));
   }));
