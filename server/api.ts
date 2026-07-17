@@ -846,6 +846,17 @@ export function createApi() {
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);
   }));
+  app.get('/api/dossiers/:id/tiers/:cid/balance-letter', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, async (c) => {
+      const ds = await acc.listDossiers(c);
+      const cur = ds.find((d: any) => d.id === req.params.id)?.base_currency ?? 'XOF';
+      return tiers.tiersBalanceLetterPdf(c, req.params.id, req.params.cid, cur);
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
 
   // --- Rapprochement bancaire (pointage) -------------------------------------
   app.get('/api/dossiers/:id/bank-accounts', h(async (req, res) => {

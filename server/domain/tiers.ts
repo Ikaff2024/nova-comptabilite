@@ -1,5 +1,5 @@
 import type { Client } from '../db.js';
-import { tablePdf } from '../documents/pdf.js';
+import { tablePdf, letterPdf } from '../documents/pdf.js';
 
 // ============================================================================
 // Comptabilité auxiliaire : plan des tiers, balance tiers, grand livre tiers.
@@ -162,4 +162,40 @@ export async function tiersStatementPdf(c: Client, dossierId: string, counterpar
   });
   const safe = String(tp.aux_code || tp.name || 'tiers').replace(/[^a-zA-Z0-9]+/g, '-');
   return { filename: `releve-${safe}.pdf`, buffer, count: st.rows.length, found: true };
+}
+
+const MOIS_FR2 = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const dateFr2 = (d = new Date()) => `${d.getUTCDate()} ${MOIS_FR2[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+
+// Lettre de confirmation de solde (circularisation) : demande au tiers de
+// confirmer le solde figurant dans nos livres. Document d'audit / recouvrement.
+export async function tiersBalanceLetterPdf(c: Client, dossierId: string, counterpartyId: string, currency = 'XOF'): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const st = await tiersStatement(c, dossierId, counterpartyId);
+  const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const d: any = dr[0]?.j ?? {};
+  const tp = st.tiers;
+  const supplier = tp.type === 'fournisseur';
+  const solde = st.totals.solde;
+  const abs = `${grp(Math.abs(solde))} ${currency}`;
+  const sens = supplier ? (solde < 0 ? 'créditeur (en votre faveur)' : 'débiteur') : (solde > 0 ? 'débiteur (à votre charge)' : 'créditeur');
+  const today = dateFr2();
+  const buffer = await letterPdf({
+    sender: [d.raison_sociale ?? '—', ...(d.tax_id ? [`NCC/IFU : ${d.tax_id}`] : []), ...(d.rccm ? [`RCCM : ${d.rccm}`] : [])],
+    recipient: [`À l'attention de ${tp.name}`, ...(tp.aux_code ? [`Réf. compte : ${tp.aux_code}`] : [])],
+    date: today,
+    subject: `Confirmation de solde de compte au ${today}`,
+    bodyBefore: [
+      'Madame, Monsieur,',
+      `Dans le cadre du suivi de nos comptes, nous vous informons que votre compte présente, dans nos livres au ${today}, un solde ${sens} de ${abs}.`,
+      'Nous vous saurions gré de bien vouloir nous confirmer votre accord sur ce solde, ou, le cas échéant, de nous communiquer les éléments de désaccord (règlements ou factures non pris en compte).',
+      solde === 0 ? 'À ce jour, votre compte est soldé.' : '',
+    ].filter(Boolean),
+    bodyAfter: [
+      'Dans l\'attente de votre retour, nous vous prions d\'agréer, Madame, Monsieur, l\'expression de nos salutations distinguées.',
+    ],
+    signature: ['Pour ' + (d.raison_sociale ?? "l'entreprise"), 'La Direction', '', '(signature et cachet)'],
+    footNote: `Document généré par Nova le ${today} — solde issu de la comptabilité auxiliaire. À vérifier et signer avant envoi.`,
+  });
+  const safe = String(tp.aux_code || tp.name || 'tiers').replace(/[^a-zA-Z0-9]+/g, '-');
+  return { filename: `confirmation-solde-${safe}.pdf`, buffer, count: st.rows.length };
 }
