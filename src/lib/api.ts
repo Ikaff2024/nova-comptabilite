@@ -249,6 +249,11 @@ export interface CreditScore {
   financing: { eligible: boolean; amount: number; note: string };
   metrics: { tresorerie: number; resultat: number; ca: number; caMensuel: number; creances: number; capitauxPropres: number; dettesFin: number; overdue90: number };
 }
+export interface EcheanceItem { tiers: string; piece: string | null; date: string; echeance: string | null; montant: number; jours: number | null; statut: string; echu: boolean; }
+export interface Echeancier {
+  creances: EcheanceItem[]; dettes: EcheanceItem[];
+  resume: { total_a_encaisser: number; total_a_payer: number; creances_echues: number; dettes_echues: number; a_encaisser_30j: number; a_payer_30j: number; solde_net_30j: number };
+}
 export interface CashForecast {
   currentCash: number; projectedBalance: number; minBalance: number; minWeek: string; horizonWeeks: number; delayDays: number;
   weeks: { weekStart: string; inflows: number; outflows: number; net: number; balance: number }[];
@@ -553,6 +558,7 @@ export const api = {
   disburseFinancing: (dossierId: string, fid: string, date: string, bankAccount?: string) => req<{ entryId: string }>(`/api/dossiers/${dossierId}/financing/${fid}/disburse`, { method: 'POST', body: JSON.stringify({ date, bankAccount }) }),
   repayFinancing: (dossierId: string, fid: string, body: { date: string; amount: number; interest?: number; bankAccount?: string }) => req<{ entryId: string; fullyRepaid: boolean }>(`/api/dossiers/${dossierId}/financing/${fid}/repay`, { method: 'POST', body: JSON.stringify(body) }),
   cashForecast: (dossierId: string, weeks?: number, delay?: number) => req<CashForecast>(`/api/dossiers/${dossierId}/cash-forecast?${weeks ? `weeks=${weeks}&` : ''}${delay != null ? `delay=${delay}` : ''}`),
+  echeancier: (dossierId: string) => req<Echeancier>(`/api/dossiers/${dossierId}/echeancier`),
   revisionReport: (dossierId: string, fiscalYearId: string) => req<RevisionReport>(`/api/dossiers/${dossierId}/revision?fiscalYearId=${fiscalYearId}`),
   setReview: (dossierId: string, fiscalYearId: string, accountCode: string, body: { status?: string; note?: string }) =>
     req<void>(`/api/dossiers/${dossierId}/revision`, { method: 'POST', body: JSON.stringify({ fiscalYearId, accountCode, ...body }) }),

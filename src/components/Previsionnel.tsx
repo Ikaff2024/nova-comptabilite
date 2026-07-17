@@ -3,8 +3,10 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { Loader2, TrendingUp, Wallet, AlertTriangle, CalendarClock, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { api, fmtMoney, type CashForecast } from '../lib/api';
 import { cn } from '../lib/utils';
+import Echeancier from './Echeancier';
 
 export default function Previsionnel({ dossierId, currency }: { dossierId: string; currency: string }) {
+  const [view, setView] = useState<'prevision' | 'echeancier'>('prevision');
   const [data, setData] = useState<CashForecast | null>(null);
   const [loading, setLoading] = useState(true);
   const [delay, setDelay] = useState(30);
@@ -14,7 +16,15 @@ export default function Previsionnel({ dossierId, currency }: { dossierId: strin
   const load = async () => { setLoading(true); try { setData(await api.cashForecast(dossierId, 13, delay)); } finally { setLoading(false); } };
   useEffect(() => { load(); }, [dossierId, delay]);
 
-  if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul du prévisionnel…</div>;
+  const toggle = (
+    <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
+      {([['prevision', 'Prévision de trésorerie'], ['echeancier', 'Échéancier']] as const).map(([k, label]) => (
+        <button key={k} onClick={() => setView(k)} className={cn('rounded-lg px-3 py-1.5 font-medium transition-colors', view === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>{label}</button>
+      ))}
+    </div>
+  );
+  if (view === 'echeancier') return <div className="space-y-5">{toggle}<Echeancier dossierId={dossierId} currency={currency} /></div>;
+  if (loading) return <div className="space-y-5">{toggle}<div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul du prévisionnel…</div></div>;
   if (!data) return null;
 
   const chart = data.weeks.map((w) => ({ label: w.weekStart.slice(5), balance: w.balance, net: w.net }));
@@ -22,6 +32,7 @@ export default function Previsionnel({ dossierId, currency }: { dossierId: strin
 
   return (
     <div className="space-y-6">
+      {toggle}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-zinc-300"><TrendingUp className="h-4 w-4 text-emerald-400" /> Prévisionnel de trésorerie · {data.horizonWeeks} semaines</div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">Délai de règlement moyen

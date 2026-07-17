@@ -121,3 +121,38 @@ export async function cashForecast(
     weeks, upcoming, events: events.sort((a, b) => a.date.localeCompare(b.date)),
   };
 }
+
+// --- Échéancier : créances à encaisser + dettes à payer, par date d'échéance --
+// Basé sur les factures (dates d'échéance RÉELLES) non réglées. Calendrier
+// actionnable de recouvrement / paiement, distinct de la prévision hebdomadaire.
+export async function echeancier(c: Client, dossierId: string): Promise<any> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { rows: cre } = await c.query(
+    `select client_name as tiers, number as piece, to_char(due_date,'YYYY-MM-DD') as echeance,
+            to_char(invoice_date,'YYYY-MM-DD') as date, total_ttc as montant
+       from invoices where dossier_id=$1 and doc_type='invoice' and status='issued'
+      order by due_date nulls last, invoice_date`, [dossierId]);
+  const { rows: det } = await c.query(
+    `select supplier_name as tiers, supplier_ref as piece, to_char(due_date,'YYYY-MM-DD') as echeance,
+            to_char(invoice_date,'YYYY-MM-DD') as date, total_ttc as montant
+       from purchase_invoices where dossier_id=$1 and status='recorded'
+      order by due_date nulls last, invoice_date`, [dossierId]);
+  const enrich = (r: any) => {
+    const ech = r.echeance || r.date;
+    const jours = ech ? Math.round((new Date(ech + 'T00:00:00Z').getTime() - new Date(today + 'T00:00:00Z').getTime()) / 86400000) : null;
+    const statut = jours == null ? 'sans échéance' : jours < 0 ? `échu (+${-jours} j)` : jours === 0 ? "aujourd'hui" : `dans ${jours} j`;
+    return { tiers: r.tiers, piece: r.piece || null, date: r.date, echeance: ech, montant: Math.round(Number(r.montant)), jours, statut, echu: jours != null && jours < 0 };
+  };
+  const creances = cre.map(enrich), dettes = det.map(enrich);
+  const sum = (a: any[]) => Math.round(a.reduce((s, x) => s + x.montant, 0));
+  const upto = (a: any[], hi: number) => Math.round(a.filter((x) => x.jours != null && x.jours <= hi).reduce((s, x) => s + x.montant, 0));
+  return {
+    creances, dettes,
+    resume: {
+      total_a_encaisser: sum(creances), total_a_payer: sum(dettes),
+      creances_echues: sum(creances.filter((x: any) => x.echu)), dettes_echues: sum(dettes.filter((x: any) => x.echu)),
+      a_encaisser_30j: upto(creances, 30), a_payer_30j: upto(dettes, 30),
+      solde_net_30j: upto(creances, 30) - upto(dettes, 30),
+    },
+  };
+}

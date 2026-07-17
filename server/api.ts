@@ -44,7 +44,7 @@ import { postCutoff } from './domain/cutoff.js';
 import * as obligations from './domain/obligations.js';
 import * as entrytemplates from './domain/entrytemplates.js';
 import * as revision from './domain/revision.js';
-import { cashForecast } from './domain/forecast.js';
+import { cashForecast, echeancier } from './domain/forecast.js';
 import { creditScore } from './domain/scoring.js';
 import * as financing from './domain/financing.js';
 import * as recurring from './domain/recurring.js';
@@ -1022,6 +1022,10 @@ export function createApi() {
     const horizonWeeks = req.query.weeks ? Number(req.query.weeks) : undefined;
     const delayDays = req.query.delay ? Number(req.query.delay) : undefined;
     res.json(await withUser(userId, (c) => cashForecast(c, req.params.id, { horizonWeeks, delayDays })));
+  }));
+  app.get('/api/dossiers/:id/echeancier', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => echeancier(c, req.params.id)));
   }));
 
   // --- Dossier de révision (justification des comptes) -----------------------

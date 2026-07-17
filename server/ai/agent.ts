@@ -263,6 +263,7 @@ const READ_TOOLS = [
   { name: 'creances_clients', description: 'Balance âgée clients : qui doit de l\'argent, montants et ancienneté (0-30, 31-60, 61-90, +90 jours).', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'dettes_fournisseurs', description: 'Balance âgée fournisseurs : ce que l\'entreprise doit, par tiers et ancienneté.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'previsionnel_tresorerie', description: 'Prévision de trésorerie sur les prochaines semaines (encaissements/décaissements attendus).', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'echeancier', description: "Échéancier : factures de VENTE à encaisser (créances) et factures d'ACHAT à payer (dettes) NON RÉGLÉES, avec leur date d'échéance réelle et le nombre de jours restants (ou le retard). Résumé : total à encaisser/à payer, montants échus, à encaisser/à payer sous 30 jours, solde net à 30 j. Pour répondre « qu'est-ce que je dois encaisser/payer et quand ? », prioriser le recouvrement et anticiper les paiements.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'tva', description: 'Situation de TVA (collectée, déductible, à payer/crédit) sur une période. Fournir les dates de début et fin (YYYY-MM-DD).', input_schema: { type: 'object', properties: { debut: { type: 'string', description: 'YYYY-MM-DD' }, fin: { type: 'string', description: 'YYYY-MM-DD' } }, required: ['debut', 'fin'] } },
   { name: 'factures_ventes', description: 'Liste des factures de vente (optionnellement filtrées par statut : draft, issued, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
   { name: 'factures_achats', description: 'Liste des factures fournisseurs (optionnellement filtrées par statut : draft, recorded, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
@@ -472,6 +473,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'creances_clients': return await relances.overdueClients(c, dossierId);
     case 'dettes_fournisseurs': return await purchases.supplierAging(c, dossierId);
     case 'previsionnel_tresorerie': return await forecast.cashForecast(c, dossierId, {});
+    case 'echeancier': { const e: any = await forecast.echeancier(c, dossierId); return { ...e, creances: cap(e.creances, 40), dettes: cap(e.dettes, 40) }; }
     case 'tva': return await tax.vatDeclaration(c, dossierId, String(input?.debut ?? ''), String(input?.fin ?? ''));
     case 'factures_ventes': return cap(await invoicing.listInvoices(c, dossierId, input?.statut, 'invoice'), 50);
     case 'factures_achats': return cap(await purchases.listPurchases(c, dossierId, input?.statut), 50);
