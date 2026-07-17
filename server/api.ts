@@ -109,7 +109,7 @@ export function createApi() {
 
   app.get('/api/health', async (_req, res) => {
     const commit = (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT ?? '').slice(0, 7) || null;
-    const base = { agent: agent.agentEnabled(), tts: tts.ttsEnabled(), telegram: telegram.telegramEnabled(), email: mail.emailEnabled(), commit, service: 'nova-comptabilite-api' };
+    const base = { agent: agent.agentEnabled(), tts: tts.ttsEnabled(), ttsProviders: tts.providersAvailable(), ttsForced: process.env.TTS_FORCE_PROVIDER || null, telegram: telegram.telegramEnabled(), email: mail.emailEnabled(), commit, service: 'nova-comptabilite-api' };
     try {
       await pool.query('select 1');
       // Diagnostic de schéma : confirme l'application des migrations récentes.
