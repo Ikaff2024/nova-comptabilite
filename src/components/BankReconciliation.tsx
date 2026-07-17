@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Landmark, CheckCircle2, AlertTriangle, Printer, Upload, Wand2, FileSpreadsheet, Plus } from 'lucide-react';
-import { api, fmtMoney, type BankAccount, type ReconMove, type StatementMatch, type AnalyticSection } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, type BankAccount, type ReconMove, type StatementMatch, type AnalyticSection } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -98,7 +98,8 @@ export default function BankReconciliation({ dossierId, dossierName, currency }:
           <input value={statement} onChange={(e) => setStatement(e.target.value)} type="number" placeholder="ex. 650000"
             className="w-36 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-right font-mono text-sm outline-none focus:border-emerald-500/50" />
           <button onClick={() => setShowImport((v) => !v)} className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><Upload className="h-4 w-4" /> Importer un relevé</button>
-          <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
+          <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> Aperçu</button>
+          <button onClick={() => account && downloadAuthed(`/api/dossiers/${dossierId}/reconciliation-statement?account=${account}`, `rapprochement-${account}.pdf`)} disabled={!account} className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"><Printer className="h-4 w-4" /> État PDF</button>
         </div>
       </div>
 

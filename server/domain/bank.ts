@@ -1,6 +1,9 @@
 import type { Client } from '../db.js';
 import { parseStatement, type StatementRow } from '../bank/statement.js';
 import { postEntry } from './accounting.js';
+import { tablePdf } from '../documents/pdf.js';
+
+const grpB = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
 // ============================================================================
 // Rapprochement bancaire : pointage des écritures d'un compte de trésorerie
@@ -47,6 +50,34 @@ export async function reconciliationView(c: Client, dossierId: string, accountCo
   const balance = moves.reduce((s: number, m: any) => s + m.debit - m.credit, 0);
   const pointedBalance = moves.filter((m: any) => m.pointed).reduce((s: number, m: any) => s + m.debit - m.credit, 0);
   return { balance, pointedBalance, moves };
+}
+
+// État de rapprochement bancaire en PDF : solde comptable, solde rapproché
+// (pointé), et les éléments en suspens (non pointés) qui expliquent l'écart.
+export async function reconciliationStatementPdf(c: Client, dossierId: string, accountCode: string, currency = 'XOF'): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const view = await reconciliationView(c, dossierId, accountCode);
+  const { rows: ar } = await c.query('select label from accounts where dossier_id=$1 and account_code=$2', [dossierId, accountCode]);
+  const { rows: dr } = await c.query('select raison_sociale from dossiers where id=$1', [dossierId]);
+  const money = (n: number) => `${grpB(n)} ${currency}`;
+  const unpointed = view.moves.filter((m: any) => !m.pointed);
+  const suspens = view.balance - view.pointedBalance; // = total non pointé
+  const buffer = await tablePdf({
+    title: 'État de rapprochement bancaire',
+    subtitle: `${dr[0]?.raison_sociale ?? ''} · compte ${accountCode}${ar[0]?.label ? ' — ' + ar[0].label : ''} · au ${new Date().toISOString().slice(0, 10)}`,
+    meta: [
+      `Solde comptable du compte : ${money(view.balance)}`,
+      `Solde rapproché (pointé avec la banque) : ${money(view.pointedBalance)}`,
+      `Éléments en suspens (non rapprochés) : ${money(suspens)}`,
+    ],
+    columns: [
+      { label: 'Date', width: 70 }, { label: 'Jrnl', width: 45 }, { label: 'Pièce', width: 80 }, { label: 'Libellé', width: 200 },
+      { label: 'Débit', width: 85, align: 'right' }, { label: 'Crédit', width: 85, align: 'right' },
+    ],
+    rows: unpointed.map((m: any) => [m.entry_date, m.journal_code, m.piece_ref ?? '', m.label ?? '', m.debit ? money(m.debit) : '', m.credit ? money(m.credit) : '']),
+    totals: ['', '', '', 'Total en suspens', money(unpointed.reduce((s: number, m: any) => s + m.debit, 0)), money(unpointed.reduce((s: number, m: any) => s + m.credit, 0))],
+    footNote: `Les éléments en suspens (${unpointed.length}) sont les écritures comptabilisées mais non encore rapprochées avec le relevé bancaire (chèques émis non débités, encaissements non crédités…). Solde comptable − éléments en suspens = solde attendu sur le relevé. Généré par Nova.`,
+  });
+  return { filename: `rapprochement-${accountCode}-${new Date().toISOString().slice(0, 10)}.pdf`, buffer, count: unpointed.length };
 }
 
 // --- Import de relevé + rapprochement assisté -------------------------------

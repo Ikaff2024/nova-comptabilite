@@ -859,6 +859,19 @@ export function createApi() {
     if (!account) { const e: any = new Error('account requis'); e.status = 400; throw e; }
     res.json(await withUser(userId, (c) => bank.reconciliationView(c, req.params.id, account)));
   }));
+  app.get('/api/dossiers/:id/reconciliation-statement', h(async (req, res) => {
+    const userId = requireUser(req);
+    const account = (req.query.account as string) || '';
+    if (!account) { const e: any = new Error('account requis'); e.status = 400; throw e; }
+    const out = await withUser(userId, async (c) => {
+      const ds = await acc.listDossiers(c);
+      const cur = ds.find((d: any) => d.id === req.params.id)?.base_currency ?? 'XOF';
+      return bank.reconciliationStatementPdf(c, req.params.id, account, cur);
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
 
   app.post('/api/dossiers/:id/reconciliation/point', h(async (req, res) => {
     const userId = requireUser(req);

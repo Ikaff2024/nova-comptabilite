@@ -16,6 +16,7 @@ import * as budgetcopilot from '../domain/budgetcopilot.js';
 import * as clotureworks from '../domain/clotureworks.js';
 import * as assets from '../domain/assets.js';
 import * as tiers from '../domain/tiers.js';
+import * as bank from '../domain/bank.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
 import * as recurring from '../domain/recurring.js';
@@ -397,7 +398,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations"' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521)' },
               tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
@@ -687,6 +688,11 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
       const r = await assets.assetsRegisterPdf(c, dossierId, dd[0]?.base_currency ?? 'XOF');
       if (r.count === 0) return { error: 'Aucune immobilisation enregistrée.' };
       return r;
+    }
+    case 'etat_rapprochement': {
+      const compte = String(pj.compte ?? '521').trim();
+      const { rows: dd } = await c.query('select base_currency from dossiers where id=$1', [dossierId]);
+      return await bank.reconciliationStatementPdf(c, dossierId, compte, dd[0]?.base_currency ?? 'XOF');
     }
     default: return { error: `Type de pièce jointe non pris en charge : ${pj.document}.` };
   }
