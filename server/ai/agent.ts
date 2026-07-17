@@ -277,6 +277,7 @@ const READ_TOOLS = [
   { name: 'forecast_glissant', description: "Forecast glissant de l'exercice courant : réel à date, budget attendu au prorata du temps écoulé (écart de rythme : en avance/en retard), et PROJECTION de fin d'année par extrapolation du rythme (run-rate), par compte (classes 6 et 7) et en total (produits, charges, résultat projeté). Pour commenter la tendance : « où finit-on l'année si le rythme se maintient ? », expliquer les écarts vs budget et alerter sur les dérapages. La projection est linéaire (ne tient pas compte de la saisonnalité) — dis-le si pertinent.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'preparer_budget', description: "Copilote budget : PROPOSE un budget pour l'exercice courant à partir du réalisé de l'exercice précédent, avec la provenance de chaque montant (base réalisée N-1 + taux appliqué). Hypothèses par défaut : croissance des produits +5 %, inflation des charges +3 % — surchargeable via croissance_produits / inflation_charges (en décimal, ex. 0.08). Renvoie aussi des QUESTIONS à poser à la direction (prix, recrutements, investissements, charges non reconductibles). Ne saisit rien : la validation reste humaine (onglet Budget › Copilote).", input_schema: { type: 'object', properties: { croissance_produits: { type: 'number', description: 'décimal, ex. 0.05 pour +5%' }, inflation_charges: { type: 'number', description: 'décimal, ex. 0.03' } }, required: [] } },
   { name: 'comparer_scenarios', description: "Compare 3 scénarios budgétaires (prudent, central, ambitieux) projetés depuis le réalisé N-1 : produits, charges, résultat et marge nette pour chacun. Pour éclairer une décision (« combien coûte l'hypothèse ambitieuse ? », « quel résultat en prudent ? »).", input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'immobilisations', description: "État des immobilisations : par bien — compte, date d'acquisition, valeur brute, durée, cumul d'amortissements et VALEUR NETTE COMPTABLE (VNC), plus les dotations en attente. Totaux (brut, cumul, VNC). Pour répondre sur le patrimoine, la VNC, les amortissements à comptabiliser. Le tableau s'envoie par email via pieces_jointes = [{ document: \"etat_immobilisations\" }].", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'releve_compte_tiers', description: "Relevé de compte d'un client ou fournisseur : tous ses mouvements chronologiques avec solde progressif, et le SOLDE final (à recevoir pour un client / à payer pour un fournisseur). Fournir le nom (ou le code auxiliaire) du tiers. Pour répondre « combien me doit X ? », faire le point d'un compte, ou avant d'envoyer un relevé. Le PDF s'envoie par email via pieces_jointes = [{ document: \"releve_tiers\", tiers: \"<nom>\" }].", input_schema: { type: 'object', properties: { tiers: { type: 'string', description: 'Nom ou code auxiliaire du client/fournisseur' } }, required: ['tiers'] } },
   { name: 'travaux_de_cloture', description: "Contrôle du grand livre pour préparer les travaux de FIN D'EXERCICE / CLÔTURE : renvoie une checklist des points à traiter (brouillons non validés, dotations aux amortissements dues, comptes d'attente 47x non soldés, caisse créditrice, TVA à régulariser, créances anciennes non lettrées) avec pour chacun le statut, le montant et l'action recommandée, plus le résultat provisoire. Utilise-le pour dresser un PLAN de clôture étape par étape.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'previsionnel', description: "États prévisionnels d'un scénario : compte de résultat prévisionnel, budget de TRÉSORERIE mensuel (position de départ = trésorerie actuelle), indicateurs (marge nette, BFR, trésorerie minimale) et alerte si la trésorerie devient négative. Paramètres : scenario (prudent|central|ambitieux, défaut central) et stress (décimal, ex. 0.15 = baisse produits -15% et hausse charges +15% pour un stress test). Étalement linéaire (MVP).", input_schema: { type: 'object', properties: { scenario: { type: 'string' }, stress: { type: 'number', description: 'décimal, ex. 0.15' } }, required: [] } },
@@ -395,7 +396,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers)' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations"' },
               tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
@@ -498,6 +499,12 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'preparer_budget': { if (!fy) return { note: 'Aucun exercice ouvert.' }; const g: any = await budgetcopilot.generateBudgetFromHistory(c, dossierId, fy, { growthProduits: input?.croissance_produits, inflationCharges: input?.inflation_charges }); if (!g.priorYear) return { note: "Aucun exercice précédent avec des mouvements : impossible de générer depuis l'historique. Il faut saisir les hypothèses manuellement.", questions: g.questions }; return { ...g, lines: cap(g.lines ?? [], 80) }; }
     case 'comparer_scenarios': { if (!fy) return { note: 'Aucun exercice ouvert.' }; return await budgetcopilot.compareScenarios(c, dossierId, fy); }
     case 'previsionnel': { if (!fy) return { note: 'Aucun exercice ouvert.' }; const p: any = await budgetcopilot.provisionalStatements(c, dossierId, fy, String(input?.scenario ?? 'central'), Number(input?.stress) || 0); return { ...p, tresorerie: { ...p.tresorerie, mensuel: cap(p.tresorerie?.mensuel ?? [], 12) } }; }
+    case 'immobilisations': {
+      const list: any[] = await assets.listAssets(c, dossierId);
+      const actifs = list.filter((a) => a.status !== 'disposed');
+      const rows = actifs.map((a) => ({ immobilisation: a.label, compte: a.assetAccountCode, acquisition: a.acquisitionDate, valeur_brute: a.amount, duree_ans: a.durationYears, cumul_amort: a.cumulPosted, vnc: a.vnc, dotations_en_attente: a.pending, montant_dotations_dues: a.pendingAmount }));
+      return { immobilisations: cap(rows, 80), totaux: { valeur_brute: actifs.reduce((s, a) => s + a.amount, 0), cumul_amort: actifs.reduce((s, a) => s + a.cumulPosted, 0), vnc: actifs.reduce((s, a) => s + a.vnc, 0), dotations_dues: actifs.reduce((s, a) => s + (a.pendingAmount || 0), 0) } };
+    }
     case 'travaux_de_cloture': { return await clotureworks.clotureChecklist(c, dossierId, fy); }
     case 'releve_compte_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(input?.tiers ?? ''));
@@ -672,6 +679,12 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
       if (!cp) return { error: `Tiers « ${pj.tiers} » introuvable pour le relevé de compte.` };
       const { rows: dd } = await c.query('select base_currency from dossiers where id=$1', [dossierId]);
       return await tiers.tiersStatementPdf(c, dossierId, cp.id, dd[0]?.base_currency ?? 'XOF');
+    }
+    case 'etat_immobilisations': {
+      const { rows: dd } = await c.query('select base_currency from dossiers where id=$1', [dossierId]);
+      const r = await assets.assetsRegisterPdf(c, dossierId, dd[0]?.base_currency ?? 'XOF');
+      if (r.count === 0) return { error: 'Aucune immobilisation enregistrée.' };
+      return r;
     }
     default: return { error: `Type de pièce jointe non pris en charge : ${pj.document}.` };
   }

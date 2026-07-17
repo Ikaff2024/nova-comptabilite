@@ -661,6 +661,18 @@ export function createApi() {
     const userId = requireUser(req);
     res.status(201).json(await withUser(userId, (c) => assets.createAsset(c, req.params.id, req.body ?? {}, userId)));
   }));
+  // État des immobilisations (registre brut/amort./VNC) en PDF.
+  app.get('/api/dossiers/:id/assets-register', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, async (c) => {
+      const ds = await acc.listDossiers(c);
+      const cur = ds.find((d: any) => d.id === req.params.id)?.base_currency ?? 'XOF';
+      return assets.assetsRegisterPdf(c, req.params.id, cur);
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
   app.get('/api/dossiers/:id/assets/:aid', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => assets.assetDetail(c, req.params.id, req.params.aid)));

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Landmark, CheckCircle2, CalendarClock, ChevronDown, ChevronRight, FileSpreadsheet, Printer, Coins } from 'lucide-react';
-import { api, fmtMoney, type FixedAsset, type FixedAssetDetail } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, type FixedAsset, type FixedAssetDetail } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -57,7 +57,8 @@ export default function Immobilisations({ dossierId, dossierName, currency }: { 
         <div className="flex items-center gap-2 text-sm text-zinc-300"><Landmark className="h-4 w-4 text-emerald-400" /> Registre des immobilisations & amortissements</div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={exportCsv} disabled={!assets.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
-          <button onClick={exportPdf} disabled={!assets.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
+          <button onClick={exportPdf} disabled={!assets.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> Aperçu</button>
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/assets-register`, `etat-immobilisations.pdf`)} disabled={!assets.length} className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"><Printer className="h-4 w-4" /> État PDF</button>
           <button onClick={depreciateDue} disabled={busy || totalPending === 0} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-zinc-100 hover:bg-white/10 disabled:opacity-40">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarClock className="h-3.5 w-3.5" />} Dotations dues{totalPending > 0 ? ` (${totalPending})` : ''}</button>
           <button onClick={() => setShowForm((v) => !v)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Nouvelle immo</button>
         </div>

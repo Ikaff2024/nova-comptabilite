@@ -1,5 +1,6 @@
 import type { Client } from '../db.js';
 import { postEntry, createJournal } from './accounting.js';
+import { tablePdf } from '../documents/pdf.js';
 
 // ============================================================================
 // Immobilisations & amortissements (SYSCOHADA — linéaire, prorata temporis).
@@ -424,4 +425,41 @@ export async function postDepreciationDue(
     count += r.count; total = round2(total + r.total); skipped += r.skipped;
   }
   return { count, total, skipped };
+}
+
+// --- État des immobilisations (registre : brut -> cumul amort. -> VNC) --------
+// Le tableau que le comptable joint à la liasse / DSF. Réutilise listAssets.
+const grp = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+export async function assetsRegisterPdf(c: Client, dossierId: string, currency = 'XOF'): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const assets = await listAssets(c, dossierId);
+  const { rows: dr } = await c.query('select raison_sociale from dossiers where id=$1', [dossierId]);
+  const money = (n: number) => `${grp(n)} ${currency}`;
+  const active = assets.filter((a: any) => a.status !== 'disposed');
+  const rows = assets.map((a: any) => [
+    a.label + (a.status === 'disposed' ? ' (cédée)' : ''),
+    a.assetAccountCode,
+    a.acquisitionDate,
+    money(a.amount),
+    `${a.durationYears} ans`,
+    money(a.cumulPosted),
+    a.status === 'disposed' ? '—' : money(a.vnc),
+  ]);
+  const totBrut = active.reduce((s: number, a: any) => s + a.amount, 0);
+  const totCumul = active.reduce((s: number, a: any) => s + a.cumulPosted, 0);
+  const totVnc = active.reduce((s: number, a: any) => s + a.vnc, 0);
+  const buffer = await tablePdf({
+    title: 'État des immobilisations',
+    subtitle: `${dr[0]?.raison_sociale ?? ''} · au ${new Date().toISOString().slice(0, 10)}`,
+    meta: [`${active.length} immobilisation(s) en service`],
+    columns: [
+      { label: 'Immobilisation', width: 150 }, { label: 'Compte', width: 55 }, { label: 'Acquisition', width: 70 },
+      { label: 'Valeur brute', width: 90, align: 'right' }, { label: 'Durée', width: 45, align: 'right' },
+      { label: 'Cumul amort.', width: 90, align: 'right' }, { label: 'VNC', width: 90, align: 'right' },
+    ],
+    rows,
+    totals: ['TOTAL (en service)', '', '', money(totBrut), '', money(totCumul), money(totVnc)],
+    footNote: `Valeur nette comptable totale : ${money(totVnc)}. Cumul des amortissements pratiqués : ${money(totCumul)}. Généré par Nova.`,
+  });
+  return { filename: `etat-immobilisations-${new Date().toISOString().slice(0, 10)}.pdf`, buffer, count: assets.length };
 }
