@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2, Wand2, BellRing, Send, FolderOpen, Mail, Hash, Building2 } from 'lucide-react';
-import { api, fmtMoney, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow, type OverdueClient } from '../lib/api';
+import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2, Wand2, BellRing, Send, FolderOpen, Mail, Hash, Building2, FileText } from 'lucide-react';
+import { api, fmtMoney, downloadAuthed, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow, type OverdueClient } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -160,6 +160,7 @@ function FicheTiers({ dossierId, dossierName, currency }: { dossierId: string; d
           <option value="">— Choisir un tiers —</option>
           {list.map((t) => <option key={t.id} value={t.id}>{t.aux_code} · {t.name}</option>)}
         </select>
+        {tp && <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/tiers/${tp.id}/statement`, `releve-${tp.aux_code || tp.name}.pdf`)} disabled={!withSolde.length} className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"><FileText className="h-4 w-4" /> Relevé de compte</button>}
         {tp && <button onClick={exportPdf} disabled={!withSolde.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>}
       </div>
 

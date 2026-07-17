@@ -15,6 +15,7 @@ import * as budget from '../domain/budget.js';
 import * as budgetcopilot from '../domain/budgetcopilot.js';
 import * as clotureworks from '../domain/clotureworks.js';
 import * as assets from '../domain/assets.js';
+import * as tiers from '../domain/tiers.js';
 import * as payroll from '../domain/payroll.js';
 import * as reporting from '../domain/reporting.js';
 import * as recurring from '../domain/recurring.js';
@@ -276,6 +277,7 @@ const READ_TOOLS = [
   { name: 'forecast_glissant', description: "Forecast glissant de l'exercice courant : réel à date, budget attendu au prorata du temps écoulé (écart de rythme : en avance/en retard), et PROJECTION de fin d'année par extrapolation du rythme (run-rate), par compte (classes 6 et 7) et en total (produits, charges, résultat projeté). Pour commenter la tendance : « où finit-on l'année si le rythme se maintient ? », expliquer les écarts vs budget et alerter sur les dérapages. La projection est linéaire (ne tient pas compte de la saisonnalité) — dis-le si pertinent.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'preparer_budget', description: "Copilote budget : PROPOSE un budget pour l'exercice courant à partir du réalisé de l'exercice précédent, avec la provenance de chaque montant (base réalisée N-1 + taux appliqué). Hypothèses par défaut : croissance des produits +5 %, inflation des charges +3 % — surchargeable via croissance_produits / inflation_charges (en décimal, ex. 0.08). Renvoie aussi des QUESTIONS à poser à la direction (prix, recrutements, investissements, charges non reconductibles). Ne saisit rien : la validation reste humaine (onglet Budget › Copilote).", input_schema: { type: 'object', properties: { croissance_produits: { type: 'number', description: 'décimal, ex. 0.05 pour +5%' }, inflation_charges: { type: 'number', description: 'décimal, ex. 0.03' } }, required: [] } },
   { name: 'comparer_scenarios', description: "Compare 3 scénarios budgétaires (prudent, central, ambitieux) projetés depuis le réalisé N-1 : produits, charges, résultat et marge nette pour chacun. Pour éclairer une décision (« combien coûte l'hypothèse ambitieuse ? », « quel résultat en prudent ? »).", input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'releve_compte_tiers', description: "Relevé de compte d'un client ou fournisseur : tous ses mouvements chronologiques avec solde progressif, et le SOLDE final (à recevoir pour un client / à payer pour un fournisseur). Fournir le nom (ou le code auxiliaire) du tiers. Pour répondre « combien me doit X ? », faire le point d'un compte, ou avant d'envoyer un relevé. Le PDF s'envoie par email via pieces_jointes = [{ document: \"releve_tiers\", tiers: \"<nom>\" }].", input_schema: { type: 'object', properties: { tiers: { type: 'string', description: 'Nom ou code auxiliaire du client/fournisseur' } }, required: ['tiers'] } },
   { name: 'travaux_de_cloture', description: "Contrôle du grand livre pour préparer les travaux de FIN D'EXERCICE / CLÔTURE : renvoie une checklist des points à traiter (brouillons non validés, dotations aux amortissements dues, comptes d'attente 47x non soldés, caisse créditrice, TVA à régulariser, créances anciennes non lettrées) avec pour chacun le statut, le montant et l'action recommandée, plus le résultat provisoire. Utilise-le pour dresser un PLAN de clôture étape par étape.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'previsionnel', description: "États prévisionnels d'un scénario : compte de résultat prévisionnel, budget de TRÉSORERIE mensuel (position de départ = trésorerie actuelle), indicateurs (marge nette, BFR, trésorerie minimale) et alerte si la trésorerie devient négative. Paramètres : scenario (prudent|central|ambitieux, défaut central) et stress (décimal, ex. 0.15 = baisse produits -15% et hausse charges +15% pour un stress test). Étalement linéaire (MVP).", input_schema: { type: 'object', properties: { scenario: { type: 'string' }, stress: { type: 'number', description: 'décimal, ex. 0.15' } }, required: [] } },
   { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
@@ -393,7 +395,8 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers"' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers)' },
+              tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
               salarie: { type: 'string', description: 'Pour "bulletin" : matricule ou nom du salarié' },
@@ -496,6 +499,14 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'comparer_scenarios': { if (!fy) return { note: 'Aucun exercice ouvert.' }; return await budgetcopilot.compareScenarios(c, dossierId, fy); }
     case 'previsionnel': { if (!fy) return { note: 'Aucun exercice ouvert.' }; const p: any = await budgetcopilot.provisionalStatements(c, dossierId, fy, String(input?.scenario ?? 'central'), Number(input?.stress) || 0); return { ...p, tresorerie: { ...p.tresorerie, mensuel: cap(p.tresorerie?.mensuel ?? [], 12) } }; }
     case 'travaux_de_cloture': { return await clotureworks.clotureChecklist(c, dossierId, fy); }
+    case 'releve_compte_tiers': {
+      const cp = await tiers.findCounterparty(c, dossierId, String(input?.tiers ?? ''));
+      if (!cp) return { error: `Tiers « ${input?.tiers} » introuvable.` };
+      const st: any = await tiers.tiersStatement(c, dossierId, cp.id);
+      const supplier = cp.type === 'fournisseur';
+      const label = st.totals.solde === 0 ? 'soldé' : supplier ? (st.totals.solde < 0 ? 'à payer' : 'avance/avoir') : (st.totals.solde > 0 ? 'à recevoir' : 'avance/avoir');
+      return { tiers: { nom: cp.name, code: cp.aux_code, type: cp.type }, mouvements: cap(st.rows, 80), totaux: st.totals, situation: label };
+    }
     case 'recurrences_dues': { const t = await recurring.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, frequence: x.frequencyLabel, journal: x.journalCode, montant: x.amount, tiers: x.counterpartyName ?? null, actif: x.active, echeances_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
     case 'factures_recurrentes_dues': { const t = await recinv.listTemplates(c, dossierId); return { modeles: t.map((x: any) => ({ label: x.label, client: x.clientName, frequence: x.frequencyLabel, montant_ttc: x.montantTtc, actif: x.active, factures_dues: x.due })), total_dues: t.reduce((s: number, x: any) => s + (x.active ? x.due : 0), 0) }; }
 
@@ -656,6 +667,12 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
     case 'balance': return await accdocs.balancePdf(c, dossierId, fy);
     case 'grand_livre': { const code = String(pj.compte ?? '').trim(); if (!code) return { error: 'Précisez le compte (piece_jointe.compte) pour le grand livre.' }; const r = await accdocs.grandLivrePdf(c, dossierId, code, fy); if (r.count === 0) return { error: `Aucune écriture sur le compte ${code}.` }; return r; }
     case 'etats_financiers': return await accdocs.etatsFinanciersPdf(c, dossierId, fy);
+    case 'releve_tiers': {
+      const cp = await tiers.findCounterparty(c, dossierId, String(pj.tiers ?? ''));
+      if (!cp) return { error: `Tiers « ${pj.tiers} » introuvable pour le relevé de compte.` };
+      const { rows: dd } = await c.query('select base_currency from dossiers where id=$1', [dossierId]);
+      return await tiers.tiersStatementPdf(c, dossierId, cp.id, dd[0]?.base_currency ?? 'XOF');
+    }
     default: return { error: `Type de pièce jointe non pris en charge : ${pj.document}.` };
   }
 }

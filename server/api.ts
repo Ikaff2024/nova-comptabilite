@@ -822,6 +822,18 @@ export function createApi() {
     if (!counterparty) { const e: any = new Error('counterparty requis'); e.status = 400; throw e; }
     res.json(await withUser(userId, (c) => tiers.auxiliaryLedger(c, req.params.id, counterparty)));
   }));
+  // Relevé de compte d'un tiers, en PDF (état de compte pour le recouvrement).
+  app.get('/api/dossiers/:id/tiers/:cid/statement', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, async (c) => {
+      const ds = await acc.listDossiers(c);
+      const cur = ds.find((d: any) => d.id === req.params.id)?.base_currency ?? 'XOF';
+      return tiers.tiersStatementPdf(c, req.params.id, req.params.cid, cur);
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
 
   // --- Rapprochement bancaire (pointage) -------------------------------------
   app.get('/api/dossiers/:id/bank-accounts', h(async (req, res) => {

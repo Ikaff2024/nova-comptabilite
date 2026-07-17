@@ -1,8 +1,23 @@
 import type { Client } from '../db.js';
+import { tablePdf } from '../documents/pdf.js';
 
 // ============================================================================
 // Comptabilité auxiliaire : plan des tiers, balance tiers, grand livre tiers.
 // ============================================================================
+
+const grp = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+// Retrouve un tiers par code auxiliaire ou par nom (utile à Lexa qui reçoit un nom).
+export async function findCounterparty(c: Client, dossierId: string, ref: string): Promise<any | null> {
+  const q = String(ref ?? '').trim();
+  if (!q) return null;
+  const { rows } = await c.query(
+    `select id, name, type, aux_code, tax_id, email from counterparties
+      where dossier_id=$1 and (aux_code ilike $2 or name ilike $3)
+      order by (lower(aux_code)=lower($2)) desc, (aux_code ilike $2) desc, length(name) asc limit 1`,
+    [dossierId, q, `%${q}%`]);
+  return rows[0] ?? null;
+}
 
 export async function listCounterparties(c: Client, dossierId: string, type?: string): Promise<any[]> {
   const params: any[] = [dossierId];
@@ -103,4 +118,48 @@ export async function auxiliaryLedger(c: Client, dossierId: string, counterparty
     [dossierId, counterpartyId],
   );
   return rows.map((r: any) => ({ ...r, debit: Number(r.debit), credit: Number(r.credit) }));
+}
+
+// --- Relevé de compte d'un tiers (état de compte, recouvrement) --------------
+// Mouvements chronologiques + solde progressif + solde final (à recevoir/à payer).
+export async function tiersStatement(c: Client, dossierId: string, counterpartyId: string): Promise<any> {
+  const { rows: cp } = await c.query(
+    'select id, name, type, aux_code, tax_id, email from counterparties where dossier_id=$1 and id=$2', [dossierId, counterpartyId]);
+  if (!cp[0]) throw new Error('Tiers introuvable');
+  const moves = await auxiliaryLedger(c, dossierId, counterpartyId);
+  let solde = 0;
+  const rows = moves.map((m: any) => { solde += m.debit - m.credit; return { ...m, solde: Math.round(solde * 100) / 100 }; });
+  const debit = moves.reduce((s: number, m: any) => s + m.debit, 0);
+  const credit = moves.reduce((s: number, m: any) => s + m.credit, 0);
+  return { tiers: cp[0], rows, totals: { debit, credit, solde: Math.round((debit - credit) * 100) / 100 } };
+}
+
+// Relevé de compte en PDF (à imprimer / envoyer au tiers).
+export async function tiersStatementPdf(c: Client, dossierId: string, counterpartyId: string, currency = 'XOF'): Promise<{ filename: string; buffer: Buffer; count: number; found: boolean }> {
+  const st = await tiersStatement(c, dossierId, counterpartyId);
+  const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
+  const d: any = dr[0]?.j ?? {};
+  const money = (n: number) => (n ? `${grp(n)} ${currency}` : '');
+  const tp = st.tiers;
+  const supplier = tp.type === 'fournisseur';
+  const soldeLabel = st.totals.solde === 0 ? 'soldé' : supplier ? (st.totals.solde < 0 ? 'à payer' : 'avance/avoir') : (st.totals.solde > 0 ? 'à recevoir' : 'avance/avoir');
+  const today = new Date().toISOString().slice(0, 10);
+  const meta = [
+    `Émetteur : ${d.raison_sociale ?? '—'}${d.tax_id ? ` · NCC/IFU ${d.tax_id}` : ''}${d.rccm ? ` · RCCM ${d.rccm}` : ''}`,
+    `${supplier ? 'Fournisseur' : 'Client'} : ${tp.name}${tp.aux_code ? ` (${tp.aux_code})` : ''}${tp.tax_id ? ` · ${tp.tax_id}` : ''}`,
+  ];
+  const buffer = await tablePdf({
+    title: 'Relevé de compte',
+    subtitle: `${tp.name} · au ${today}`,
+    meta,
+    columns: [
+      { label: 'Date', width: 70 }, { label: 'Pièce', width: 85 }, { label: 'Libellé', width: 190 },
+      { label: 'Débit', width: 80, align: 'right' }, { label: 'Crédit', width: 80, align: 'right' }, { label: 'Solde', width: 90, align: 'right' },
+    ],
+    rows: st.rows.map((r: any) => [r.entry_date, r.piece_ref ?? '', r.label ?? '', money(r.debit), money(r.credit), `${grp(r.solde)} ${currency}`]),
+    totals: ['', '', `Solde (${soldeLabel})`, money(st.totals.debit), money(st.totals.credit), `${grp(st.totals.solde)} ${currency}`],
+    footNote: `Relevé généré par Nova le ${today}.${st.totals.solde !== 0 ? ` Solde ${soldeLabel} : ${grp(Math.abs(st.totals.solde))} ${currency}.` : ''} Sauf erreur ou omission ; en cas de règlement récent, merci de ne pas tenir compte de ce relevé.`,
+  });
+  const safe = String(tp.aux_code || tp.name || 'tiers').replace(/[^a-zA-Z0-9]+/g, '-');
+  return { filename: `releve-${safe}.pdf`, buffer, count: st.rows.length, found: true };
 }
