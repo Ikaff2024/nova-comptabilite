@@ -55,6 +55,7 @@ export function cleanForTts(s: string): string {
     .replace(/\s[-–—]{2,}\s/g, ' ')              // tirets de séparation en ligne
     .replace(/^\s*[-•*]\s+/gm, '').replace(/^\s*\d+[.)]\s+/gm, '')
     .replace(/\|/g, ', ').replace(/[_`>]/g, '')
+    .replace(/(\d{2,})\s*\/\s*(\d{2,})/g, '$1 ou $2') // « 611/612 » -> « 611 ou 612 » (évite la lecture ordinale)
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{2190}-\u{21FF}]/gu, '')
     .replace(/\bSYSCOHADA\b/gi, 'Sisco-ada').replace(/\bOHADA\b/gi, 'Oada').replace(/\bAUDCIF\b/gi, 'Od-cif')
     .replace(/(\d)\s?[kK]\b/g, '$1 mille').replace(/(\d)\s?M\b/g, '$1 millions')

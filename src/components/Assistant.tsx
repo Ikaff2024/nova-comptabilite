@@ -23,6 +23,7 @@ const forSpeech = (s: string) => s
   .replace(/^\s*[-•*]\s+/gm, '')                 // puces
   .replace(/^\s*\d+[.)]\s+/gm, '')               // listes numérotées (« 1. » lu « un point »)
   .replace(/\|/g, ', ').replace(/[_`>]/g, '')
+  .replace(/(\d{2,})\s*\/\s*(\d{2,})/g, '$1 ou $2')   // « 611/612 » -> « 611 ou 612 » (évite la lecture ordinale)
   .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{2190}-\u{21FF}]/gu, '') // emojis/symboles
   .replace(/\d{1,3}(?:[   ]\d{3})+/g, (m) => m.replace(/[   ]/g, '')) // milliers
   .replace(/\bX[AO]F\b/g, ' francs CFA').replace(/%/g, ' pour cent')
