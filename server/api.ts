@@ -35,6 +35,7 @@ import * as alerts from './domain/alerts.js';
 import * as ratios from './domain/ratios.js';
 import * as controls from './domain/controls.js';
 import * as aqm from './domain/aqm.js';
+import * as ledgerDom from './domain/ledger.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -1513,7 +1514,7 @@ export function createApi() {
     const userId = requireUser(req);
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
     if (messages.length === 0) { const e: any = new Error('messages requis'); e.status = 400; throw e; }
-    const out = await withUser(userId, (c) => agent.runAgent(c, req.params.id, messages));
+    const out = await withUser(userId, (c) => agent.runAgent(c, req.params.id, messages, userId));
     const lastUser = String(messages[messages.length - 1]?.content ?? '');
     await withUser(userId, async (c) => {
       await agent.saveTurns(c, req.params.id, userId, [{ role: 'user', content: lastUser }, { role: 'assistant', content: out.reply }]);
@@ -1524,6 +1525,18 @@ export function createApi() {
   app.get('/api/dossiers/:id/agent/history', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => agent.loadHistory(c, req.params.id, userId, 50)));
+  }));
+  // Decision Ledger — journal de preuves des décisions de Lexa (explicabilité / audit).
+  app.get('/api/dossiers/:id/decisions', h(async (req, res) => {
+    const userId = requireUser(req);
+    const limit = Number(req.query.limit) || 30;
+    res.json(await withUser(userId, (c) => ledgerDom.listDecisions(c, req.params.id, limit)));
+  }));
+  app.get('/api/dossiers/:id/decisions/:did', h(async (req, res) => {
+    const userId = requireUser(req);
+    const d = await withUser(userId, (c) => ledgerDom.getDecision(c, req.params.id, req.params.did));
+    if (!d) { const e: any = new Error('Décision introuvable'); e.status = 404; throw e; }
+    res.json(d);
   }));
 
   app.get('/api/dossiers/:id/fec', h(async (req, res) => {

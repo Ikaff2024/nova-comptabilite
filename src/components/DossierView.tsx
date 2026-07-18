@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown, Lock } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown, Lock, ScrollText } from 'lucide-react';
 import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -24,6 +24,7 @@ import Fiscalite from './Fiscalite';
 import ImportBalance from './ImportBalance';
 import Immobilisations from './Immobilisations';
 import AuditTrail from './AuditTrail';
+import LexaDecisions from './LexaDecisions';
 import DossierDashboard from './DossierDashboard';
 import AnalyseFinanciere from './AnalyseFinanciere';
 import Recurring from './Recurring';
@@ -34,7 +35,7 @@ import Revision from './Revision';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'clotures' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'portail';
+type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'clotures' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'decisions' | 'portail';
 
 export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -88,6 +89,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'plan', label: 'Plan comptable', icon: BookOpen },
     { id: 'import', label: 'Import balance', icon: Upload },
     { id: 'audit', label: 'Audit', icon: History },
+    { id: 'decisions', label: 'Décisions Lexa', icon: ScrollText },
     { id: 'portail', label: 'Portail client', icon: UserRound },
   ];
 
@@ -102,7 +104,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { label: 'Comptabilité', icon: Library, items: ['balance', 'grandlivre', 'journaux', 'revision', 'clotures', 'plan'] },
     { label: 'Tiers & trésorerie', icon: Landmark, items: ['tiers', 'banque', 'immos'] },
     { label: 'États & déclarations', icon: FileText, items: ['etats', 'fiscalite'] },
-    { label: 'Paramètres & accès', icon: Settings2, items: ['regles', 'import', 'audit', 'portail'] },
+    { label: 'Paramètres & accès', icon: Settings2, items: ['regles', 'import', 'audit', 'decisions', 'portail'] },
   ];
   const sideGroups = groups.slice(0, 2);   // Pilotage, Saisie (vertical)
   const barGroups = groups.slice(2);       // Comptabilité, Tiers, États, Paramètres (barre horizontale)
@@ -236,6 +238,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
             {tab === 'recurrences' && <Recurring dossierId={dossier.id} currency={dossier.base_currency} journals={journals} />}
             {tab === 'abonnements' && <RecurringInvoices dossierId={dossier.id} currency={dossier.base_currency} />}
             {tab === 'audit' && <AuditTrail dossierId={dossier.id} />}
+            {tab === 'decisions' && <LexaDecisions dossierId={dossier.id} />}
             {tab === 'portail' && <ClientAccess dossierId={dossier.id} />}
           </motion.div>
           </div>

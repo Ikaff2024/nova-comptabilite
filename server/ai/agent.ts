@@ -25,6 +25,7 @@ import * as recinv from '../domain/recurringinvoices.js';
 import * as accdocs from '../documents/accounting-docs.js';
 import * as csv from '../documents/csv.js';
 import * as audit from '../domain/audit.js';
+import * as ledger from '../domain/ledger.js';
 import * as usage from '../domain/usage.js';
 import * as mail from '../email/provider.js';
 import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
@@ -752,7 +753,7 @@ export async function runToolForTest(c: Client, dossierId: string, name: string,
   return executeTool(c, dossierId, fyId, name, input, mode);
 }
 
-export async function runAgent(c: Client, dossierId: string, history: AgentMessage[]): Promise<AgentResult> {
+export async function runAgent(c: Client, dossierId: string, history: AgentMessage[], userId?: string): Promise<AgentResult> {
   if (!agentEnabled()) throw new Error('Assistant IA non configuré (ANTHROPIC_API_KEY absent).');
   const { text: ctx, fyId, mode } = await dossierContext(c, dossierId);
   const tools = mode === 'assist_plus' ? [...READ_TOOLS, ...DRAFT_TOOLS, ...REVERSIBLE_TOOLS, ...ACTION_TOOLS]
@@ -772,6 +773,8 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
   const model = pickModel(history);
   const instruction = String([...history].reverse().find((h) => h.role === 'user')?.content ?? '');
   const toolCalls: AgentToolCall[] = [];
+  const decisionTools: ledger.DecisionToolRef[] = []; // trace enrichie pour le Decision Ledger
+  const validations: any[] = [];                      // rapports AQM rencontrés dans ce tour
   let tokIn = 0, tokOut = 0; // cumul des tokens sur toutes les étapes du tour
   for (let step = 0; step < MAX_STEPS; step++) {
     const data = await callClaude({
@@ -791,6 +794,8 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
         let result: any;
         try { result = await executeTool(c, dossierId, fyId, block.name, block.input, mode); }
         catch (e: any) { result = { error: String(e?.message ?? e).slice(0, 200) }; }
+        decisionTools.push({ name: block.name, ok: !result?.error, verdict: result?.verdict });
+        if (block.name === 'valider_ecriture' && result?.verdict) validations.push({ input: block.input, report: result });
         // Journal d'audit : toute action de Lexa est tracée (instruction + acteur + résultat).
         if (MUTATING_TOOL_NAMES.has(block.name) && !result?.error) {
           try { await audit.recordAudit(c, { dossierId, action: `lexa.${block.name}`, entity: 'lexa_action', detail: { instruction: instruction.slice(0, 300), entrees: block.input, resultat: result?.statut ?? 'ok' } }); } catch { /* best-effort */ }
@@ -804,8 +809,11 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
     // Réponse finale : concatène les blocs texte.
     const reply = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
     await usage.recordUsage(c, dossierId, 'anthropic', model, { inputTokens: tokIn, outputTokens: tokOut });
+    const conf = validations.length ? Math.min(...validations.map((v) => v.report?.score ?? 100)) : null;
+    await ledger.logDecision(c, { dossierId, userId, question: instruction, mode, model, answer: reply, tools: decisionTools, validations, confidence: conf, tokensIn: tokIn, tokensOut: tokOut });
     return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model, mode };
   }
   await usage.recordUsage(c, dossierId, 'anthropic', model, { inputTokens: tokIn, outputTokens: tokOut });
+  await ledger.logDecision(c, { dossierId, userId, question: instruction, mode, model, answer: '(trop d\'étapes)', tools: decisionTools, validations, confidence: null, tokensIn: tokIn, tokensOut: tokOut });
   return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model, mode };
 }

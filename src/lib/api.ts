@@ -104,6 +104,9 @@ export interface FinancialStatements {
     totalActif: number; totalPassif: number; equilibre: boolean;
   };
 }
+export interface DecisionToolRef { name: string; ok: boolean; verdict?: string }
+export interface DecisionSummary { id: string; createdAt: string; question: string | null; mode: string | null; model: string | null; confidence: number | null; tools: DecisionToolRef[]; nbValidations: number }
+export interface DecisionDetail extends DecisionSummary { answer: string | null; validations: { input: any; report: ValidationReport }[]; tokensIn: number | null; tokensOut: number | null }
 export interface ValidationCheck { code: string; label: string; level: 'pass' | 'warning' | 'fail'; detail?: string }
 export interface ValidationReport { verdict: 'PASS' | 'WARNING' | 'FAIL'; score: number; checks: ValidationCheck[]; summary: string }
 export interface IsEstimate {
@@ -608,6 +611,8 @@ export const api = {
   agentStatus: (dossierId: string) => req<AgentStatus>(`/api/dossiers/${dossierId}/agent/status`),
   agentChat: (dossierId: string, messages: AgentMessage[]) => req<AgentResult>(`/api/dossiers/${dossierId}/agent/chat`, { method: 'POST', body: JSON.stringify({ messages }) }),
   agentHistory: (dossierId: string) => req<AgentMessage[]>(`/api/dossiers/${dossierId}/agent/history`),
+  decisions: (dossierId: string, limit = 30) => req<DecisionSummary[]>(`/api/dossiers/${dossierId}/decisions?limit=${limit}`),
+  decision: (dossierId: string, id: string) => req<DecisionDetail>(`/api/dossiers/${dossierId}/decisions/${id}`),
   setAgentMode: (dossierId: string, mode: AgentMode) => req<{ mode: AgentMode }>(`/api/dossiers/${dossierId}/agent/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
   lexaMemory: (dossierId: string) => req<{ id: string; content: string; source: string; created_at: string }[]>(`/api/dossiers/${dossierId}/lexa/memory`),
   lexaRemember: (dossierId: string, content: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/lexa/memory`, { method: 'POST', body: JSON.stringify({ content }) }),
