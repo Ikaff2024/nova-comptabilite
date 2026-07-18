@@ -1513,6 +1513,11 @@ export function createApi() {
     const month0 = req.query.month != null ? Math.max(0, Math.min(11, Number(req.query.month) - 1)) : now.getUTCMonth();
     res.json(await withUser(userId, (c) => payrollrh.rhAnalysis(c, req.params.id, year, month0)));
   }));
+  // Alertes légales RH (fin de CDD, fin de période d'essai).
+  app.get('/api/dossiers/:id/payroll/rh-alerts', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => payrollrh.rhAlerts(c, req.params.id)));
+  }));
   // Documents de paie en PDF (téléchargement). kind = ordre_virement | livre_paie.
   app.get('/api/dossiers/:id/payroll/document', h(async (req, res) => {
     const userId = requireUser(req);

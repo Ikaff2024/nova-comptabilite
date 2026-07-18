@@ -24,6 +24,63 @@ function absenceDaysInMonth(absences: any[], year: number, month0: number, onlyE
   return total;
 }
 
+// Alertes légales RH : échéances contractuelles à surveiller (fin de CDD, fin
+// de période d'essai). Déterministe à partir des fiches salariés. Lecture seule.
+export type RhAlertNiveau = 'haute' | 'moyenne' | 'info';
+export interface RhAlert { niveau: RhAlertNiveau; categorie: string; salarie: string; message: string; date: string; joursRestants: number; }
+
+// Durée de période d'essai (mois) selon la catégorie — règle indicative CI.
+function essaiMonths(categorie: string): number {
+  const c = String(categorie ?? '').toLowerCase();
+  if (/cadre/.test(c)) return 3;
+  if (/ma[iî]trise|agent de ma/.test(c)) return 2;
+  return 1; // employés / ouvriers
+}
+const addMonths = (d: Date, m: number) => { const x = new Date(d); x.setUTCMonth(x.getUTCMonth() + m); return x; };
+const daysBetweenUTC = (from: Date, to: Date) => Math.round((to.getTime() - from.getTime()) / 86400000);
+
+export async function rhAlerts(c: Client, dossierId: string): Promise<{ genereLe: string; resume: { haute: number; moyenne: number; info: number; total: number }; alertes: RhAlert[] }> {
+  const emps = (await listEmployees(c, dossierId)).filter((e: any) => e.actif !== false);
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const fr = (d: Date) => d.toISOString().slice(0, 10);
+  const alertes: RhAlert[] = [];
+
+  for (const e of emps) {
+    const nom = `${e.nom} ${e.prenoms}`.trim();
+
+    // Fin de CDD : dans les 60 jours ou déjà passée.
+    const isCdd = /cdd/i.test(String(e.typeContrat ?? ''));
+    if (isCdd && e.dateFinContrat) {
+      const fin = new Date(e.dateFinContrat + 'T00:00:00Z');
+      const j = daysBetweenUTC(today, fin);
+      if (j <= 60) {
+        const niveau: RhAlertNiveau = j < 0 ? 'haute' : j <= 15 ? 'haute' : 'moyenne';
+        const quand = j < 0 ? `dépassée depuis ${-j} j` : j === 0 ? "aujourd'hui" : `dans ${j} j`;
+        alertes.push({ niveau, categorie: 'Fin de CDD', salarie: nom, message: `Fin du CDD de ${nom} le ${fr(fin)} (${quand}) : renouveler, requalifier ou établir le solde de tout compte.`, date: fr(fin), joursRestants: j });
+      }
+    }
+
+    // Fin de période d'essai : dans les 15 jours (ou passée de peu).
+    if (e.dateEmbauche) {
+      const emb = new Date(e.dateEmbauche + 'T00:00:00Z');
+      const finEssai = addMonths(emb, essaiMonths(e.categorie));
+      const j = daysBetweenUTC(today, finEssai);
+      if (j >= -5 && j <= 15) {
+        alertes.push({ niveau: 'moyenne', categorie: "Fin de période d'essai", salarie: nom, message: `Fin de la période d'essai de ${nom} le ${fr(finEssai)} (${j < 0 ? `passée depuis ${-j} j` : j === 0 ? "aujourd'hui" : `dans ${j} j`}) : confirmer l'embauche ou rompre avant l'échéance.`, date: fr(finEssai), joursRestants: j });
+      }
+    }
+  }
+
+  alertes.sort((a, b) => ({ haute: 0, moyenne: 1, info: 2 }[a.niveau] - { haute: 0, moyenne: 1, info: 2 }[b.niveau]) || a.joursRestants - b.joursRestants);
+  const resume = {
+    haute: alertes.filter((a) => a.niveau === 'haute').length,
+    moyenne: alertes.filter((a) => a.niveau === 'moyenne').length,
+    info: alertes.filter((a) => a.niveau === 'info').length,
+    total: alertes.length,
+  };
+  return { genereLe: fr(today), resume, alertes };
+}
+
 export async function rhAnalysis(c: Client, dossierId: string, year: number, month0: number): Promise<any> {
   const { rows: dr } = await c.query('select base_currency from dossiers where id=$1', [dossierId]);
   const devise = dr[0]?.base_currency ?? 'XOF';

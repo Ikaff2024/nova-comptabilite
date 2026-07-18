@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock, Send } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis } from '../lib/api';
+import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock, Send, AlertTriangle } from 'lucide-react';
+import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis, type RhAlerts } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
@@ -804,8 +804,10 @@ function Card({ label, value }: { label: string; value: string }) {
 function RhAnalysisPanel({ dossierId, year, month, currency }: { dossierId: string; year: number; month: number; currency: string }) {
   const [d, setD] = useState<RhAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState<RhAlerts | null>(null);
   const m = (n: number) => fmtMoney(n, currency);
   useEffect(() => { setLoading(true); api.rhAnalysis(dossierId, year, month + 1).then(setD).catch(() => setD(null)).finally(() => setLoading(false)); }, [dossierId, year, month]);
+  useEffect(() => { api.rhAlerts(dossierId).then(setAlerts).catch(() => setAlerts(null)); }, [dossierId]);
 
   if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Analyse RH…</div>;
   if (!d) return <p className="text-sm text-zinc-500">Analyse RH indisponible.</p>;
@@ -814,6 +816,21 @@ function RhAnalysisPanel({ dossierId, year, month, currency }: { dossierId: stri
 
   return (
     <div className="space-y-5">
+      {alerts && alerts.alertes.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-amber-500/25 bg-amber-500/5">
+          <div className="flex items-center gap-2 border-b border-amber-500/20 px-4 py-2.5 text-sm font-medium text-amber-300">
+            <AlertTriangle className="h-4 w-4" /> Alertes légales RH <span className="text-xs font-normal text-amber-300/70">· {alerts.alertes.length} échéance(s) à surveiller</span>
+          </div>
+          <div className="divide-y divide-amber-500/10">
+            {alerts.alertes.map((a, i) => (
+              <div key={i} className="flex items-start gap-3 px-4 py-2.5">
+                <span className={cn('mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium', a.niveau === 'haute' ? 'border-rose-500/30 bg-rose-500/15 text-rose-300' : 'border-amber-500/30 bg-amber-500/15 text-amber-300')}>{a.categorie}</span>
+                <p className="text-sm text-zinc-300">{a.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiRh label="Effectif" value={String(d.effectif)} sub={`ancienneté moy. : ${d.ancienneteMoy} ans`} />
         <KpiRh label="Brut médian" value={m(d.brutMedian)} sub={`moyenne : ${m(d.brutMoyen)}`} />

@@ -662,6 +662,7 @@ export const api = {
   postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
   payrollYear: (dossierId: string, year: number) => req<PayrollYear>(`/api/dossiers/${dossierId}/payroll/year?year=${year}`),
   distributePayslips: (dossierId: string, year: number, month: number) => req<{ enabled: boolean; period: string; sent: { nom: string; email: string }[]; skipped: { nom: string; raison: string }[] }>(`/api/dossiers/${dossierId}/payroll/distribute-payslips`, { method: 'POST', body: JSON.stringify({ year, month }) }),
+  rhAlerts: (dossierId: string) => req<RhAlerts>(`/api/dossiers/${dossierId}/payroll/rh-alerts`),
   rhAnalysis: (dossierId: string, year: number, month: number) => req<RhAnalysis>(`/api/dossiers/${dossierId}/payroll/rh-analysis?year=${year}&month=${month}`),
   // Factures de vente récurrentes (abonnements)
   recurringInvoices: (dossierId: string) => req<RecurringInvoice[]>(`/api/dossiers/${dossierId}/recurring-invoices`),
@@ -703,6 +704,8 @@ export interface RhAnalysis {
   provisionTotale: number; provision: { nom: string; poste: string; joursRestants: number; provision: number }[];
   pyramide: { label: string; count: number }[]; bulletins: number;
 }
+export interface RhAlert { niveau: 'haute' | 'moyenne' | 'info'; categorie: string; salarie: string; message: string; date: string; joursRestants: number; }
+export interface RhAlerts { genereLe: string; resume: { haute: number; moyenne: number; info: number; total: number }; alertes: RhAlert[]; }
 export interface PayrollYearEmp { employeeId: string; matricule: string; nom: string; prenoms: string; mois: number; brut: number; brutImposable: number; cnpsSalarial: number; cnpsPatronal: number; its: number; cn: number; igr: number; cmu: number; net: number }
 export interface PayrollYear { employer: { raisonSociale: string; taxId: string | null; rccm: string | null; country: string }; year: number; annual: PayrollYearEmp[]; totals: Omit<PayrollYearEmp, 'employeeId' | 'matricule' | 'nom' | 'prenoms' | 'mois'> }
 export interface PayrollAbsence { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; dateDebut: string; dateFin: string; jours: number; justifiee: boolean; paye: boolean; motif: string | null }
