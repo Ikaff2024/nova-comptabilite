@@ -317,7 +317,8 @@ export interface AnalyticMonthly {
 }
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export type AgentMode = 'readonly' | 'assist' | 'assist_plus';
-export interface AgentResult { reply: string; toolCalls: { name: string; input: any }[]; model: string; mode: AgentMode }
+export interface AgentAqm { verdict: 'PASS' | 'WARNING' | 'FAIL'; score: number; checks: { label: string; level: string; detail?: string }[]; count: number }
+export interface AgentResult { reply: string; toolCalls: { name: string; input: any }[]; model: string; mode: AgentMode; aqm?: AgentAqm }
 export interface VoiceCatalogItem { id: string; name: string; desc: string }
 export interface VoiceConfig { provider: string; voiceId: string | null; providers: string[]; catalog: Record<string, VoiceCatalogItem[]> }
 export interface AgentStatus { enabled: boolean; mode: AgentMode; canToggle: boolean; tts?: boolean; voice?: VoiceConfig }

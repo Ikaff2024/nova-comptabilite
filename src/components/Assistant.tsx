@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain, SlidersHorizontal } from 'lucide-react';
-import { api, lexaSpeak, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode } from '../lib/api';
+import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain, SlidersHorizontal, ShieldCheck, ShieldAlert, ShieldX } from 'lucide-react';
+import { api, lexaSpeak, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode, type AgentAqm } from '../lib/api';
 import { cn } from '../lib/utils';
 import WhatsAppLink from './WhatsAppLink';
 import TelegramLink from './TelegramLink';
 import LexaVoice from './LexaVoice';
 import LexaMemory from './LexaMemory';
 
-type Turn = AgentMessage & { tools?: string[] };
+type Turn = AgentMessage & { tools?: string[]; aqm?: AgentAqm };
 
 // --- Vocal : dictée (STT) + lecture (TTS) via l'API navigateur, sans dépendance ---
 const SpeechRec: any = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
@@ -46,6 +46,35 @@ function splitForSpeech(text: string): [string, string] {
 function inlineMd(s: string): React.ReactNode[] {
   return s.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
     p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : <React.Fragment key={i}>{p}</React.Fragment>);
+}
+
+// Badge AQM sous une réponse de Lexa : verdict déterministe + score de confiance
+// des contrôles qualité déclenchés durant le tour (écriture/facture proposée).
+function AqmBadge({ aqm }: { aqm: AgentAqm }) {
+  const cfg = aqm.verdict === 'PASS'
+    ? { Icon: ShieldCheck, label: 'Conforme', cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' }
+    : aqm.verdict === 'WARNING'
+      ? { Icon: ShieldAlert, label: 'Points de vigilance', cls: 'border-amber-500/30 bg-amber-500/10 text-amber-300' }
+      : { Icon: ShieldX, label: 'Bloquant', cls: 'border-rose-500/30 bg-rose-500/10 text-rose-300' };
+  const [open, setOpen] = React.useState(false);
+  const hasDetail = aqm.checks.length > 0;
+  return (
+    <div className={cn('rounded-xl border px-3 py-1.5 text-xs', cfg.cls)}>
+      <button type="button" onClick={() => hasDetail && setOpen((v) => !v)} className={cn('flex w-full items-center gap-2', hasDetail && 'cursor-pointer')}>
+        <cfg.Icon className="h-4 w-4" />
+        <span className="font-semibold">AQM · {cfg.label}</span>
+        <span className="font-mono opacity-80">confiance {aqm.score}/100</span>
+        <span className="ml-auto opacity-70">{hasDetail ? (open ? '▲' : `${aqm.checks.length} point(s) ▾`) : ''}</span>
+      </button>
+      {open && hasDetail && (
+        <ul className="mt-1.5 space-y-1 border-t border-current/15 pt-1.5">
+          {aqm.checks.map((k, i) => (
+            <li key={i} className="opacity-90"><b>{k.label}</b>{k.detail ? ` — ${k.detail}` : ''}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function RichText({ text }: { text: string }) {
@@ -249,7 +278,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     setInput(''); setLoading(true);
     try {
       const r = await api.agentChat(dossierId, history);
-      setTurns((ts) => [...ts, { role: 'assistant', content: r.reply, tools: r.toolCalls.map((c) => c.name) }]);
+      setTurns((ts) => [...ts, { role: 'assistant', content: r.reply, tools: r.toolCalls.map((c) => c.name), aqm: r.aqm }]);
       setTyping({ idx: baseLen + 1, len: 0 });     // effet machine à écrire
       if (speakOn) speak(r.reply);
     } catch (e: any) {
@@ -356,6 +385,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
                       : <RichText text={t.content} />)
                   : t.content}
               </div>
+              {t.role === 'assistant' && t.aqm && (!typing || typing.idx !== i) && <AqmBadge aqm={t.aqm} />}
             </div>
             {t.role === 'user' && <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10"><User className="h-4 w-4 text-zinc-300" /></div>}
           </div>

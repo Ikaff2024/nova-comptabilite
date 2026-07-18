@@ -63,7 +63,26 @@ function pickModel(history: AgentMessage[]): string {
 
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 export interface AgentToolCall { name: string; input: any }
-export interface AgentResult { reply: string; toolCalls: AgentToolCall[]; model: string; mode: AgentMode }
+export interface AgentAqm { verdict: 'PASS' | 'WARNING' | 'FAIL'; score: number; checks: { label: string; level: string; detail?: string }[]; count: number }
+export interface AgentResult { reply: string; toolCalls: AgentToolCall[]; model: string; mode: AgentMode; aqm?: AgentAqm }
+
+// Agrège les rapports AQM d'un tour (verdict le plus sévère, score minimal, points non-OK).
+function summarizeAqm(validations: any[]): AgentAqm | undefined {
+  const reports = validations.map((v) => v?.report).filter(Boolean);
+  if (!reports.length) return undefined;
+  const rank = (v: string) => (v === 'FAIL' ? 2 : v === 'WARNING' ? 1 : 0);
+  const verdict = reports.reduce((w, r) => (rank(r.verdict) > rank(w) ? r.verdict : w), 'PASS') as AgentAqm['verdict'];
+  const score = Math.min(...reports.map((r) => r.score ?? 100));
+  const checks: AgentAqm['checks'] = [];
+  const seen = new Set<string>();
+  for (const r of reports) for (const k of (r.checks ?? [])) {
+    if (k.level === 'pass') continue;
+    const key = `${k.code}|${k.detail ?? ''}`;
+    if (seen.has(key)) continue; seen.add(key);
+    checks.push({ label: k.label, level: k.level, detail: k.detail });
+  }
+  return { verdict, score, checks: checks.slice(0, 8), count: reports.length };
+}
 
 export type AgentMode = 'readonly' | 'assist' | 'assist_plus';
 const MODES: AgentMode[] = ['readonly', 'assist', 'assist_plus'];
@@ -208,6 +227,7 @@ RÈGLES ABSOLUES :
 7. ADAPTE-TOI À L'INTERLOCUTEUR (voir son profil dans le contexte) : à un dirigeant/non-comptable, va à l'essentiel en langage clair et cache le jargon (donne le compte entre parenthèses si utile) ; à un comptable/DAF/expert-comptable, sois technique et précis (codes de comptes, mécanismes). En cas de doute, reste simple et propose d'entrer dans le détail.
 8. IDENTITÉ FISCALE : tu connais la forme juridique, le régime fiscal, le NCC/IFU, le RCCM et la banque du dossier (voir contexte). Raisonne selon le régime (ex. n'évoque la TVA à collecter que si l'entreprise y est assujettie ; sous l'impôt synthétique, il n'y a pas de TVA), rappelle les obligations et échéances pertinentes, et cite ces références (NCC, RCCM…) quand c'est utile (déclarations, courriers officiels).
 9. REPORTING MENSUEL : pour un « point du mois » / « reporting », appuie-toi sur « analyse_mensuelle » (résultat vs M-1, cumul, ratios, principales charges) — c'est plus riche qu'une simple lecture. Commente en pilotage : ce qui bouge et pourquoi (postes de charges/produits qui varient), les ratios, la trésorerie, puis des recommandations concrètes. Si on te le demande, tu peux joindre le « rapport_mensuel » en PDF par email.
+10. CONTRÔLE QUALITÉ (AQM) : dès que tu PROPOSES ou que tu ÉVALUES une écriture ou une facture, appelle d'abord « valider_ecriture » / « valider_facture ». Tiens compte du verdict : ne propose jamais ce qui est FAIL (corrige d'abord), et signale explicitement les points de VIGILANCE (WARNING). Ton niveau de confiance (score) est affiché à l'utilisateur — c'est un gage de fiabilité, pas un aveu de doute.
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
 
@@ -826,11 +846,12 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
     // Réponse finale : concatène les blocs texte.
     const reply = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
     await usage.recordUsage(c, dossierId, 'anthropic', model, { inputTokens: tokIn, outputTokens: tokOut });
-    const conf = validations.length ? Math.min(...validations.map((v) => v.report?.score ?? 100)) : null;
+    const aqm = summarizeAqm(validations);
+    const conf = aqm ? aqm.score : null;
     await ledger.logDecision(c, { dossierId, userId, question: instruction, mode, model, answer: reply, tools: decisionTools, validations, confidence: conf, tokensIn: tokIn, tokensOut: tokOut });
-    return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model, mode };
+    return { reply: reply || 'Je n\'ai pas de réponse.', toolCalls, model, mode, aqm };
   }
   await usage.recordUsage(c, dossierId, 'anthropic', model, { inputTokens: tokIn, outputTokens: tokOut });
   await ledger.logDecision(c, { dossierId, userId, question: instruction, mode, model, answer: '(trop d\'étapes)', tools: decisionTools, validations, confidence: null, tokensIn: tokIn, tokensOut: tokOut });
-  return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model, mode };
+  return { reply: 'La demande a nécessité trop d\'étapes. Reformulez de façon plus ciblée.', toolCalls, model, mode, aqm: summarizeAqm(validations) };
 }
