@@ -399,7 +399,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers)' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers)' },
               tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
@@ -680,6 +680,7 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
     case 'grand_livre': { const code = String(pj.compte ?? '').trim(); if (!code) return { error: 'Précisez le compte (piece_jointe.compte) pour le grand livre.' }; const r = await accdocs.grandLivrePdf(c, dossierId, code, fy); if (r.count === 0) return { error: `Aucune écriture sur le compte ${code}.` }; return r; }
     case 'etats_financiers': return await accdocs.etatsFinanciersPdf(c, dossierId, fy);
     case 'livre_journal': { const r = await accdocs.livreJournalPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le livre-journal.' }; return r; }
+    case 'grand_livre_general': { const r = await accdocs.grandLivreGeneralPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le grand livre général.' }; return r; }
     case 'releve_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(pj.tiers ?? ''));
       if (!cp) return { error: `Tiers « ${pj.tiers} » introuvable pour le relevé de compte.` };

@@ -7,12 +7,14 @@ import PDFDocument from 'pdfkit';
 // ============================================================================
 
 export interface PdfColumn { label: string; width: number; align?: 'left' | 'right' }
+export interface RowStyle { bold?: boolean; fill?: string; line?: 'top' | 'none' }
 export interface TablePdf {
   title: string;
   subtitle?: string;
   meta?: string[];          // lignes d'entête (employeur, période, identifiants…)
   columns: PdfColumn[];
   rows: string[][];
+  rowStyles?: (RowStyle | undefined)[]; // style optionnel par ligne (en-têtes de groupe, sous-totaux)
   totals?: string[];        // ligne de totaux (mêmes colonnes)
   footNote?: string;
 }
@@ -59,7 +61,7 @@ export function tablePdf(spec: TablePdf): Promise<Buffer> {
     }
 
     drawHeader();
-    for (const r of spec.rows) drawRow(r);
+    spec.rows.forEach((r, i) => drawRow(r, spec.rowStyles?.[i] ?? {}));
     if (spec.totals) drawRow(spec.totals, { bold: true, line: 'top' });
 
     if (spec.footNote) { doc.moveDown(1); doc.font('Helvetica').fontSize(8).fillColor('#666').text(spec.footNote, left, doc.y, { width: right - left }); }

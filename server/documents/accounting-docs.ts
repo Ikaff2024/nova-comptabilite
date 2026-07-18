@@ -1,7 +1,7 @@
 import type { Client } from '../db.js';
 import * as acc from '../domain/accounting.js';
 import { vatDeclaration } from '../domain/tax.js';
-import { tablePdf, sectionsPdf } from './pdf.js';
+import { tablePdf, sectionsPdf, type RowStyle } from './pdf.js';
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
@@ -87,6 +87,47 @@ export async function livreJournalPdf(c: Client, dossierId: string, fyId?: strin
     footNote: `${lines.length} ligne(s) d'écriture. Livre-journal (art. 19 AUDCIF) — document légal à conserver. Généré par Nova.`,
   });
   return { filename: `livre-journal.pdf`, buffer, count: lines.length };
+}
+
+// Grand livre général — livre légal OHADA : TOUS les comptes mouvementés, chacun
+// avec le détail de ses écritures et son solde. Comptes en en-tête (gras), lignes
+// d'écriture puis sous-total par compte.
+export async function grandLivreGeneralPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, md, money, meta } = await ctx(c, dossierId);
+  const lines = await acc.generalLedger(c, dossierId, { fiscalYearId: fyId });
+
+  const rows: string[][] = [];
+  const rowStyles: (RowStyle | undefined)[] = [];
+  const push = (r: string[], s?: RowStyle) => { rows.push(r); rowStyles.push(s); };
+
+  let curr: string | null = null;
+  let sD = 0, sC = 0, solde = 0, gD = 0, gC = 0, nbComptes = 0;
+  const flush = () => {
+    if (curr === null) return;
+    push(['', '', '', 'Solde du compte', md(sD), md(sC), money(solde)], { bold: true, line: 'top' });
+  };
+  for (const l of lines) {
+    if (l.account_code !== curr) {
+      flush();
+      curr = l.account_code; sD = 0; sC = 0; solde = 0; nbComptes++;
+      push([`${l.account_code}`, `${l.account_label ?? ''}`, '', '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+    }
+    sD += l.debit; sC += l.credit; solde += l.debit - l.credit; gD += l.debit; gC += l.credit;
+    push([l.entry_date, l.journal_code ?? '', l.piece_ref ?? '', (l.line_label || l.description || '').slice(0, 42), md(l.debit), md(l.credit), money(solde)]);
+  }
+  flush();
+
+  const buffer = await tablePdf({
+    title: 'Grand livre général', subtitle: `${d.raison_sociale ?? ''} · tous les comptes mouvementés`, meta,
+    columns: [
+      { label: 'Date', width: 58 }, { label: 'Jrnl', width: 32 }, { label: 'Pièce', width: 58 }, { label: 'Libellé', width: 140 },
+      { label: 'Débit', width: 70, align: 'right' }, { label: 'Crédit', width: 70, align: 'right' }, { label: 'Solde', width: 76, align: 'right' },
+    ],
+    rows, rowStyles,
+    totals: ['', '', '', 'TOTAUX', money(gD), money(gC), ''],
+    footNote: `${nbComptes} compte(s), ${lines.length} écriture(s). Grand livre général (art. 19 AUDCIF) — document légal à conserver. Généré par Nova.`,
+  });
+  return { filename: `grand-livre-general.pdf`, buffer, count: lines.length };
 }
 
 export async function declarationTvaPdf(c: Client, dossierId: string, year: number, month0: number): Promise<{ filename: string; buffer: Buffer }> {
