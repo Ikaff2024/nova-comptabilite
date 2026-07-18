@@ -11,6 +11,7 @@ import * as dash from '../domain/dossierdashboard.js';
 import * as alerts from '../domain/alerts.js';
 import * as ratios from '../domain/ratios.js';
 import * as controls from '../domain/controls.js';
+import * as aqm from '../domain/aqm.js';
 import * as budget from '../domain/budget.js';
 import * as budgetcopilot from '../domain/budgetcopilot.js';
 import * as clotureworks from '../domain/clotureworks.js';
@@ -288,6 +289,7 @@ const READ_TOOLS = [
   { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'factures_recurrentes_dues', description: 'Modèles de factures de vente récurrentes (abonnements) et nombre de factures DUES à générer pour chacun.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'catalogue', description: 'Catalogue des articles et services vendus : désignation, référence, prix unitaire HT, taux de TVA et compte de produit. Pour renseigner un prix, préparer un devis/une facture ou vérifier un tarif.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'valider_ecriture', description: "AQM — Contrôle qualité DÉTERMINISTE d'une écriture AVANT de la proposer ou de la comptabiliser. Renvoie un verdict PASS / WARNING / FAIL, un score (0-100) et le détail de chaque contrôle (équilibre débit=crédit, partie double, montants positifs, comptes existant au plan, sens habituel des classes 6/7, compte collectif→tiers, date dans un exercice ouvert, période non clôturée). UTILISE-LE systématiquement avant de proposer une écriture : si FAIL, corrige et ne comptabilise pas ; si WARNING, signale les points de vigilance à l'utilisateur. Rends compte des raisons (explicabilité).", input_schema: { type: 'object', properties: { date: { type: 'string', description: 'AAAA-MM-JJ (optionnel)' }, lignes: { type: 'array', items: { type: 'object', properties: { compte: { type: 'string' }, debit: { type: 'number' }, credit: { type: 'number' }, libelle: { type: 'string' } }, required: ['compte'] } } }, required: ['lignes'] } },
   { name: 'estimation_is', description: "Estimation de l'impôt sur les bénéfices (IS) et de l'impôt minimum forfaitaire (IMF) de l'exercice, barème Côte d'Ivoire : chiffre d'affaires, résultat comptable, bénéfice imposable, IS théorique (25 %), IMF (0,5 % du CA, min 3 M / plafond 35 M F), impôt DÛ (le plus élevé des deux, ou l'IMF si déficit) et acompte provisionnel (1/3). Pour PROVISIONNER l'impôt, répondre « combien vais-je payer d'impôt ? » et anticiper les acomptes. INDICATIF : sur le résultat comptable, avant réintégrations/déductions fiscales — précise-le.", input_schema: { type: 'object', properties: {}, required: [] } },
 ];
 
@@ -515,6 +517,11 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     }
     case 'travaux_de_cloture': { return await clotureworks.clotureChecklist(c, dossierId, fy); }
     case 'estimation_is': return await tax.estimationIS(c, dossierId, fy);
+    case 'valider_ecriture': {
+      const lignes = Array.isArray(input?.lignes) ? input.lignes : [];
+      const draft = { date: input?.date ? String(input.date) : undefined, lines: lignes.map((l: any) => ({ accountCode: String(l.compte ?? '').trim(), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, label: l.libelle })) };
+      return await aqm.validateEntry(c, dossierId, draft, { fiscalYearId: fy });
+    }
     case 'releve_compte_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(input?.tiers ?? ''));
       if (!cp) return { error: `Tiers « ${input?.tiers} » introuvable.` };

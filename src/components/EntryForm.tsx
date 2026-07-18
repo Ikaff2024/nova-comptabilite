@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Loader2, CheckCircle2, Save } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate } from '../lib/api';
+import { Plus, Trash2, Loader2, CheckCircle2, Save, ShieldCheck, ShieldAlert, ShieldX, CircleCheck, CircleAlert, CircleX } from 'lucide-react';
+import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport } from '../lib/api';
 
 const CHANNELS = [
   { v: 'none', l: '—' }, { v: 'cash', l: 'Espèces' }, { v: 'bank', l: 'Banque' },
@@ -36,6 +36,8 @@ export default function EntryForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  const [report, setReport] = useState<ValidationReport | null>(null);
+  const [checking, setChecking] = useState(false);
   const [sections, setSections] = useState<AnalyticSection[]>([]);
   useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
   const [templates, setTemplates] = useState<EntryTemplate[]>([]);
@@ -64,6 +66,17 @@ export default function EntryForm({
   const setLine = (key: number, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l._key === key ? { ...l, ...patch } : l)));
 
+  const draftLines = () => lines.filter((l) => l.accountCode.trim()).map((l) => ({
+    accountCode: l.accountCode.trim(), debit: Number(l.debit) || undefined, credit: Number(l.credit) || undefined, label: l.label,
+  }));
+  const runCheck = async () => {
+    setChecking(true); setError(null);
+    try {
+      const journalCode = journals.find((j) => j.id === journal)?.code;
+      setReport(await api.validateEntry(dossierId, { entryDate: date, fiscalYearId: fy, journalCode, lines: draftLines() }));
+    } catch (e: any) { setError(e.message); } finally { setChecking(false); }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -80,7 +93,7 @@ export default function EntryForm({
         })),
       });
       setOk(true);
-      setLines([blank(), blank()]); setDescription('');
+      setLines([blank(), blank()]); setDescription(''); setReport(null);
       setTimeout(() => setOk(false), 2500);
       onPosted();
     } catch (err: any) { setError(err.message); } finally { setBusy(false); }
@@ -202,13 +215,47 @@ export default function EntryForm({
 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
+      {report && <AqmReport report={report} />}
+
       <div className="flex items-center justify-end gap-3">
         {ok && <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> Écriture enregistrée</span>}
+        <button type="button" onClick={runCheck} disabled={checking || !lines.some((l) => l.accountCode.trim())}
+          className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">
+          {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Vérifier (AQM)
+        </button>
         <button type="submit" disabled={busy || !balanced}
           className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:opacity-40">
           {busy && <Loader2 className="h-4 w-4 animate-spin" />} Valider l'écriture
         </button>
       </div>
     </form>
+  );
+}
+
+function AqmReport({ report }: { report: ValidationReport }) {
+  const tone = report.verdict === 'PASS' ? 'emerald' : report.verdict === 'WARNING' ? 'amber' : 'rose';
+  const Icon = report.verdict === 'PASS' ? ShieldCheck : report.verdict === 'WARNING' ? ShieldAlert : ShieldX;
+  const label = report.verdict === 'PASS' ? 'Conforme' : report.verdict === 'WARNING' ? 'Points de vigilance' : 'Bloquant';
+  const border = tone === 'emerald' ? 'border-emerald-500/30 bg-emerald-500/[0.07]' : tone === 'amber' ? 'border-amber-500/30 bg-amber-500/[0.07]' : 'border-rose-500/30 bg-rose-500/[0.07]';
+  const txt = tone === 'emerald' ? 'text-emerald-400' : tone === 'amber' ? 'text-amber-400' : 'text-rose-400';
+  const lvlIcon = (lvl: string) => lvl === 'pass' ? <CircleCheck className="h-4 w-4 text-emerald-400" /> : lvl === 'warning' ? <CircleAlert className="h-4 w-4 text-amber-400" /> : <CircleX className="h-4 w-4 text-rose-400" />;
+  return (
+    <div className={`rounded-xl border p-4 ${border}`}>
+      <div className="flex items-center justify-between gap-3">
+        <span className={`flex items-center gap-2 text-sm font-semibold ${txt}`}><Icon className="h-5 w-5" /> AQM · {label}</span>
+        <span className="font-mono text-sm text-zinc-300">score <b className={txt}>{report.score}</b>/100</span>
+      </div>
+      <p className="mt-1.5 text-sm text-zinc-400">{report.summary}</p>
+      <ul className="mt-3 space-y-1.5">
+        {report.checks.map((k) => (
+          <li key={k.code} className="flex items-start gap-2 text-sm">
+            <span className="mt-0.5">{lvlIcon(k.level)}</span>
+            <span className={k.level === 'pass' ? 'text-zinc-400' : 'text-zinc-200'}>
+              <b className="font-medium">{k.label}</b>{k.detail ? <> — <span className="text-zinc-400">{k.detail}</span></> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

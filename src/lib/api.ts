@@ -104,6 +104,8 @@ export interface FinancialStatements {
     totalActif: number; totalPassif: number; equilibre: boolean;
   };
 }
+export interface ValidationCheck { code: string; label: string; level: 'pass' | 'warning' | 'fail'; detail?: string }
+export interface ValidationReport { verdict: 'PASS' | 'WARNING' | 'FAIL'; score: number; checks: ValidationCheck[]; summary: string }
 export interface IsEstimate {
   fiscalYearId: string | null;
   chiffreAffaires: number; resultatComptable: number; beneficeImposable: number; beneficiaire: boolean;
@@ -407,6 +409,8 @@ export const api = {
     fiscalYearId: string; journalId: string; entryDate: string; description: string;
     source?: string; counterpartyName?: string; documentUrl?: string; lines: EntryLineInput[];
   }) => req<{ id: string }>(`/api/dossiers/${dossierId}/entries`, { method: 'POST', body: JSON.stringify(body) }),
+  validateEntry: (dossierId: string, body: { entryDate?: string; fiscalYearId?: string; journalCode?: string; lines: EntryLineInput[] }) =>
+    req<ValidationReport>(`/api/dossiers/${dossierId}/validate-entry`, { method: 'POST', body: JSON.stringify(body) }),
   uploadDocument: (dossierId: string, body: { mimeType: string; dataBase64: string; filename?: string; entryId?: string }) =>
     req<{ id: string; url: string; storage: string; size: number }>(`/api/dossiers/${dossierId}/documents`, { method: 'POST', body: JSON.stringify(body) }),
   documents: (dossierId: string) => req<DossierDocument[]>(`/api/dossiers/${dossierId}/documents`),

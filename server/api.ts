@@ -34,6 +34,7 @@ import * as platform from './domain/platform.js';
 import * as alerts from './domain/alerts.js';
 import * as ratios from './domain/ratios.js';
 import * as controls from './domain/controls.js';
+import * as aqm from './domain/aqm.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -446,6 +447,18 @@ export function createApi() {
     const input = { ...req.body, dossierId: req.params.id, createdBy: userId };
     const out = await withUser(userId, (c) => acc.postEntry(c, input));
     res.status(201).json(out);
+  }));
+
+  // AQM — contrôle qualité déterministe d'une écriture proposée (avant comptabilisation).
+  app.post('/api/dossiers/:id/validate-entry', h(async (req, res) => {
+    const userId = requireUser(req);
+    const b = req.body ?? {};
+    const draft = {
+      date: b.entryDate || b.date || undefined,
+      journalCode: b.journalCode,
+      lines: Array.isArray(b.lines) ? b.lines.map((l: any) => ({ accountCode: String(l.accountCode ?? l.compte ?? '').trim(), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, label: l.label })) : [],
+    };
+    res.json(await withUser(userId, (c) => aqm.validateEntry(c, req.params.id, draft, { fiscalYearId: b.fiscalYearId })));
   }));
 
   // --- Mobile Money : analyse d'un relevé -> propositions pré-catégorisées ----
