@@ -286,6 +286,7 @@ const READ_TOOLS = [
   { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'factures_recurrentes_dues', description: 'Modèles de factures de vente récurrentes (abonnements) et nombre de factures DUES à générer pour chacun.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'catalogue', description: 'Catalogue des articles et services vendus : désignation, référence, prix unitaire HT, taux de TVA et compte de produit. Pour renseigner un prix, préparer un devis/une facture ou vérifier un tarif.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'estimation_is', description: "Estimation de l'impôt sur les bénéfices (IS) et de l'impôt minimum forfaitaire (IMF) de l'exercice, barème Côte d'Ivoire : chiffre d'affaires, résultat comptable, bénéfice imposable, IS théorique (25 %), IMF (0,5 % du CA, min 3 M / plafond 35 M F), impôt DÛ (le plus élevé des deux, ou l'IMF si déficit) et acompte provisionnel (1/3). Pour PROVISIONNER l'impôt, répondre « combien vais-je payer d'impôt ? » et anticiper les acomptes. INDICATIF : sur le résultat comptable, avant réintégrations/déductions fiscales — précise-le.", input_schema: { type: 'object', properties: {}, required: [] } },
 ];
 
 // --- Outils BROUILLON (paliers assist et assist_plus) ------------------------
@@ -509,6 +510,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       return { immobilisations: cap(rows, 80), totaux: { valeur_brute: actifs.reduce((s, a) => s + a.amount, 0), cumul_amort: actifs.reduce((s, a) => s + a.cumulPosted, 0), vnc: actifs.reduce((s, a) => s + a.vnc, 0), dotations_dues: actifs.reduce((s, a) => s + (a.pendingAmount || 0), 0) } };
     }
     case 'travaux_de_cloture': { return await clotureworks.clotureChecklist(c, dossierId, fy); }
+    case 'estimation_is': return await tax.estimationIS(c, dossierId, fy);
     case 'releve_compte_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(input?.tiers ?? ''));
       if (!cp) return { error: `Tiers « ${input?.tiers} » introuvable.` };

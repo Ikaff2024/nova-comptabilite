@@ -998,6 +998,13 @@ export function createApi() {
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
   }));
 
+  // Estimation de l'impôt sur les bénéfices (IS) & IMF — barème Côte d'Ivoire.
+  app.get('/api/dossiers/:id/is-estimate', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => tax.estimationIS(c, req.params.id, fy)));
+  }));
+
   // Exports tableur (Excel/LibreOffice) : balance & grand livre en CSV.
   app.get('/api/dossiers/:id/export/balance.csv', h(async (req, res) => {
     const userId = requireUser(req);

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles } from 'lucide-react';
-import { api, fmtMoney, type VatDeclaration, type Obligation } from '../lib/api';
+import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles, Calculator } from 'lucide-react';
+import { api, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -59,6 +59,56 @@ function ObligationsPanel({ dossierId }: { dossierId: string }) {
             </tbody>
           </table>
         </div>
+      )}
+    </section>
+  );
+}
+
+function IsEstimatePanel({ dossierId, currency }: { dossierId: string; currency: string }) {
+  const [est, setEst] = useState<IsEstimate | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null);
+    api.isEstimate(dossierId).then((r) => { if (alive) setEst(r); }).catch((e) => { if (alive) setError(e.message); }).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [dossierId]);
+  const m = (n: number) => fmtMoney(n, currency);
+  const pct = (n: number) => `${(n * 100).toFixed(1).replace('.0', '')} %`;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2 text-sm text-zinc-300"><Calculator className="h-4 w-4 text-emerald-400" /> Provision fiscale — impôt sur les bénéfices (IS / IMF)</div>
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Estimation…</div>
+        : error ? <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>
+        : !est ? null : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Card label="Chiffre d'affaires" value={m(est.chiffreAffaires)} />
+            <Card label={est.beneficiaire ? 'Résultat (bénéfice)' : 'Résultat (déficit)'} value={m(est.resultatComptable)} />
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-sm text-zinc-400">IS théorique ({pct(est.tauxIS)})</div>
+              <div className="mt-2 font-mono text-2xl font-bold text-zinc-100">{m(est.isTheorique)}</div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-sm text-zinc-400">IMF ({pct(est.tauxIMF)} du CA)</div>
+              <div className="mt-2 font-mono text-2xl font-bold text-zinc-100">{m(est.imf)}</div>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <div className="flex items-center justify-between text-sm text-zinc-400"><span>Impôt dû (provision)</span><span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">{est.baseRetenue}</span></div>
+              <div className="mt-2 font-mono text-2xl font-bold text-amber-400">{m(est.impotDu)}</div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="text-sm text-zinc-400">Acompte provisionnel (1/3)</div>
+              <div className="mt-2 font-mono text-2xl font-bold text-zinc-100">{m(est.acompteProvisionnel)}</div>
+              <div className="mt-1 text-xs text-zinc-500">× 3 (avril · juin · septembre)</div>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-500">{est.note}</p>
+        </>
       )}
     </section>
   );
@@ -153,6 +203,8 @@ export default function Fiscalite({ dossierId, dossierName, currency }: { dossie
           </>
         )}
       </section>
+
+      <IsEstimatePanel dossierId={dossierId} currency={currency} />
 
       <ObligationsPanel dossierId={dossierId} />
 

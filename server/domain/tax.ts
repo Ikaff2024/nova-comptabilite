@@ -1,5 +1,5 @@
 import type { Client } from '../db.js';
-import { postEntry } from './accounting.js';
+import { postEntry, financialStatements } from './accounting.js';
 
 // ============================================================================
 // Déclaration de TVA (SYSCOHADA) : collectée (443) - déductible (445)
@@ -66,4 +66,43 @@ export async function postVatLiquidation(c: Client, dossierId: string, from: str
     description: `Déclaration TVA du ${from} au ${to}`, source: 'manual', lines,
   });
   return { entryId, ...d };
+}
+
+// ============================================================================
+// Estimation de l'impôt sur les bénéfices (IS) & de l'IMF — barème Côte d'Ivoire
+// (CGI). Indicatif : calculé sur le résultat COMPTABLE, avant réintégrations et
+// déductions fiscales. Sert à provisionner l'impôt et anticiper les acomptes.
+// ============================================================================
+
+export interface ISParams {
+  tauxIS: number;        // taux de droit commun (CI : 25 %)
+  tauxIMF: number;       // taux de l'impôt minimum forfaitaire (CI : 0,5 % du CA)
+  imfPlancher: number;   // IMF minimum (CI : 3 000 000 F)
+  imfPlafond: number;    // IMF maximum (CI : 35 000 000 F)
+}
+export const IS_CI: ISParams = { tauxIS: 0.25, tauxIMF: 0.005, imfPlancher: 3_000_000, imfPlafond: 35_000_000 };
+
+export async function estimationIS(c: Client, dossierId: string, fiscalYearId?: string, p: ISParams = IS_CI) {
+  const fs: any = await financialStatements(c, dossierId, fiscalYearId);
+  const is = fs.incomeStatement;
+  const chiffreAffaires = (is.sig ?? []).find((s: any) => s.label === "Chiffre d'affaires")?.amount ?? 0;
+  const resultatComptable: number = is.resultatNet;
+  const beneficeImposable = Math.max(0, resultatComptable);
+
+  const isTheorique = beneficeImposable * p.tauxIS;
+  const imf = Math.min(p.imfPlafond, Math.max(p.imfPlancher, chiffreAffaires * p.tauxIMF));
+  const beneficiaire = resultatComptable > 0;
+  const impotDu = beneficiaire ? Math.max(isTheorique, imf) : imf;
+  const base = !beneficiaire ? 'IMF (résultat déficitaire)' : isTheorique >= imf ? 'IS (25 % du bénéfice)' : 'IMF (supérieur à l\'IS)';
+  // Acomptes provisionnels CI : 3 fractions égales (avril, juin, septembre) = 1/3 de l'impôt N-1.
+  const acompte = impotDu / 3;
+
+  return {
+    fiscalYearId: fiscalYearId ?? null,
+    chiffreAffaires, resultatComptable, beneficeImposable, beneficiaire,
+    tauxIS: p.tauxIS, isTheorique,
+    tauxIMF: p.tauxIMF, imf, imfPlancher: p.imfPlancher, imfPlafond: p.imfPlafond,
+    impotDu, baseRetenue: base, acompteProvisionnel: acompte,
+    note: "Estimation indicative sur le résultat comptable, avant réintégrations/déductions fiscales. Barème Côte d'Ivoire (CGI) : IS 25 %, IMF 0,5 % du CA (min 3 M, plafond 35 M F). À valider avec un fiscaliste.",
+  };
 }

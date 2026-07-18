@@ -104,6 +104,13 @@ export interface FinancialStatements {
     totalActif: number; totalPassif: number; equilibre: boolean;
   };
 }
+export interface IsEstimate {
+  fiscalYearId: string | null;
+  chiffreAffaires: number; resultatComptable: number; beneficeImposable: number; beneficiaire: boolean;
+  tauxIS: number; isTheorique: number;
+  tauxIMF: number; imf: number; imfPlancher: number; imfPlafond: number;
+  impotDu: number; baseRetenue: string; acompteProvisionnel: number; note: string;
+}
 export interface ComparativeFS {
   currentLabel: string | null; previousLabel: string | null;
   current: FinancialStatements; previous: FinancialStatements | null;
@@ -549,6 +556,8 @@ export const api = {
   },
   financialStatements: (dossierId: string, fiscalYearId?: string) =>
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  isEstimate: (dossierId: string, fiscalYearId?: string) =>
+    req<IsEstimate>(`/api/dossiers/${dossierId}/is-estimate${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   creditScore: (dossierId: string, fiscalYearId?: string) => req<CreditScore>(`/api/dossiers/${dossierId}/score${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
