@@ -36,6 +36,7 @@ import * as ratios from './domain/ratios.js';
 import * as controls from './domain/controls.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
+import * as authntic from './integrations/authntic.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -1579,6 +1580,21 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     const out = await withUser(userId, (c) => accdocs.tftPdf(c, req.params.id, fy));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
+
+  // Liasse fiscale SYSCOHADA produite par le moteur AuthNTIC (intégration API).
+  app.get('/api/dossiers/:id/liasse-status', h(async (req, res) => {
+    requireUser(req);
+    res.json({ enabled: authntic.authnticEnabled() });
+  }));
+  app.get('/api/dossiers/:id/liasse', h(async (req, res) => {
+    const userId = requireUser(req);
+    if (!authntic.authnticEnabled()) { const e: any = new Error("Le moteur de liasse AuthNTIC n'est pas encore configuré pour cette instance."); e.status = 503; throw e; }
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const out = await withUser(userId, (c) => authntic.generateLiassePdf(c, req.params.id, fy));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);

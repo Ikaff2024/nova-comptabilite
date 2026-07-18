@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles, Calculator } from 'lucide-react';
+import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles, Calculator, AlertTriangle } from 'lucide-react';
 import { api, downloadAuthed, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -209,12 +209,35 @@ export default function Fiscalite({ dossierId, dossierName, currency }: { dossie
 
       <ObligationsPanel dossierId={dossierId} />
 
-      {/* DSF — branchement externe à venir */}
-      <section className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-5">
-        <div className="flex items-center gap-2 text-sm font-medium text-zinc-300"><FileText className="h-4 w-4 text-zinc-500" /> DSF / Liasse fiscale</div>
-        <p className="mt-2 text-sm text-zinc-500">La production de la DSF sera assurée par branchement au logiciel dédié (intégration à venir). Les données comptables de Nova (balance, états) l'alimenteront.</p>
-      </section>
+      <LiassePanel dossierId={dossierId} dossierName={dossierName} />
     </div>
+  );
+}
+
+function LiassePanel({ dossierId, dossierName }: { dossierId: string; dossierName: string }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { api.liasseStatus(dossierId).then((r) => setEnabled(r.enabled)).catch(() => setEnabled(false)); }, [dossierId]);
+
+  const produce = async () => {
+    setBusy(true); setError(null);
+    try { await downloadAuthed(`/api/dossiers/${dossierId}/liasse`, `liasse-syscohada-${dossierName}.pdf`.replace(/\s+/g, '-')); }
+    catch (e: any) { setError(e?.message || 'Échec de la production de la liasse.'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><FileText className="h-4 w-4 text-emerald-400" /> DSF / Liasse fiscale SYSCOHADA</div>
+      <p className="mt-2 text-sm text-zinc-500">Liasse complète (Bilan Actif/Passif, Compte de Résultat, TFT) produite « à la virgule près » par le moteur <b className="text-zinc-300">AuthNTIC</b>, à partir de la balance N/N-1 de Nova.</p>
+      {enabled === false && <p className="mt-3 flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-300"><AlertTriangle className="h-4 w-4" /> Moteur AuthNTIC non encore raccordé à cette instance (configuration serveur requise).</p>}
+      {error && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+      <button onClick={produce} disabled={busy || enabled !== true}
+        className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Produire la liasse (PDF)
+      </button>
+    </section>
   );
 }
 

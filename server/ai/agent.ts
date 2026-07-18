@@ -26,6 +26,7 @@ import * as accdocs from '../documents/accounting-docs.js';
 import * as csv from '../documents/csv.js';
 import * as audit from '../domain/audit.js';
 import * as ledger from '../domain/ledger.js';
+import * as authntic from '../integrations/authntic.js';
 import * as usage from '../domain/usage.js';
 import * as mail from '../email/provider.js';
 import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
@@ -406,7 +407,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "recap_tva" (récapitulatif annuel de TVA sur 12 mois, préciser annee) | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "journal_centralisateur" (récap mensuel par journal) | "etats_financiers" | "etats_comparatifs" (bilan & résultat comparés N vs N-1, variation) | "tft" (tableau de flux de trésorerie, simplifié, nécessite N-1) | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers) | "balance_agee" (balance âgée des créances/dettes par tiers) | "balance_auxiliaire" (balance des comptes de tiers, justifie 411/401) | "grand_livre_auxiliaire" (détail ligne à ligne de tous les tiers)' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "recap_tva" (récapitulatif annuel de TVA sur 12 mois, préciser annee) | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "journal_centralisateur" (récap mensuel par journal) | "etats_financiers" | "etats_comparatifs" (bilan & résultat comparés N vs N-1, variation) | "tft" (tableau de flux de trésorerie, simplifié, nécessite N-1) | "liasse_fiscale" (liasse fiscale / DSF SYSCOHADA complète produite par le moteur AuthNTIC — Bilan, CR, TFT) | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers) | "balance_agee" (balance âgée des créances/dettes par tiers) | "balance_auxiliaire" (balance des comptes de tiers, justifie 411/401) | "grand_livre_auxiliaire" (détail ligne à ligne de tous les tiers)' },
               tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
@@ -708,6 +709,7 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
     case 'etats_financiers': return await accdocs.etatsFinanciersPdf(c, dossierId, fy);
     case 'etats_comparatifs': return await accdocs.etatsComparatifsPdf(c, dossierId, fy);
     case 'tft': { const r = await accdocs.tftPdf(c, dossierId, fy); if (!r.hasPrevious) return { error: 'Le TFT nécessite un exercice précédent (N-1) avec des mouvements.' }; return r; }
+    case 'liasse_fiscale': { if (!authntic.authnticEnabled()) return { error: "Le moteur de liasse AuthNTIC n'est pas configuré pour cette instance." }; return await authntic.generateLiassePdf(c, dossierId, fy); }
     case 'livre_journal': { const r = await accdocs.livreJournalPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le livre-journal.' }; return r; }
     case 'grand_livre_general': { const r = await accdocs.grandLivreGeneralPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le grand livre général.' }; return r; }
     case 'journal_centralisateur': { const r = await accdocs.journalCentralisateurPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le journal centralisateur.' }; return r; }

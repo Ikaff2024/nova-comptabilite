@@ -567,6 +567,7 @@ export const api = {
     req<FinancialStatements>(`/api/dossiers/${dossierId}/financial-statements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   isEstimate: (dossierId: string, fiscalYearId?: string) =>
     req<IsEstimate>(`/api/dossiers/${dossierId}/is-estimate${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  liasseStatus: (dossierId: string) => req<{ enabled: boolean }>(`/api/dossiers/${dossierId}/liasse-status`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   creditScore: (dossierId: string, fiscalYearId?: string) => req<CreditScore>(`/api/dossiers/${dossierId}/score${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
