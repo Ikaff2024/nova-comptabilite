@@ -528,6 +528,15 @@ export function createApi() {
     if (!from || !to || !date) { const e: any = new Error('from, to, date requis'); e.status = 400; throw e; }
     res.json(await withUser(userId, (c) => tax.postVatLiquidation(c, req.params.id, from, to, date)));
   }));
+  // Récapitulatif annuel de TVA (12 mois) — PDF.
+  app.get('/api/dossiers/:id/vat/recap', h(async (req, res) => {
+    const userId = requireUser(req);
+    const year = Number(req.query.year) || new Date().getUTCFullYear();
+    const out = await withUser(userId, (c) => accdocs.recapTvaAnnuelPdf(c, req.params.id, year));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
 
   // --- Import / reprise de balance (migration depuis un autre logiciel) -------
   app.post('/api/dossiers/:id/import-balance/analyze', h(async (req, res) => {

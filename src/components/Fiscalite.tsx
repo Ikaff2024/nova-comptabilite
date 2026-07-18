@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles, Calculator } from 'lucide-react';
-import { api, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate } from '../lib/api';
+import { api, downloadAuthed, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -164,6 +164,7 @@ export default function Fiscalite({ dossierId, dossierName, currency }: { dossie
           </div>
           <div className="flex gap-2">
             <button onClick={exportPdf} disabled={!data} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
+            <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/vat/recap?year=${month.slice(0, 4)}`, `recap-tva-${month.slice(0, 4)}.pdf`)} title="Récapitulatif annuel de TVA (12 mois)" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><Printer className="h-4 w-4" /> Récap annuel</button>
             <button onClick={liquidate} disabled={busy || !data || (data.collectee === 0 && data.deductible === 0)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />} Générer la liquidation</button>
           </div>
         </div>

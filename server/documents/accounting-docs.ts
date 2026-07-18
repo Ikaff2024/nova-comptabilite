@@ -265,6 +265,35 @@ export async function declarationTvaPdf(c: Client, dossierId: string, year: numb
   return { filename: `declaration-tva-${year}-${String(month0 + 1).padStart(2, '0')}.pdf`, buffer };
 }
 
+// Récapitulatif annuel de TVA — les 12 mois de l'année : TVA collectée, déductible,
+// nette à payer ou crédit reporté, avec cumuls. Outil de rapprochement de la TVA
+// déclarée sur l'exercice.
+export async function recapTvaAnnuelPdf(c: Client, dossierId: string, year: number): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, md, money, meta } = await ctx(c, dossierId);
+  const rows: string[][] = [];
+  let tCol = 0, tDed = 0, tNet = 0, tCred = 0, nb = 0;
+  for (let m = 0; m < 12; m++) {
+    const from = `${year}-${String(m + 1).padStart(2, '0')}-01`;
+    const to = `${year}-${String(m + 1).padStart(2, '0')}-${String(new Date(year, m + 1, 0).getDate()).padStart(2, '0')}`;
+    const v: any = await vatDeclaration(c, dossierId, from, to);
+    const active = v.collectee !== 0 || v.deductible !== 0;
+    if (active) nb++;
+    tCol += v.collectee; tDed += v.deductible; tNet += v.netDue; tCred += v.creditReportable;
+    rows.push([MOIS[m].charAt(0).toUpperCase() + MOIS[m].slice(1), md(v.collectee), md(v.deductible), md(v.netDue), md(v.creditReportable)]);
+  }
+  const buffer = await tablePdf({
+    title: 'Récapitulatif annuel de TVA', subtitle: `${d.raison_sociale ?? ''} · exercice ${year}`, meta,
+    columns: [
+      { label: 'Mois', width: 96 }, { label: 'TVA collectée', width: 104, align: 'right' }, { label: 'TVA déductible', width: 104, align: 'right' },
+      { label: 'Net à payer', width: 100, align: 'right' }, { label: 'Crédit reporté', width: 104, align: 'right' },
+    ],
+    rows,
+    totals: ['TOTAL', money(tCol), money(tDed), money(tNet), money(tCred)],
+    footNote: `${nb} mois avec activité TVA. Net cumulé à payer : ${money(tNet)}. Récapitulatif reconstitué à partir des écritures comptabilisées (comptes 443 / 445). À rapprocher des déclarations déposées. Généré par Nova.`,
+  });
+  return { filename: `recap-tva-${year}.pdf`, buffer, count: nb };
+}
+
 export async function etatsFinanciersPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer }> {
   const { d, money, meta } = await ctx(c, dossierId);
   const fs: any = await acc.financialStatements(c, dossierId, fyId);

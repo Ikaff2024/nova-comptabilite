@@ -401,7 +401,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "journal_centralisateur" (récap mensuel par journal) | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers) | "balance_agee" (balance âgée des créances/dettes par tiers) | "balance_auxiliaire" (balance des comptes de tiers, justifie 411/401)' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "recap_tva" (récapitulatif annuel de TVA sur 12 mois, préciser annee) | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "journal_centralisateur" (récap mensuel par journal) | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers) | "balance_agee" (balance âgée des créances/dettes par tiers) | "balance_auxiliaire" (balance des comptes de tiers, justifie 411/401)' },
               tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
@@ -680,6 +680,7 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
     case 'bulletin': { const r = await payroll.bulletinPdf(c, dossierId, String(pj.salarie ?? ''), y, mo); if (!r.found) return { error: `Salarié « ${pj.salarie} » introuvable pour ${mo + 1}/${y}.`, extra: { salaries_disponibles: r.candidates } }; return r; }
     case 'rapport_mensuel': return await reporting.rapportMensuelPdf(c, dossierId, y, mo);
     case 'declaration_tva': return await accdocs.declarationTvaPdf(c, dossierId, y, mo);
+    case 'recap_tva': return await accdocs.recapTvaAnnuelPdf(c, dossierId, y);
     case 'balance': return await accdocs.balancePdf(c, dossierId, fy);
     case 'grand_livre': { const code = String(pj.compte ?? '').trim(); if (!code) return { error: 'Précisez le compte (piece_jointe.compte) pour le grand livre.' }; const r = await accdocs.grandLivrePdf(c, dossierId, code, fy); if (r.count === 0) return { error: `Aucune écriture sur le compte ${code}.` }; return r; }
     case 'etats_financiers': return await accdocs.etatsFinanciersPdf(c, dossierId, fy);
