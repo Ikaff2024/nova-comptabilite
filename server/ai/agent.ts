@@ -431,6 +431,11 @@ const ACTION_TOOLS = [
     input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] },
   },
   {
+    name: 'distribuer_bulletins',
+    description: "Envoie à CHAQUE salarié (qui a un email en fiche) son bulletin de paie du mois en pièce jointe PDF. IRRÉVERSIBLE et potentiellement massif : confirme la période AVANT de lancer, puis récapitule les envois et les salariés ignorés (sans email). Nécessite que la paie du mois soit déjà calculée. Fournir année et mois (1-12).",
+    input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] },
+  },
+  {
     name: 'envoyer_email',
     description: 'Envoie un email (synthèse, relance, document), avec éventuellement une PIÈCE JOINTE PDF générée par Nova. IRRÉVERSIBLE : n\'envoie que si la personne l\'a clairement demandé, après avoir confirmé le destinataire et récapitulé le contenu. Le corps peut être du texte ou du HTML simple. Joins un ou plusieurs documents via pieces_jointes = [ { document, annee, mois, … }, … ]. Documents disponibles : avec annee+mois ("livre_paie", "bulletin" +salarie, "declaration_cnps", "declaration_dgi", "declaration_tva", "rapport_mensuel", "rapport_activite") ; attestations d\'un salarié ("attestation_travail", "attestation_salaire" +salarie) ; état annuel des salaires ("etat_301" +annee) ; restitutions comptables de l\'exercice courant ("balance", "grand_livre" +compte, "etats_financiers"). N\'annonce JAMAIS une pièce jointe dans le corps sans la mettre réellement dans pieces_jointes.',
     input_schema: {
@@ -646,6 +651,12 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois);
       const r = await payroll.runPayroll(c, dossierId, y, mo);
       return { statut: 'paie_preparee', annee: y, mois: mo + 1, ...r, note: 'Bulletins BROUILLONS générés (absences, heures sup et avances incluses). La comptabilisation de l\'OD de paie reste à valider dans l\'onglet Paie.' };
+    }
+    case 'distribuer_bulletins': {
+      if (!mail.emailEnabled()) return { error: 'Canal email non configuré côté serveur (RESEND_API_KEY absent).' };
+      const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois);
+      const r = await payroll.distributePayslips(c, dossierId, y, mo);
+      return { statut: 'bulletins_distribues', periode: r.period, envoyes: r.sent.length, ignores: r.skipped.length, detail_envoyes: r.sent, detail_ignores: r.skipped };
     }
     case 'envoyer_email': {
       if (!mail.emailEnabled()) return { error: 'Canal email non configuré côté serveur (RESEND_API_KEY absent).' };

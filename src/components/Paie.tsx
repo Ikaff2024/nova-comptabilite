@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock } from 'lucide-react';
+import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock, Send } from 'lucide-react';
 import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -150,6 +150,16 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
     finally { setBusy(null); }
   };
 
+  const [distribMsg, setDistribMsg] = useState<string | null>(null);
+  const sendPayslips = async () => {
+    if (!confirm(`Envoyer par email le bulletin de ${MONTHS[month]} ${year} à chaque salarié disposant d'une adresse en fiche ?`)) return;
+    setBusy('distrib'); setError(null); setDistribMsg(null);
+    try {
+      const r = await api.distributePayslips(dossierId, year, month);
+      setDistribMsg(`${r.sent.length} bulletin(s) envoyé(s)${r.skipped.length ? ` · ${r.skipped.length} ignoré(s) (${r.skipped.map((s) => s.nom).slice(0, 3).join(', ')}${r.skipped.length > 3 ? '…' : ''})` : ''}.`);
+    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
   const downloadAttestation = async (e: PayrollEmployee, kind: 'travail' | 'salaire') => {
     setError(null);
     try { await downloadAuthed(`/api/dossiers/${dossierId}/payroll/attestation?who=${encodeURIComponent(e.matricule || (e.nom + ' ' + e.prenoms))}&kind=${kind}`, `attestation-${kind}-${(e.matricule || e.nom).toString().toLowerCase()}.pdf`); }
@@ -232,7 +242,9 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
                 <button onClick={checkDecl} disabled={busy === 'aqm'} title="Contrôle qualité AQM des déclarations de paie" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'aqm' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} Vérifier (AQM)</button>
                 <button onClick={downloadOrdreVirement} disabled={busy === 'ordre'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'ordre' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Banknote className="h-3.5 w-3.5" />} Ordre de virement</button>
                 <button onClick={downloadCourrierVirement} disabled={busy === 'courrier'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'courrier' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Courrier à la banque</button>
+                <button onClick={sendPayslips} disabled={busy === 'distrib'} title="Envoyer à chaque salarié son bulletin par email" className="flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-300 hover:bg-sky-500/20 disabled:opacity-50">{busy === 'distrib' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Envoyer les bulletins</button>
               </div>
+              {distribMsg && <p className="mt-1 w-full text-xs text-sky-300">{distribMsg}</p>}
               {comptabilise ? <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> OD de paie comptabilisée</span>
                 : <button onClick={post} disabled={busy === 'post'} className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">{busy === 'post' ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookCheck className="h-4 w-4" />} Comptabiliser l'OD de paie</button>}
             </div>

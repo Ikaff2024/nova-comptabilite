@@ -661,6 +661,7 @@ export const api = {
   runPayroll: (dossierId: string, year: number, month: number) => req<PayrollRunResult>(`/api/dossiers/${dossierId}/payroll/run`, { method: 'POST', body: JSON.stringify({ year, month }) }),
   postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
   payrollYear: (dossierId: string, year: number) => req<PayrollYear>(`/api/dossiers/${dossierId}/payroll/year?year=${year}`),
+  distributePayslips: (dossierId: string, year: number, month: number) => req<{ enabled: boolean; period: string; sent: { nom: string; email: string }[]; skipped: { nom: string; raison: string }[] }>(`/api/dossiers/${dossierId}/payroll/distribute-payslips`, { method: 'POST', body: JSON.stringify({ year, month }) }),
   rhAnalysis: (dossierId: string, year: number, month: number) => req<RhAnalysis>(`/api/dossiers/${dossierId}/payroll/rh-analysis?year=${year}&month=${month}`),
   // Factures de vente récurrentes (abonnements)
   recurringInvoices: (dossierId: string) => req<RecurringInvoice[]>(`/api/dossiers/${dossierId}/recurring-invoices`),

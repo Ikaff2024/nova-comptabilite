@@ -1542,6 +1542,15 @@ export function createApi() {
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);
   }));
+  // Distribution des bulletins : envoie à chaque salarié son bulletin par email.
+  app.post('/api/dossiers/:id/payroll/distribute-payslips', h(async (req, res) => {
+    const userId = requireUser(req);
+    const year = Number(req.body?.year) || new Date().getUTCFullYear();
+    const month = Math.max(0, Math.min(11, Number(req.body?.month) || 0));
+    const out = await withUser(userId, (c) => payroll.distributePayslips(c, req.params.id, year, month));
+    if (!out.enabled) { const e: any = new Error("Canal email non configuré (RESEND_API_KEY)."); e.status = 400; throw e; }
+    res.json(out);
+  }));
   // État 301 — état nominatif annuel des salaires (récapitulatif DGI) en PDF. ?year=
   app.get('/api/dossiers/:id/payroll/etat-annuel', h(async (req, res) => {
     const userId = requireUser(req);

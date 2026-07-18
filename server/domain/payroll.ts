@@ -4,6 +4,7 @@ import { postPayrollEntry } from '../payroll/bridge.js';
 import { tablePdf, sectionsPdf, letterPdf } from '../documents/pdf.js';
 import { renderPayslipPdf } from '../payroll/payslip-pdf.js';
 import { isMonthClosed, monthLabel } from './closures.js';
+import { sendEmail, emailEnabled } from '../email/provider.js';
 
 // ============================================================================
 // Paie : salariés + bulletins, branchés sur le moteur porté (payroll/core).
@@ -491,6 +492,41 @@ export async function etatAnnuelSalairesPdf(c: Client, dossierId: string, year: 
     footNote: `${a.length} salarié(s). Récapitulatif des salaires et retenues (ITS, CN, IGR, CMU, CNPS) versés sur l'exercice ${year}. Document généré par Nova — à vérifier avant dépôt à la DGI.`,
   });
   return { filename: `etat-301-salaires-${year}.pdf`, buffer, count: a.length };
+}
+
+// Distribution des bulletins : envoie à chaque salarié (qui a un email en fiche)
+// son bulletin de paie du mois en pièce jointe PDF. Renvoie le détail envoyés /
+// ignorés (sans email). Porté de la logique RH d'Ivoire Paie.
+export async function distributePayslips(c: Client, dossierId: string, year: number, month: number): Promise<{
+  enabled: boolean; period: string; sent: { nom: string; email: string }[]; skipped: { nom: string; raison: string }[];
+}> {
+  const period = `${getMonthName(month)} ${year}`;
+  if (!emailEnabled()) return { enabled: false, period, sent: [], skipped: [] };
+  const { d } = await employerMeta(c, dossierId);
+  const slips = await listPayslips(c, dossierId, year, month);
+  if (slips.length === 0) throw new Error(`Aucun bulletin pour ${period} : lancez d'abord la paie.`);
+  const { rows: emps } = await c.query('select id, matricule, nom, prenoms, email from payroll_employees where dossier_id=$1', [dossierId]);
+  const byId = new Map<string, any>(emps.map((e: any) => [e.id, e]));
+
+  const sent: { nom: string; email: string }[] = [];
+  const skipped: { nom: string; raison: string }[] = [];
+  for (const p of slips) {
+    const e = byId.get(p.employeeId);
+    const nom = `${p.nom} ${p.prenoms}`.trim();
+    const email = String(e?.email ?? '').trim();
+    if (!email || !email.includes('@')) { skipped.push({ nom, raison: "pas d'email en fiche" }); continue; }
+    const pdf = await bulletinPdf(c, dossierId, p.matricule || nom, year, month);
+    if (!pdf.found) { skipped.push({ nom, raison: 'bulletin introuvable' }); continue; }
+    const html = `<p>Bonjour ${p.prenoms},</p>
+      <p>Veuillez trouver ci-joint votre bulletin de paie du mois de <strong>${period}</strong>.</p>
+      <p>Cordialement,<br/>${(d.raison_sociale ?? 'La Direction')}</p>
+      <p style="color:#888;font-size:12px">Envoyé automatiquement via Nova.</p>`;
+    try {
+      await sendEmail({ to: email, subject: `Votre bulletin de paie — ${period}`, html, attachments: [{ filename: pdf.filename, content: pdf.buffer.toString('base64') }] });
+      sent.push({ nom, email });
+    } catch { skipped.push({ nom, raison: "échec de l'envoi" }); }
+  }
+  return { enabled: true, period, sent, skipped };
 }
 
 // --- Registre des absences -------------------------------------------------
