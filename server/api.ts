@@ -1542,6 +1542,17 @@ export function createApi() {
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);
   }));
+  // Fichier de virement des salaires (CSV importable en banque). ?year=&month=
+  app.get('/api/dossiers/:id/payroll/transfer-file', h(async (req, res) => {
+    const userId = requireUser(req);
+    const year = Number(req.query.year) || new Date().getUTCFullYear();
+    const month = Math.max(0, Math.min(11, Number(req.query.month) || 0));
+    const out = await withUser(userId, (c) => payroll.payrollTransferCsv(c, req.params.id, year, month));
+    if (out.count === 0) { const e: any = new Error(`Aucun bulletin pour ${month + 1}/${year}.`); e.status = 400; throw e; }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
   // Distribution des bulletins : envoie à chaque salarié son bulletin par email.
   app.post('/api/dossiers/:id/payroll/distribute-payslips', h(async (req, res) => {
     const userId = requireUser(req);

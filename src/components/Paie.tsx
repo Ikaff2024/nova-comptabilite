@@ -150,6 +150,13 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
     finally { setBusy(null); }
   };
 
+  const downloadTransferFile = async () => {
+    setBusy('csv'); setError(null);
+    try { await downloadAuthed(`/api/dossiers/${dossierId}/payroll/transfer-file?year=${year}&month=${month}`, `virement-salaires-${year}-${String(month + 1).padStart(2, '0')}.csv`); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(null); }
+  };
+
   const [distribMsg, setDistribMsg] = useState<string | null>(null);
   const sendPayslips = async () => {
     if (!confirm(`Envoyer par email le bulletin de ${MONTHS[month]} ${year} à chaque salarié disposant d'une adresse en fiche ?`)) return;
@@ -242,6 +249,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
                 <button onClick={checkDecl} disabled={busy === 'aqm'} title="Contrôle qualité AQM des déclarations de paie" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'aqm' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} Vérifier (AQM)</button>
                 <button onClick={downloadOrdreVirement} disabled={busy === 'ordre'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'ordre' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Banknote className="h-3.5 w-3.5" />} Ordre de virement</button>
                 <button onClick={downloadCourrierVirement} disabled={busy === 'courrier'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'courrier' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Courrier à la banque</button>
+                <button onClick={downloadTransferFile} disabled={busy === 'csv'} title="Fichier de virement des salaires (CSV importable en banque)" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'csv' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Banknote className="h-3.5 w-3.5" />} Fichier de virement (CSV)</button>
                 <button onClick={sendPayslips} disabled={busy === 'distrib'} title="Envoyer à chaque salarié son bulletin par email" className="flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-300 hover:bg-sky-500/20 disabled:opacity-50">{busy === 'distrib' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Envoyer les bulletins</button>
               </div>
               {distribMsg && <p className="mt-1 w-full text-xs text-sky-300">{distribMsg}</p>}

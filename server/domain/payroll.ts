@@ -5,6 +5,7 @@ import { tablePdf, sectionsPdf, letterPdf } from '../documents/pdf.js';
 import { renderPayslipPdf } from '../payroll/payslip-pdf.js';
 import { isMonthClosed, monthLabel } from './closures.js';
 import { sendEmail, emailEnabled } from '../email/provider.js';
+import { toCsv } from '../documents/csv.js';
 
 // ============================================================================
 // Paie : salariés + bulletins, branchés sur le moteur porté (payroll/core).
@@ -357,6 +358,24 @@ export async function attestationPdf(
   });
   const slug = `${kind}-${(e.matricule || nomComplet).toString().replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
   return { filename: `attestation-${slug}.pdf`, buffer, found: true };
+}
+
+// Fichier de virement des salaires (CSV importable en banque / tableur).
+export async function payrollTransferCsv(c: Client, dossierId: string, year: number, month: number): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d } = await employerMeta(c, dossierId);
+  const cur = d.base_currency ?? 'XOF';
+  const period = `${getMonthName(month)} ${year}`;
+  const { rows } = await c.query(
+    `select e.matricule, e.nom, e.prenoms, e.banque, e.rib, e.mode_paiement, e.mobile_money_numero, e.mobile_money_operateur, p.calculation
+       from payroll_payslips p join payroll_employees e on e.id=p.employee_id
+      where p.dossier_id=$1 and p.period_year=$2 and p.period_month=$3 order by e.nom, e.prenoms`, [dossierId, year, month]);
+  const coord = (r: any): string => r.rib ? String(r.rib)
+    : r.mobile_money_numero ? `${r.mobile_money_operateur ? r.mobile_money_operateur + ' ' : ''}${r.mobile_money_numero}` : '';
+  const out: (string | number)[][] = [['Matricule', 'Bénéficiaire', 'Banque', 'RIB / N° compte', 'Mode', 'Montant', 'Devise', 'Motif']];
+  for (const r of rows) out.push([r.matricule ?? '', `${r.nom} ${r.prenoms}`, r.banque || '', coord(r), r.mode_paiement || '', num(r.calculation?.salaireNetPaye), cur, `Salaire ${period}`]);
+  const total = rows.reduce((s: number, r: any) => s + num(r.calculation?.salaireNetPaye), 0);
+  out.push(['', 'TOTAL', '', '', '', total, cur, '']);
+  return { filename: `virement-salaires-${year}-${String(month + 1).padStart(2, '0')}.csv`, buffer: toCsv(out), count: rows.length };
 }
 
 async function employerMeta(c: Client, dossierId: string): Promise<{ d: any; cur: string; money: (n: number) => string; meta: string[] }> {
