@@ -329,7 +329,8 @@ function BalanceTiers({ dossierId, dossierName, currency }: { dossierId: string;
         </select>
         <div className="flex gap-2">
           <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
-          <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
+          <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> Aperçu</button>
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/balance-auxiliaire`, 'balance-auxiliaire-tiers.pdf')} title="Balance auxiliaire des tiers (justifie les comptes collectifs 411/401)" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><FileText className="h-4 w-4" /> Balance aux. (PDF)</button>
         </div>
       </div>
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul…</div> : withMoves.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement de tiers.</p> : (

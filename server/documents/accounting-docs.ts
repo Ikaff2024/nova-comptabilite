@@ -2,6 +2,7 @@ import type { Client } from '../db.js';
 import * as acc from '../domain/accounting.js';
 import { vatDeclaration } from '../domain/tax.js';
 import { agedBalance } from '../domain/forecast.js';
+import { auxiliaryBalance } from '../domain/tiers.js';
 import { tablePdf, sectionsPdf, type RowStyle } from './pdf.js';
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -200,6 +201,47 @@ export async function journalCentralisateurPdf(c: Client, dossierId: string, fyI
     footNote: `${nbJ} journal(aux). Les totaux débit et crédit doivent être égaux (partie double). Généré par Nova.`,
   });
   return { filename: 'journal-centralisateur.pdf', buffer, count: data.length };
+}
+
+// Balance auxiliaire des tiers — justifie les comptes collectifs (411 clients,
+// 401 fournisseurs) : chaque tiers avec ses totaux débit/crédit et son solde.
+// Le sous-total par nature doit égaler le solde du compte collectif à la balance.
+const TIERS_LABELS: Record<string, string> = { client: 'CLIENTS (411)', fournisseur: 'FOURNISSEURS (401)', salarie: 'PERSONNEL (42)', etat: 'ÉTAT (44)', autre: 'AUTRES TIERS' };
+export async function balanceAuxiliairePdf(c: Client, dossierId: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, md, money, meta } = await ctx(c, dossierId);
+  const all: any[] = await auxiliaryBalance(c, dossierId);
+  const mouv = all.filter((r) => r.debit !== 0 || r.credit !== 0);
+
+  const rows: string[][] = [];
+  const rowStyles: (RowStyle | undefined)[] = [];
+  const push = (r: string[], s?: RowStyle) => { rows.push(r); rowStyles.push(s); };
+  const sD = (b: number) => Math.max(b, 0), sC = (b: number) => Math.max(-b, 0);
+  let totDeb = 0, totCred = 0;
+
+  for (const type of ['client', 'fournisseur', 'salarie', 'etat', 'autre']) {
+    const grpRows = mouv.filter((r) => r.type === type);
+    if (!grpRows.length) continue;
+    push([TIERS_LABELS[type] ?? type.toUpperCase(), '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+    let net = 0;
+    for (const r of grpRows) {
+      net += r.balance;
+      push([r.aux_code || '—', r.name, r.collective || '', md(sD(r.balance)), md(sC(r.balance))]);
+    }
+    totDeb += sD(net); totCred += sC(net);
+    push(['', `Sous-total ${TIERS_LABELS[type] ?? type}`, '', money(sD(net)), money(sC(net))], { bold: true, line: 'top' });
+  }
+
+  const buffer = await tablePdf({
+    title: 'Balance auxiliaire des tiers', subtitle: `${d.raison_sociale ?? ''} · justification des comptes collectifs`, meta,
+    columns: [
+      { label: 'Code', width: 54 }, { label: 'Tiers', width: 190 }, { label: 'Collectif', width: 56 },
+      { label: 'Solde débiteur', width: 92, align: 'right' }, { label: 'Solde créditeur', width: 92, align: 'right' },
+    ],
+    rows, rowStyles,
+    totals: ['', 'TOTAUX', '', money(totDeb), money(totCred)],
+    footNote: `${mouv.length} tiers mouvementé(s). Le sous-total de chaque nature doit égaler le solde du compte collectif à la balance générale. Généré par Nova.`,
+  });
+  return { filename: 'balance-auxiliaire-tiers.pdf', buffer, count: mouv.length };
 }
 
 export async function declarationTvaPdf(c: Client, dossierId: string, year: number, month0: number): Promise<{ filename: string; buffer: Buffer }> {
