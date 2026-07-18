@@ -233,9 +233,12 @@ export function createApi() {
   // --- Cabinet : renommage ---------------------------------------------------
   app.patch('/api/cabinets/:cid', h(async (req, res) => {
     const userId = requireUser(req);
-    const { name } = req.body ?? {};
-    if (!name?.trim()) { const e: any = new Error('Nom requis'); e.status = 400; throw e; }
-    await withUser(userId, (c) => users.renameCabinet(c, req.params.cid, String(name)));
+    const { name, accountType } = req.body ?? {};
+    if (!name?.trim() && !accountType) { const e: any = new Error('Nom ou type requis'); e.status = 400; throw e; }
+    await withUser(userId, async (c) => {
+      if (name?.trim()) await users.renameCabinet(c, req.params.cid, String(name));
+      if (accountType === 'cabinet' || accountType === 'entreprise') await acc.setCabinetAccountType(c, req.params.cid, accountType);
+    });
     res.status(204).end();
   }));
 

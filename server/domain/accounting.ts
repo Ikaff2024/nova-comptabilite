@@ -72,12 +72,19 @@ export async function onboardCabinet(
     [userId, name, country, currency],
   );
   const id = rows[0].id;
-  // Tolérant au schéma : si la migration 0057 n'est pas encore appliquée, on
-  // ignore (le compte reste « cabinet » par défaut jusqu'à la migration).
-  if (accountType === 'entreprise' && await columnExists('cabinets', 'account_type')) {
-    await c.query("update cabinets set account_type='entreprise' where id=$1", [id]);
+  // Le type de compte passe par une fonction SECURITY DEFINER (la RLS de
+  // cabinets n'autorise pas l'UPDATE direct). Tolérant : ignoré si la migration
+  // 0058 n'est pas encore appliquée (le compte reste « cabinet » par défaut).
+  if (accountType === 'entreprise') {
+    try { await c.query('select cabinet_set_account_type($1,$2)', [id, 'entreprise']); }
+    catch { /* migration pas encore appliquée — dégrade en cabinet */ }
   }
   return id;
+}
+
+// Change le type d'un compte existant (cabinet ↔ entreprise), owner/associé.
+export async function setCabinetAccountType(c: Client, cabinetId: string, type: 'cabinet' | 'entreprise'): Promise<void> {
+  await c.query('select cabinet_set_account_type($1,$2)', [cabinetId, type]);
 }
 
 export async function listCabinets(c: Client): Promise<any[]> {

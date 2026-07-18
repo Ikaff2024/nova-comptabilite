@@ -11,7 +11,7 @@ const ROLES = [
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.v === r)?.l ?? r;
 
-export default function CabinetSettings({ cabinet, user, onUserRefresh, onRenamed }: { cabinet: Cabinet; user: AuthUser; onUserRefresh: () => void; onRenamed: () => void }) {
+export default function CabinetSettings({ cabinet, user, onUserRefresh, onRenamed, isCompany }: { cabinet: Cabinet; user: AuthUser; onUserRefresh: () => void; onRenamed: () => void; isCompany?: boolean }) {
   const [myRole, setMyRole] = useState<string | null>(null);
   useEffect(() => { let on = true; api.members(cabinet.id).then((ms) => { if (on) setMyRole(ms.find((m) => m.userId === user.id)?.role ?? null); }).catch(() => {}); return () => { on = false; }; }, [cabinet.id, user.id]);
   const isOwner = myRole === 'owner' || myRole === 'associe';
@@ -19,19 +19,57 @@ export default function CabinetSettings({ cabinet, user, onUserRefresh, onRename
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-display text-3xl font-bold tracking-tight">Cabinet & sécurité</h1>
-        <p className="mt-1 text-zinc-400">Gérez le cabinet, les collaborateurs et votre double authentification.</p>
+        <h1 className="font-display text-3xl font-bold tracking-tight">{isCompany ? 'Entreprise & sécurité' : 'Cabinet & sécurité'}</h1>
+        <p className="mt-1 text-zinc-400">{isCompany ? 'Gérez votre entreprise, les utilisateurs et votre double authentification.' : 'Gérez le cabinet, les collaborateurs et votre double authentification.'}</p>
       </div>
-      <CabinetName cabinet={cabinet} onRenamed={onRenamed} />
+      <CabinetName cabinet={cabinet} onRenamed={onRenamed} isCompany={isCompany} />
       <ProfileName user={user} onUserRefresh={onUserRefresh} />
-      <Members cabinet={cabinet} user={user} />
+      <Members cabinet={cabinet} user={user} isCompany={isCompany} />
       {isOwner && <ApiCosts />}
+      {isOwner && <AccountTypeSwitch cabinet={cabinet} isCompany={!!isCompany} onChanged={onRenamed} />}
       <TwoFactor user={user} onUserRefresh={onUserRefresh} />
     </div>
   );
 }
 
-function CabinetName({ cabinet, onRenamed }: { cabinet: Cabinet; onRenamed: () => void }) {
+// Bascule cabinet ↔ entreprise. « Entreprise » simplifie l'interface (pas de
+// portefeuille, atterrissage direct dans la comptabilité de la société).
+function AccountTypeSwitch({ cabinet, isCompany, onChanged }: { cabinet: Cabinet; isCompany: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const convert = async (to: 'cabinet' | 'entreprise') => {
+    const msg = to === 'entreprise'
+      ? "Passer en compte « entreprise » ? L'interface est simplifiée pour piloter une seule société (pas de portefeuille de clients)."
+      : 'Repasser en compte « cabinet » (portefeuille de plusieurs clients) ?';
+    if (!confirm(msg)) return;
+    setBusy(true); setError(null);
+    try { await api.setCabinetType(cabinet.id, to); onChanged(); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><UserRound className="h-4 w-4 text-emerald-400" /> Type de compte</div>
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <p className="text-sm text-zinc-300">
+          Ce compte est configuré comme <span className="font-semibold text-zinc-100">{isCompany ? 'entreprise' : 'cabinet comptable'}</span>.
+          {isCompany
+            ? ' L\'interface est centrée sur votre société : pas de portefeuille, accès direct à la comptabilité.'
+            : ' Vous pilotez un portefeuille de plusieurs dossiers clients.'}
+        </p>
+        <button onClick={() => convert(isCompany ? 'cabinet' : 'entreprise')} disabled={busy}
+          className="mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-white/10 disabled:opacity-50">
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isCompany ? 'Passer en compte cabinet' : 'Passer en compte entreprise'}
+        </button>
+        {error && <p className="mt-2 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+      </div>
+    </section>
+  );
+}
+
+function CabinetName({ cabinet, onRenamed, isCompany }: { cabinet: Cabinet; onRenamed: () => void; isCompany?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(cabinet.name);
   const [busy, setBusy] = useState(false);
@@ -47,7 +85,7 @@ function CabinetName({ cabinet, onRenamed }: { cabinet: Cabinet; onRenamed: () =
 
   return (
     <section className="space-y-2">
-      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Building2 className="h-4 w-4 text-emerald-400" /> Nom du cabinet</div>
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Building2 className="h-4 w-4 text-emerald-400" /> {isCompany ? "Nom de l'entreprise" : 'Nom du cabinet'}</div>
       {editing ? (
         <div className="flex flex-wrap items-center gap-2">
           <input value={name} autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setEditing(false); setName(cabinet.name); } }}
@@ -102,7 +140,7 @@ function ProfileName({ user, onUserRefresh }: { user: AuthUser; onUserRefresh: (
   );
 }
 
-function Members({ cabinet, user }: { cabinet: Cabinet; user: AuthUser }) {
+function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUser; isCompany?: boolean }) {
   const [rows, setRows] = useState<CabinetMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
@@ -127,7 +165,7 @@ function Members({ cabinet, user }: { cabinet: Cabinet; user: AuthUser }) {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Users className="h-4 w-4 text-emerald-400" /> Collaborateurs du cabinet</div>
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Users className="h-4 w-4 text-emerald-400" /> {isCompany ? 'Utilisateurs' : 'Collaborateurs du cabinet'}</div>
 
       {canManage && (
         <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">

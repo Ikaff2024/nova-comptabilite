@@ -24,6 +24,7 @@ export default function App() {
   // Mode entreprise : le compte n'a qu'un dossier (sa propre société), chargé
   // ici pour un atterrissage direct dans sa comptabilité (pas de portefeuille).
   const [companyDossier, setCompanyDossier] = useState<Dossier | null>(null);
+  const [companyLoaded, setCompanyLoaded] = useState(false);
   const refreshMe = async () => { try { setUser(await api.me()); } catch { /* ignore */ } };
   const [showGuide, setShowGuide] = useState(false);
   const [dashKey, setDashKey] = useState(0); // force refresh du dashboard après démo
@@ -85,9 +86,10 @@ export default function App() {
   useEffect(() => {
     const cab = cabinets[0];
     if (cab && cab.account_type === 'entreprise') {
-      api.dossiers().then((ds) => setCompanyDossier(ds[0] ?? null)).catch(() => setCompanyDossier(null));
+      setCompanyLoaded(false);
+      api.dossiers().then((ds) => setCompanyDossier(ds[0] ?? null)).catch(() => setCompanyDossier(null)).finally(() => setCompanyLoaded(true));
     } else {
-      setCompanyDossier(null);
+      setCompanyDossier(null); setCompanyLoaded(false);
     }
   }, [cabinets]);
 
@@ -209,16 +211,18 @@ export default function App() {
               : <DossierView dossier={selected} onBack={() => setSelected(null)} />
             : isCompany
               ? nav === 'cabinet'
-                ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} onRenamed={loadCabinets} />
+                ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} onRenamed={loadCabinets} isCompany />
                 : nav === 'platform' && user.platformAdmin
                   ? <PlatformConsole />
                   : companyDossier
                     ? <DossierView dossier={companyDossier} onBack={() => {}} hideBack />
-                    : <div className="flex h-full items-center justify-center text-zinc-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                    : companyLoaded
+                      ? <CompanySetup cabinet={cabinet} onCreated={loadCabinets} />
+                      : <div className="flex h-full items-center justify-center text-zinc-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
               : nav === 'dashboard'
                 ? <CabinetDashboard refresh={dashKey} cabinetName={cabinet.name} onOpen={openDossierById} onDemo={onDemoCreated} />
                 : nav === 'cabinet'
-                  ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} onRenamed={loadCabinets} />
+                  ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} onRenamed={loadCabinets} isCompany={false} />
                   : nav === 'platform' && user.platformAdmin
                     ? <PlatformConsole />
                     : <Dossiers cabinet={cabinet} onOpen={setSelected} />}
@@ -226,6 +230,35 @@ export default function App() {
       </main>
 
       {showGuide && <WelcomeGuide onClose={() => setShowGuide(false)} onDemo={onDemoCreated} />}
+    </div>
+  );
+}
+
+// Mode entreprise sans dossier (ex. compte converti depuis « cabinet ») :
+// invite à créer la comptabilité de la société, préremplie avec son nom.
+function CompanySetup({ cabinet, onCreated }: { cabinet: Cabinet; onCreated: () => void }) {
+  const [name, setName] = useState(cabinet.name);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const create = async () => {
+    if (!name.trim()) return;
+    setLoading(true); setError(null);
+    try { await api.createDossier({ cabinetId: cabinet.id, raisonSociale: name.trim(), country: cabinet.country }); onCreated(); }
+    catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  };
+  return (
+    <div className="mx-auto max-w-lg rounded-2xl border border-white/10 bg-white/5 p-8">
+      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400"><Building2 className="h-6 w-6" /></div>
+      <h1 className="mt-4 font-display text-2xl font-bold tracking-tight">Configurons votre société</h1>
+      <p className="mt-1 text-zinc-400">Nous créons la comptabilité de votre entreprise (plan SYSCOHADA inclus). Vous pourrez tout gérer ici : saisie, paie, états financiers, Lexa.</p>
+      <label className="mt-6 mb-1.5 block text-sm font-medium text-zinc-300">Nom de l'entreprise</label>
+      <input value={name} onChange={(e) => setName(e.target.value)} autoFocus
+        className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2.5 text-sm outline-none focus:border-emerald-500/50" />
+      {error && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+      <button onClick={create} disabled={loading || !name.trim()}
+        className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">
+        {loading && <Loader2 className="h-4 w-4 animate-spin" />} Créer ma comptabilité
+      </button>
     </div>
   );
 }
