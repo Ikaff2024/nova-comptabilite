@@ -1512,6 +1512,18 @@ export function createApi() {
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);
   }));
+  // Attestations RH (travail / salaire) en PDF. ?who=matricule|nom&kind=travail|salaire
+  app.get('/api/dossiers/:id/payroll/attestation', h(async (req, res) => {
+    const userId = requireUser(req);
+    const who = String(req.query.who ?? '').trim();
+    const kind = req.query.kind === 'salaire' ? 'salaire' : 'travail';
+    if (!who) { const e: any = new Error('Salarié requis (who).'); e.status = 400; throw e; }
+    const out = await withUser(userId, (c) => payroll.attestationPdf(c, req.params.id, who, kind));
+    if (!out.found) { const e: any = new Error(`Salarié introuvable : ${who}. Candidats : ${(out.candidates ?? []).join(', ')}`); e.status = 404; throw e; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
   // Factures de vente récurrentes (abonnements)
   app.get('/api/dossiers/:id/recurring-invoices', h(async (req, res) => {
     const userId = requireUser(req);

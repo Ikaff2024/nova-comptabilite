@@ -293,6 +293,69 @@ export async function courrierVirementPdf(c: Client, dossierId: string, year: nu
   return { filename: `courrier-virement-salaires-${year}-${String(month + 1).padStart(2, '0')}.pdf`, buffer, count: rr.length };
 }
 
+// Date longue en français à partir d'un ISO 'yyyy-mm-dd' (ou Date).
+const dateLongFr = (v: any): string => { const s = iso(v); const [y, m, d] = s.split('-').map(Number); return y && m && d ? `${d} ${MOIS_FR[m - 1]} ${y}` : s; };
+
+// Attestations RH (portées d'Ivoire Paie) : attestation de travail et
+// attestation de salaire. Résout le salarié par matricule ou par nom.
+export async function attestationPdf(
+  c: Client, dossierId: string, who: string, kind: 'travail' | 'salaire',
+): Promise<{ filename: string; buffer: Buffer; found: boolean; candidates?: string[] }> {
+  const { d, money } = await employerMeta(c, dossierId);
+  const emps = await listEmployees(c, dossierId);
+  const q = String(who ?? '').trim().toLowerCase();
+  const e: any = emps.find((x: any) => String(x.matricule ?? '').toLowerCase() === q)
+    ?? emps.find((x: any) => `${x.nom} ${x.prenoms}`.toLowerCase().includes(q))
+    ?? emps.find((x: any) => `${x.prenoms} ${x.nom}`.toLowerCase().includes(q));
+  if (!e) return { filename: '', buffer: Buffer.alloc(0), found: false, candidates: emps.map((x: any) => `${x.matricule} ${x.nom} ${x.prenoms}`) };
+
+  const civ = e.civilite || (String(e.statutMatrimonial ?? '').toLowerCase().includes('mari') ? '' : '');
+  const nomComplet = `${e.prenoms} ${e.nom}`.trim();
+  const contrat = e.typeContrat ? String(e.typeContrat).toUpperCase() : 'contrat de travail';
+  const embauche = e.dateEmbauche ? dateLongFr(e.dateEmbauche) : '—';
+
+  const sender = [d.raison_sociale ?? '—'];
+  if (d.tax_id) sender.push(`NCC/IFU : ${d.tax_id}`);
+  if (d.rccm) sender.push(`RCCM : ${d.rccm}`);
+  if (d.adresse) sender.push(String(d.adresse));
+
+  const identite = `${civ ? civ + ' ' : ''}${nomComplet}${e.matricule ? `, matricule ${e.matricule},` : ','} ${e.poste ? `exerçant les fonctions de ${e.poste}` : 'salarié(e)'}${e.categorie ? `, catégorie ${e.categorie}` : ''}`;
+  const bodyBefore: string[] = [
+    `Je soussigné(e), représentant légal de la société ${d.raison_sociale ?? "l'entreprise"}${d.rccm ? ` (RCCM ${d.rccm})` : ''}, atteste par la présente que :`,
+    `${identite},`,
+    `est employé(e) au sein de notre entreprise depuis le ${embauche}, dans le cadre d'un ${contrat}.`,
+  ];
+
+  if (kind === 'salaire') {
+    const { rows: pr } = await c.query(
+      `select period_year, period_month, calculation from payroll_payslips
+        where dossier_id=$1 and employee_id=$2 order by period_year desc, period_month desc limit 1`,
+      [dossierId, e.id]);
+    const last = pr[0];
+    if (last) {
+      const brut = num(last.calculation?.salaireBrutTotal);
+      const net = num(last.calculation?.salaireNetPaye);
+      const periode = `${getMonthName(last.period_month)} ${last.period_year}`;
+      bodyBefore.push(`À ce titre, ${civ ? civ + ' ' : ''}${e.nom} perçoit une rémunération brute mensuelle de ${money(brut)}, soit un salaire net mensuel de ${money(net)} (dernier bulletin établi : ${periode}).`);
+    } else {
+      const brut = num(e.salaireBase) + num(e.sursalaire) + num(e.indemniteLogement) + num(e.autresPrimes);
+      bodyBefore.push(`À ce titre, ${civ ? civ + ' ' : ''}${e.nom} perçoit une rémunération brute mensuelle contractuelle de ${money(brut)}. (Aucun bulletin n'ayant encore été établi, ce montant est celui prévu au contrat.)`);
+    }
+  }
+
+  const bodyAfter = ['La présente attestation est délivrée à l\'intéressé(e) pour servir et valoir ce que de droit.'];
+  const titre = kind === 'salaire' ? 'ATTESTATION DE SALAIRE' : 'ATTESTATION DE TRAVAIL';
+
+  const buffer = await letterPdf({
+    sender, recipient: [], place: d.ville || undefined, date: dateFr(), subject: titre,
+    bodyBefore, bodyAfter,
+    signature: ['Pour ' + (d.raison_sociale ?? "l'entreprise"), 'La Direction', '', '(signature et cachet)'],
+    footNote: `Document généré par Lexa (Nova Comptabilité) le ${dateFr()} — à vérifier et signer.`,
+  });
+  const slug = `${kind}-${(e.matricule || nomComplet).toString().replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+  return { filename: `attestation-${slug}.pdf`, buffer, found: true };
+}
+
 async function employerMeta(c: Client, dossierId: string): Promise<{ d: any; cur: string; money: (n: number) => string; meta: string[] }> {
   const { rows: dr } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
   const d: any = dr[0]?.j ?? {};

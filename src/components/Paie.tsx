@@ -135,6 +135,12 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
     finally { setBusy(null); }
   };
 
+  const downloadAttestation = async (e: PayrollEmployee, kind: 'travail' | 'salaire') => {
+    setError(null);
+    try { await downloadAuthed(`/api/dossiers/${dossierId}/payroll/attestation?who=${encodeURIComponent(e.matricule || (e.nom + ' ' + e.prenoms))}&kind=${kind}`, `attestation-${kind}-${(e.matricule || e.nom).toString().toLowerCase()}.pdf`); }
+    catch (err: any) { setError(err.message); }
+  };
+
   const totals = payslips.reduce((a, p) => ({ brut: a.brut + p.brut, net: a.net + p.net, cout: a.cout + p.cout }), { brut: 0, net: 0, cout: 0 });
   const comptabilise = payslips.length > 0 && payslips.every((p) => p.comptabilise);
   const activeCount = employees.filter((e) => e.actif).length;
@@ -260,7 +266,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
                     <td className="px-4 py-2.5 text-zinc-400">{e.poste || '—'}</td>
                     <td className="px-4 py-2.5 text-zinc-400">{e.categorie}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-zinc-300">{m(e.salaireBase)}</td>
-                    <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3"><button onClick={() => editEmployee(e)} className="text-zinc-500 hover:text-emerald-400"><Pencil className="h-4 w-4" /></button><button onClick={() => removeEmployee(e.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></div></td>
+                    <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3"><button onClick={() => downloadAttestation(e, 'travail')} title="Attestation de travail" className="text-zinc-500 hover:text-sky-400"><FileText className="h-4 w-4" /></button><button onClick={() => downloadAttestation(e, 'salaire')} title="Attestation de salaire" className="text-zinc-500 hover:text-amber-400"><Banknote className="h-4 w-4" /></button><button onClick={() => editEmployee(e)} title="Modifier" className="text-zinc-500 hover:text-emerald-400"><Pencil className="h-4 w-4" /></button><button onClick={() => removeEmployee(e.id)} title="Supprimer" className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></div></td>
                   </tr>
                 ))}
               </tbody>
