@@ -104,6 +104,14 @@ export interface FinancialStatements {
     totalActif: number; totalPassif: number; equilibre: boolean;
   };
 }
+export interface QualityToolStat { name: string; n: number; ok: number; failRate: number; pass: number; warn: number; fail: number; isValidator: boolean }
+export interface QualityDashboard {
+  available: boolean;
+  total?: number; avgConfidence?: number | null; lowConfidence?: number; since?: string | null; until?: string | null;
+  aqm?: { pass: number; warn: number; fail: number };
+  tools?: QualityToolStat[];
+  lowConfidenceRecent?: { id: string; createdAt: string; question: string | null; confidence: number }[];
+}
 export interface DecisionToolRef { name: string; ok: boolean; verdict?: string }
 export interface DecisionSummary { id: string; createdAt: string; question: string | null; mode: string | null; model: string | null; confidence: number | null; tools: DecisionToolRef[]; nbValidations: number }
 export interface DecisionDetail extends DecisionSummary { answer: string | null; validations: { input: any; report: ValidationReport }[]; tokensIn: number | null; tokensOut: number | null }
@@ -619,6 +627,7 @@ export const api = {
   agentHistory: (dossierId: string) => req<AgentMessage[]>(`/api/dossiers/${dossierId}/agent/history`),
   decisions: (dossierId: string, limit = 30) => req<DecisionSummary[]>(`/api/dossiers/${dossierId}/decisions?limit=${limit}`),
   decision: (dossierId: string, id: string) => req<DecisionDetail>(`/api/dossiers/${dossierId}/decisions/${id}`),
+  qualityDashboard: (dossierId: string) => req<QualityDashboard>(`/api/dossiers/${dossierId}/quality-dashboard`),
   setAgentMode: (dossierId: string, mode: AgentMode) => req<{ mode: AgentMode }>(`/api/dossiers/${dossierId}/agent/mode`, { method: 'POST', body: JSON.stringify({ mode }) }),
   lexaMemory: (dossierId: string) => req<{ id: string; content: string; source: string; created_at: string }[]>(`/api/dossiers/${dossierId}/lexa/memory`),
   lexaRemember: (dossierId: string, content: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/lexa/memory`, { method: 'POST', body: JSON.stringify({ content }) }),

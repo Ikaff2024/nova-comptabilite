@@ -55,6 +55,59 @@ export async function listDecisions(c: Client, dossierId: string, limit = 30): P
   }));
 }
 
+// Tableau de bord qualité (AQM) : agrège le Decision Ledger par type d'action —
+// usage et taux de succès par outil, distribution des verdicts AQM, confiance
+// moyenne, et décisions récentes à faible confiance. Vide si la table n'existe pas.
+export async function qualityDashboard(c: Client, dossierId: string): Promise<any> {
+  if (!(await tableExists('decision_ledger'))) return { available: false };
+
+  const { rows: tot } = await c.query(
+    `select count(*)::int as total,
+            count(*) filter (where confidence is not null)::int as with_conf,
+            coalesce(round(avg(confidence) filter (where confidence is not null)), 0)::int as avg_conf,
+            count(*) filter (where confidence is not null and confidence < 70)::int as low_conf,
+            to_char(min(created_at), 'YYYY-MM-DD') as since,
+            to_char(max(created_at), 'YYYY-MM-DD') as until
+       from decision_ledger where dossier_id=$1`, [dossierId]);
+
+  const { rows: perTool } = await c.query(
+    `select t->>'name' as name,
+            count(*)::int as n,
+            count(*) filter (where (t->>'ok') = 'true')::int as ok,
+            count(*) filter (where t->>'verdict' = 'PASS')::int as pass,
+            count(*) filter (where t->>'verdict' = 'WARNING')::int as warn,
+            count(*) filter (where t->>'verdict' = 'FAIL')::int as fail
+       from decision_ledger d
+       cross join lateral jsonb_array_elements(d.tools) as t
+      where d.dossier_id=$1
+      group by name order by n desc limit 40`, [dossierId]);
+
+  const { rows: lowc } = await c.query(
+    `select id, to_char(created_at, 'YYYY-MM-DD"T"HH24:MI') as created_at, question, confidence
+       from decision_ledger
+      where dossier_id=$1 and confidence is not null and confidence < 90
+      order by created_at desc limit 8`, [dossierId]);
+
+  const tools = perTool.map((r: any) => ({
+    name: r.name, n: r.n, ok: r.ok, failRate: r.n ? Math.round((r.n - r.ok) / r.n * 100) : 0,
+    pass: r.pass, warn: r.warn, fail: r.fail, isValidator: /^valider_/.test(r.name),
+  }));
+  const aqm = tools.filter((t: any) => t.isValidator).reduce(
+    (s: any, t: any) => ({ pass: s.pass + t.pass, warn: s.warn + t.warn, fail: s.fail + t.fail }),
+    { pass: 0, warn: 0, fail: 0 });
+
+  return {
+    available: true,
+    total: tot[0]?.total ?? 0,
+    avgConfidence: tot[0]?.with_conf ? tot[0].avg_conf : null,
+    lowConfidence: tot[0]?.low_conf ?? 0,
+    since: tot[0]?.since ?? null, until: tot[0]?.until ?? null,
+    aqm,
+    tools,
+    lowConfidenceRecent: lowc.map((r: any) => ({ id: r.id, createdAt: r.created_at, question: r.question, confidence: r.confidence })),
+  };
+}
+
 export async function getDecision(c: Client, dossierId: string, id: string): Promise<any | null> {
   if (!(await tableExists('decision_ledger'))) return null;
   const { rows } = await c.query(

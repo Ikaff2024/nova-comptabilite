@@ -1565,6 +1565,10 @@ export function createApi() {
     const limit = Number(req.query.limit) || 30;
     res.json(await withUser(userId, (c) => ledgerDom.listDecisions(c, req.params.id, limit)));
   }));
+  app.get('/api/dossiers/:id/quality-dashboard', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => ledgerDom.qualityDashboard(c, req.params.id)));
+  }));
   app.get('/api/dossiers/:id/decisions/:did', h(async (req, res) => {
     const userId = requireUser(req);
     const d = await withUser(userId, (c) => ledgerDom.getDecision(c, req.params.id, req.params.did));
