@@ -900,6 +900,14 @@ export function createApi() {
     res.send(out.buffer);
   }));
 
+  app.get('/api/dossiers/:id/grand-livre-auxiliaire', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, (c) => accdocs.grandLivreAuxiliairePdf(c, req.params.id));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
+
   // --- Rapprochement bancaire (pointage) -------------------------------------
   app.get('/api/dossiers/:id/bank-accounts', h(async (req, res) => {
     const userId = requireUser(req);

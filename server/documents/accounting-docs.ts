@@ -2,7 +2,7 @@ import type { Client } from '../db.js';
 import * as acc from '../domain/accounting.js';
 import { vatDeclaration } from '../domain/tax.js';
 import { agedBalance } from '../domain/forecast.js';
-import { auxiliaryBalance } from '../domain/tiers.js';
+import { auxiliaryBalance, allTiersLedger } from '../domain/tiers.js';
 import { tablePdf, sectionsPdf, type RowStyle } from './pdf.js';
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -242,6 +242,42 @@ export async function balanceAuxiliairePdf(c: Client, dossierId: string): Promis
     footNote: `${mouv.length} tiers mouvementé(s). Le sous-total de chaque nature doit égaler le solde du compte collectif à la balance générale. Généré par Nova.`,
   });
   return { filename: 'balance-auxiliaire-tiers.pdf', buffer, count: mouv.length };
+}
+
+// Grand livre auxiliaire — tous les tiers, chacun avec ses mouvements et son solde
+// progressif, un sous-total par tiers. Justifie ligne à ligne les comptes 411/401.
+export async function grandLivreAuxiliairePdf(c: Client, dossierId: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, md, money, meta } = await ctx(c, dossierId);
+  const lines: any[] = await allTiersLedger(c, dossierId);
+
+  const rows: string[][] = [];
+  const rowStyles: (RowStyle | undefined)[] = [];
+  const push = (r: string[], s?: RowStyle) => { rows.push(r); rowStyles.push(s); };
+
+  let curr: string | null = null, solde = 0, sD = 0, sC = 0, nbTiers = 0;
+  const flush = () => { if (curr !== null) push(['', '', '', 'Solde du tiers', md(sD), md(sC), money(solde)], { bold: true, line: 'top' }); };
+  for (const l of lines) {
+    const key = `${l.tiers_type}|${l.tiers_name}`;
+    if (key !== curr) {
+      flush();
+      curr = key; solde = 0; sD = 0; sC = 0; nbTiers++;
+      push([`${l.aux_code || ''}`, `${l.tiers_name}`, '', '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+    }
+    sD += l.debit; sC += l.credit; solde += l.debit - l.credit;
+    push([l.entry_date, l.journal_code ?? '', l.piece_ref ?? '', (l.label || '').slice(0, 40), md(l.debit), md(l.credit), money(solde)]);
+  }
+  flush();
+
+  const buffer = await tablePdf({
+    title: 'Grand livre auxiliaire des tiers', subtitle: `${d.raison_sociale ?? ''} · détail des comptes clients & fournisseurs`, meta,
+    columns: [
+      { label: 'Date', width: 58 }, { label: 'Jrnl', width: 32 }, { label: 'Pièce', width: 56 }, { label: 'Libellé', width: 138 },
+      { label: 'Débit', width: 70, align: 'right' }, { label: 'Crédit', width: 70, align: 'right' }, { label: 'Solde', width: 76, align: 'right' },
+    ],
+    rows, rowStyles,
+    footNote: `${nbTiers} tiers, ${lines.length} mouvement(s). Justifie les comptes collectifs 411 / 401. Généré par Nova.`,
+  });
+  return { filename: 'grand-livre-auxiliaire.pdf', buffer, count: lines.length };
 }
 
 export async function declarationTvaPdf(c: Client, dossierId: string, year: number, month0: number): Promise<{ filename: string; buffer: Buffer }> {

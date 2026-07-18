@@ -120,6 +120,30 @@ export async function auxiliaryLedger(c: Client, dossierId: string, counterparty
   return rows.map((r: any) => ({ ...r, debit: Number(r.debit), credit: Number(r.credit) }));
 }
 
+// Grand livre auxiliaire complet : tous les mouvements de tous les tiers, triés
+// par nature puis par tiers puis par date. Sert à justifier les comptes collectifs
+// (411 / 401) ligne à ligne.
+export async function allTiersLedger(c: Client, dossierId: string, type?: string): Promise<any[]> {
+  const params: any[] = [dossierId];
+  let where = 'l.dossier_id = $1';
+  if (type) { params.push(type); where += ` and cp.type = $${params.length}`; }
+  const { rows } = await c.query(
+    `select cp.aux_code, cp.name as tiers_name, cp.type as tiers_type,
+            to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, j.code as journal_code, e.piece_ref,
+            a.account_code, coalesce(l.label, e.description) as label,
+            l.amount_debit as debit, l.amount_credit as credit
+       from entry_lines l
+       join entries e on e.id = l.entry_id and e.status = 'posted'
+       join journals j on j.id = e.journal_id
+       join accounts a on a.id = l.account_id
+       join counterparties cp on cp.id = l.counterparty_id
+      where ${where}
+      order by cp.type, cp.name, e.entry_date, e.created_at`,
+    params,
+  );
+  return rows.map((r: any) => ({ ...r, debit: Number(r.debit), credit: Number(r.credit) }));
+}
+
 // --- Relevé de compte d'un tiers (état de compte, recouvrement) --------------
 // Mouvements chronologiques + solde progressif + solde final (à recevoir/à payer).
 export async function tiersStatement(c: Client, dossierId: string, counterpartyId: string): Promise<any> {
