@@ -463,6 +463,20 @@ export function createApi() {
     res.json(await withUser(userId, (c) => aqm.validateEntry(c, req.params.id, draft, { fiscalYearId: b.fiscalYearId })));
   }));
 
+  // AQM — contrôle qualité d'une facture proposée (vente/achat) avant établissement.
+  app.post('/api/dossiers/:id/validate-invoice', h(async (req, res) => {
+    const userId = requireUser(req);
+    const b = req.body ?? {};
+    const draft = {
+      type: (b.type === 'achat' ? 'achat' : 'vente') as 'vente' | 'achat',
+      date: b.date || b.invoiceDate || undefined,
+      dueDate: b.dueDate || b.echeance || undefined,
+      tiers: b.tiers || b.clientName || b.supplierName || undefined,
+      lines: Array.isArray(b.lines) ? b.lines.map((l: any) => ({ description: l.description, quantity: Number(l.quantity) || 0, unitPrice: Number(l.unitPrice ?? l.unit_price) || 0, vatRate: Number(l.vatRate ?? l.vat_rate) || 0, accountCode: String(l.accountCode ?? l.account_code ?? '').trim() })) : [],
+    };
+    res.json(await withUser(userId, (c) => aqm.validateInvoice(c, req.params.id, draft)));
+  }));
+
   // --- Mobile Money : analyse d'un relevé -> propositions pré-catégorisées ----
   app.post('/api/dossiers/:id/mobile-money/parse', h(async (req, res) => {
     const userId = requireUser(req);

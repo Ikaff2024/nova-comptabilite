@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Plus, Trash2, FileCheck2, Send, Printer, ShieldCheck, ArrowRightLeft, Undo2, FileClock, ReceiptText } from 'lucide-react';
-import { api, fmtMoney, type Invoice, type InvoiceLine, type AnalyticSection, type CatalogItem } from '../lib/api';
+import { api, fmtMoney, type Invoice, type InvoiceLine, type AnalyticSection, type CatalogItem, type ValidationReport } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
+import AqmReportCard from './AqmReportCard';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: 'Brouillon', cls: 'bg-zinc-500/15 text-zinc-400' },
@@ -51,6 +52,8 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [due, setDue] = useState('');
   const [lines, setLines] = useState<Line[]>([blankLine()]);
+  const [report, setReport] = useState<ValidationReport | null>(null);
+  const [checking, setChecking] = useState(false);
   const setLine = (k: number, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l._k === k ? { ...l, ...p } : l)));
   const totalHt = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unit_price), 0);
   const totalTva = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unit_price) * Number(l.vat_rate), 0);
@@ -61,8 +64,18 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
     setBusy('create');
     try {
       await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code, analytic_axis: l.analytic_axis || undefined })) });
-      setCreating(false); setClient(''); setDue(''); setLines([blankLine()]); await load();
+      setCreating(false); setClient(''); setDue(''); setLines([blankLine()]); setReport(null); await load();
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
+  const runCheck = async () => {
+    setChecking(true); setError(null);
+    try {
+      setReport(await api.validateInvoice(dossierId, {
+        type: 'vente', date, dueDate: due || undefined, tiers: client.trim() || undefined,
+        lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unitPrice: Number(l.unit_price), vatRate: Number(l.vat_rate), accountCode: l.account_code })),
+      }));
+    } catch (e: any) { setError(e.message); } finally { setChecking(false); }
   };
 
   const act = async (fn: () => Promise<any>, key: string, gotoType?: DocType) => {
@@ -147,8 +160,10 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
             <div className="flex items-center gap-6 font-mono text-sm text-zinc-400">HT <b className="text-zinc-100">{fmtMoney(totalHt, currency)}</b> · TVA <b className="text-zinc-100">{fmtMoney(totalTva, currency)}</b> · TTC <b className="text-emerald-400">{fmtMoney(totalHt + totalTva, currency)}</b></div>
           </div>
           {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+          {report && <AqmReportCard report={report} />}
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setCreating(false)} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+            <button type="button" onClick={runCheck} disabled={checking} className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Vérifier (AQM)</button>
             <button type="submit" disabled={busy === 'create'} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy === 'create' && <Loader2 className="h-4 w-4 animate-spin" />} Créer le {doc.one}</button>
           </div>
         </motion.form>

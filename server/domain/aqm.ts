@@ -126,3 +126,72 @@ export async function validateEntry(
 }
 
 function fr(iso: string): string { return iso.split('-').reverse().join('/'); }
+
+// ----------------------------------------------------------------------------
+// Validation d'une FACTURE proposée (vente ou achat), avant sa création. Contrôles
+// commerciaux et fiscaux déterministes (taux de TVA CI, comptes, dates, tiers).
+// ----------------------------------------------------------------------------
+export interface DraftInvoiceLine { description?: string; quantity?: number; unitPrice?: number; vatRate?: number; accountCode?: string }
+export interface DraftInvoice { type: 'vente' | 'achat'; date?: string; dueDate?: string; tiers?: string; lines: DraftInvoiceLine[] }
+
+const TAUX_TVA_CI = [0, 0.09, 0.18]; // exonéré, réduit, normal (Côte d'Ivoire)
+const normRate = (r: number) => (r > 1 ? r / 100 : r); // accepte 18 ou 0.18
+
+export async function validateInvoice(c: Client, dossierId: string, inv: DraftInvoice): Promise<ValidationReport> {
+  const checks: Check[] = [];
+  const add = (code: string, label: string, level: CheckLevel, detail?: string) => checks.push({ code, label, level, detail });
+  const lines = inv.lines ?? [];
+
+  // 1. Au moins une ligne.
+  if (!lines.length) add('lignes', 'Au moins une ligne', 'fail', 'La facture ne comporte aucune ligne.');
+  else add('lignes', 'Au moins une ligne', 'pass', `${lines.length} ligne(s).`);
+
+  // 2. Quantités et prix.
+  const badQty = lines.filter((l) => !(Number(l.quantity) > 0));
+  const badPrice = lines.filter((l) => Number(l.unitPrice) < 0);
+  if (badQty.length) add('quantites', 'Quantités positives', 'fail', 'Une ligne a une quantité nulle ou négative.');
+  else if (badPrice.length) add('prix', 'Prix positifs', 'fail', 'Une ligne a un prix unitaire négatif.');
+  else if (lines.length) add('quantites_prix', 'Quantités & prix', 'pass');
+
+  // 3. Taux de TVA plausibles (barème CI).
+  const badRates = [...new Set(lines.map((l) => normRate(Number(l.vatRate) || 0)).filter((r) => !TAUX_TVA_CI.some((t) => Math.abs(t - r) < 0.0001)))];
+  if (badRates.length) add('taux_tva', 'Taux de TVA (barème CI)', 'warning', `Taux inhabituel(s) : ${badRates.map((r) => `${Math.round(r * 100)} %`).join(', ')}. En Côte d'Ivoire : 18 % (normal), 9 % (réduit) ou 0 % (exonéré).`);
+  else if (lines.length) add('taux_tva', 'Taux de TVA (barème CI)', 'pass');
+
+  // 4. Comptes de produit/charge existants et de la bonne classe.
+  const codes = [...new Set(lines.map((l) => String(l.accountCode || '').trim()).filter(Boolean))];
+  if (codes.length) {
+    const { rows: accs } = await c.query('select account_code, class_no from accounts where dossier_id=$1 and account_code = any($2)', [dossierId, codes]);
+    const byCode = new Map<string, any>(accs.map((a: any) => [a.account_code, a]));
+    const missing = codes.filter((k) => !byCode.has(k));
+    if (missing.length) add('comptes', 'Comptes au plan', 'fail', `Compte(s) introuvable(s) : ${missing.join(', ')}.`);
+    else {
+      // Vente → produit (classe 7) ; Achat → charge (6) ou immobilisation (2).
+      const attendues = inv.type === 'vente' ? [7] : [6, 2];
+      const horsClasse = codes.filter((k) => { const a = byCode.get(k); return a && !attendues.includes(a.class_no); });
+      if (horsClasse.length) add('classe_comptes', 'Nature des comptes', 'warning', `${horsClasse.join(', ')} : classe inattendue pour une facture de ${inv.type} (attendu ${inv.type === 'vente' ? 'classe 7 produit' : 'classe 6 charge ou 2 immobilisation'}).`);
+      else add('comptes', 'Comptes au plan', 'pass', `${codes.length} compte(s) reconnus.`);
+    }
+  } else {
+    add('comptes', 'Comptes de produit/charge', 'warning', 'Aucun compte précisé sur les lignes : imputation à compléter.');
+  }
+
+  // 5. Tiers renseigné.
+  if (!inv.tiers || !String(inv.tiers).trim()) add('tiers', `${inv.type === 'vente' ? 'Client' : 'Fournisseur'} renseigné`, 'warning', `Aucun ${inv.type === 'vente' ? 'client' : 'fournisseur'} identifié sur la facture.`);
+  else add('tiers', `${inv.type === 'vente' ? 'Client' : 'Fournisseur'} renseigné`, 'pass', String(inv.tiers));
+
+  // 6. Cohérence des dates (échéance ≥ date de facture).
+  if (inv.date && inv.dueDate) {
+    if (inv.dueDate < inv.date) add('dates', "Échéance ≥ date de facture", 'fail', `Échéance ${fr(inv.dueDate)} antérieure à la date de facture ${fr(inv.date)}.`);
+    else add('dates', "Échéance ≥ date de facture", 'pass');
+  }
+
+  const { verdict, score } = scoreFromChecks(checks);
+  const nF = checks.filter((k) => k.level === 'fail').length, nW = checks.filter((k) => k.level === 'warning').length;
+  const summary = verdict === 'PASS'
+    ? `Tous les contrôles sont passés. Facture cohérente, prête à être établie.`
+    : verdict === 'WARNING'
+      ? `${nW} point(s) de vigilance à vérifier avant d'établir la facture.`
+      : `${nF} contrôle(s) bloquant(s) : corrigez avant d'établir la facture.`;
+  return { verdict, score, checks, summary };
+}

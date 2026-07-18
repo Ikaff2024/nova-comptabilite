@@ -290,6 +290,7 @@ const READ_TOOLS = [
   { name: 'recurrences_dues', description: 'Modèles d\'écritures récurrentes (loyers, abonnements…) et nombre d\'échéances DUES à générer pour chacun. Pour savoir ce qui reste à passer.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'factures_recurrentes_dues', description: 'Modèles de factures de vente récurrentes (abonnements) et nombre de factures DUES à générer pour chacun.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'catalogue', description: 'Catalogue des articles et services vendus : désignation, référence, prix unitaire HT, taux de TVA et compte de produit. Pour renseigner un prix, préparer un devis/une facture ou vérifier un tarif.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'valider_facture', description: "AQM — Contrôle qualité DÉTERMINISTE d'une FACTURE (vente ou achat) AVANT de la proposer/l'établir. Verdict PASS/WARNING/FAIL + score + raison de chaque contrôle : au moins une ligne, quantités/prix positifs, taux de TVA au barème CI (18 % normal, 9 % réduit, 0 % exonéré), comptes existants et de la bonne classe (vente→7, achat→6/2), tiers renseigné, échéance ≥ date. UTILISE-LE avant de proposer une facture ; si FAIL, corrige ; si WARNING, signale les points à l'utilisateur.", input_schema: { type: 'object', properties: { type: { type: 'string', description: 'vente | achat' }, date: { type: 'string' }, echeance: { type: 'string' }, tiers: { type: 'string' }, lignes: { type: 'array', items: { type: 'object', properties: { designation: { type: 'string' }, quantite: { type: 'number' }, prix_unitaire: { type: 'number' }, taux_tva: { type: 'number', description: 'décimal (0.18) ou pourcentage (18)' }, compte: { type: 'string' } } } } }, required: ['type', 'lignes'] } },
   { name: 'valider_ecriture', description: "AQM — Contrôle qualité DÉTERMINISTE d'une écriture AVANT de la proposer ou de la comptabiliser. Renvoie un verdict PASS / WARNING / FAIL, un score (0-100) et le détail de chaque contrôle (équilibre débit=crédit, partie double, montants positifs, comptes existant au plan, sens habituel des classes 6/7, compte collectif→tiers, date dans un exercice ouvert, période non clôturée). UTILISE-LE systématiquement avant de proposer une écriture : si FAIL, corrige et ne comptabilise pas ; si WARNING, signale les points de vigilance à l'utilisateur. Rends compte des raisons (explicabilité).", input_schema: { type: 'object', properties: { date: { type: 'string', description: 'AAAA-MM-JJ (optionnel)' }, lignes: { type: 'array', items: { type: 'object', properties: { compte: { type: 'string' }, debit: { type: 'number' }, credit: { type: 'number' }, libelle: { type: 'string' } }, required: ['compte'] } } }, required: ['lignes'] } },
   { name: 'estimation_is', description: "Estimation de l'impôt sur les bénéfices (IS) et de l'impôt minimum forfaitaire (IMF) de l'exercice, barème Côte d'Ivoire : chiffre d'affaires, résultat comptable, bénéfice imposable, IS théorique (25 %), IMF (0,5 % du CA, min 3 M / plafond 35 M F), impôt DÛ (le plus élevé des deux, ou l'IMF si déficit) et acompte provisionnel (1/3). Pour PROVISIONNER l'impôt, répondre « combien vais-je payer d'impôt ? » et anticiper les acomptes. INDICATIF : sur le résultat comptable, avant réintégrations/déductions fiscales — précise-le.", input_schema: { type: 'object', properties: {}, required: [] } },
 ];
@@ -522,6 +523,17 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       const lignes = Array.isArray(input?.lignes) ? input.lignes : [];
       const draft = { date: input?.date ? String(input.date) : undefined, lines: lignes.map((l: any) => ({ accountCode: String(l.compte ?? '').trim(), debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, label: l.libelle })) };
       return await aqm.validateEntry(c, dossierId, draft, { fiscalYearId: fy });
+    }
+    case 'valider_facture': {
+      const lignes = Array.isArray(input?.lignes) ? input.lignes : [];
+      const draft = {
+        type: (String(input?.type) === 'achat' ? 'achat' : 'vente') as 'vente' | 'achat',
+        date: input?.date ? String(input.date) : undefined,
+        dueDate: input?.echeance ? String(input.echeance) : undefined,
+        tiers: input?.tiers ? String(input.tiers) : undefined,
+        lines: lignes.map((l: any) => ({ description: l.designation, quantity: Number(l.quantite) || 0, unitPrice: Number(l.prix_unitaire) || 0, vatRate: Number(l.taux_tva) || 0, accountCode: String(l.compte ?? '').trim() })),
+      };
+      return await aqm.validateInvoice(c, dossierId, draft);
     }
     case 'releve_compte_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(input?.tiers ?? ''));
