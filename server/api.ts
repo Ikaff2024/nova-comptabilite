@@ -602,6 +602,17 @@ export function createApi() {
     const parsed = Array.isArray(lines) ? lines : importbalance.parseBalanceCsv(String(csv ?? ''));
     res.json(await withUser(userId, (c) => importbalance.analyzeBalanceImport(c, req.params.id, parsed, fiscalYearId || undefined)));
   }));
+  // Diagnostic + réparation des libellés corrompus (« � ») — sans toucher la compta.
+  app.get('/api/dossiers/:id/corrupted-labels', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => importbalance.listCorruptedLabels(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/repair-labels', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { csv, lines } = req.body ?? {};
+    const parsed = Array.isArray(lines) ? lines : importbalance.parseBalanceCsv(String(csv ?? ''));
+    res.json(await withUser(userId, (c) => importbalance.repairLabelsFromCsv(c, req.params.id, parsed)));
+  }));
   app.post('/api/dossiers/:id/import-balance/commit', h(async (req, res) => {
     const userId = requireUser(req);
     const { csv, lines, fiscalYearId, date, description, createMissing, tiersCsv, tiersItems } = req.body ?? {};

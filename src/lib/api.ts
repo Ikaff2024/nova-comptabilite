@@ -401,6 +401,9 @@ export const api = {
   onboard: (name: string, country: string) =>
     req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country }) }),
   dossiers: () => req<Dossier[]>('/api/dossiers'),
+  corruptedLabels: (dossierId: string) => req<{ account_code: string; label: string }[]>(`/api/dossiers/${dossierId}/corrupted-labels`),
+  repairLabels: (dossierId: string, csv: string) =>
+    req<{ repaired: { code: string; old: string; new: string }[] }>(`/api/dossiers/${dossierId}/repair-labels`, { method: 'POST', body: JSON.stringify({ csv }) }),
   renameDossier: (dossierId: string, raisonSociale: string) =>
     req<{ ok: boolean; raison_sociale: string }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify({ raisonSociale }) }),
   createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string }) =>

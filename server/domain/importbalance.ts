@@ -303,6 +303,37 @@ async function repairCorruptedLabels(c: Client, dossierId: string, lines: Analyz
   return n;
 }
 
+// Liste les comptes du dossier dont le libellé est corrompu (« � » = U+FFFD).
+export async function listCorruptedLabels(c: Client, dossierId: string): Promise<{ account_code: string; label: string }[]> {
+  const { rows } = await c.query(
+    "select account_code, label from accounts where dossier_id=$1 and label like '%�%' order by account_code",
+    [dossierId]);
+  return rows;
+}
+
+// Répare les libellés corrompus à partir d'un fichier de balance PROPRE (sans
+// toucher à la compta : ne met à jour QUE l'intitulé des comptes dont le libellé
+// stocké contient « � » et dont le fichier apporte un libellé sain). Indépendant
+// de l'écriture d'à-nouveaux (pas de blocage « balance déjà importée »).
+export async function repairLabelsFromCsv(c: Client, dossierId: string, lines: ImportLineInput[]): Promise<{ repaired: { code: string; old: string; new: string }[] }> {
+  const byCode = new Map<string, string>();
+  for (const l of lines) { const code = String(l.accountCode).trim(); const lab = (l.label ?? '').trim(); if (code && lab) byCode.set(code, lab); }
+  const codes = [...byCode.keys()];
+  const repaired: { code: string; old: string; new: string }[] = [];
+  if (!codes.length) return { repaired };
+  const { rows } = await c.query(
+    "select account_code, label from accounts where dossier_id=$1 and account_code = any($2) and label like '%�%'",
+    [dossierId, codes]);
+  for (const r of rows) {
+    const fresh = byCode.get(r.account_code);
+    if (fresh && !fresh.includes('�')) {
+      await c.query('update accounts set label=$3 where dossier_id=$1 and account_code=$2', [dossierId, r.account_code, fresh]);
+      repaired.push({ code: r.account_code, old: r.label, new: fresh });
+    }
+  }
+  return { repaired };
+}
+
 // --- Validation / écriture d'à-nouveaux -------------------------------------
 
 export interface CommitOptions {

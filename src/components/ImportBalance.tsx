@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Wand2, ArrowRight } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Wand2, ArrowRight, Wrench } from 'lucide-react';
 import { api, fmtMoney, type FiscalYear, type ImportBalanceAnalysis, type TiersOpenItem } from '../lib/api';
 import { cn } from '../lib/utils';
 
@@ -37,6 +37,18 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
   const [tiersItems, setTiersItems] = useState<TiersOpenItem[] | null>(null);
   const [tiersErr, setTiersErr] = useState<string | null>(null);
   const tiersFileRef = useRef<HTMLInputElement>(null);
+  // Réparation des libellés corrompus (« � ») héritée d'un ancien import mal encodé.
+  const [corrupted, setCorrupted] = useState<{ account_code: string; label: string }[]>([]);
+  const [repairing, setRepairing] = useState(false);
+  const [repairMsg, setRepairMsg] = useState<string | null>(null);
+  const repairFileRef = useRef<HTMLInputElement>(null);
+  const loadCorrupted = () => api.corruptedLabels(dossierId).then(setCorrupted).catch(() => setCorrupted([]));
+  useEffect(() => { loadCorrupted(); }, [dossierId]);
+  const onRepairFile = async (f: File) => {
+    setRepairing(true); setRepairMsg(null);
+    try { const t = await readTextSmart(f); const r = await api.repairLabels(dossierId, t); setRepairMsg(`${r.repaired.length} libellé(s) réparé(s).`); await loadCorrupted(); }
+    catch (e: any) { setRepairMsg('Échec : ' + (e?.message ?? '')); } finally { setRepairing(false); }
+  };
 
   const checkTiers = async () => {
     setTiersErr(null);
@@ -88,6 +100,21 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
         <div className="flex items-center gap-2 text-sm text-zinc-300"><Upload className="h-4 w-4 text-emerald-400" /> Reprise de balance (migration depuis un autre logiciel)</div>
         <p className="mt-1 text-sm text-zinc-500">Collez ou importez votre balance (CSV). Nova la contrôle puis génère une écriture d'à-nouveaux dans le journal <span className="font-mono">AN</span>. La balance doit être équilibrée (Σ débit = Σ crédit).</p>
       </div>
+
+      {corrupted.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.07] p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-300"><Wrench className="h-4 w-4" /> {corrupted.length} libellé(s) de compte corrompu(s) (« � »)</div>
+          <p className="mt-1 text-sm text-zinc-400">Séquelle d'un ancien import mal encodé. Ré-importez ici le <b>fichier d'origine</b> (déjà relu correctement) : seuls les intitulés concernés seront corrigés — aucune écriture n'est touchée.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button onClick={() => repairFileRef.current?.click()} disabled={repairing} className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-amber-400 disabled:opacity-50">{repairing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />} Réparer les libellés (fichier propre)</button>
+            <input ref={repairFileRef} type="file" accept=".csv,.txt,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onRepairFile(f); e.currentTarget.value = ''; }} />
+            {repairMsg && <span className="text-sm text-emerald-400">{repairMsg}</span>}
+          </div>
+          <details className="mt-2 text-xs text-zinc-500"><summary className="cursor-pointer">Voir les comptes concernés</summary>
+            <ul className="mt-1 space-y-0.5 font-mono">{corrupted.slice(0, 40).map((a) => <li key={a.account_code}>{a.account_code} · {a.label}</li>)}</ul>
+          </details>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-2">
