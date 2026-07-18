@@ -1524,6 +1524,16 @@ export function createApi() {
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);
   }));
+  // État 301 — état nominatif annuel des salaires (récapitulatif DGI) en PDF. ?year=
+  app.get('/api/dossiers/:id/payroll/etat-annuel', h(async (req, res) => {
+    const userId = requireUser(req);
+    const year = Number(req.query.year) || new Date().getUTCFullYear();
+    const out = await withUser(userId, (c) => payroll.etatAnnuelSalairesPdf(c, req.params.id, year));
+    if (out.count === 0) { const e: any = new Error(`Aucun bulletin comptabilisé pour ${year}.`); e.status = 400; throw e; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
   // Factures de vente récurrentes (abonnements)
   app.get('/api/dossiers/:id/recurring-invoices', h(async (req, res) => {
     const userId = requireUser(req);

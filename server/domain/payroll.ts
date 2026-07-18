@@ -465,6 +465,32 @@ export async function payrollYear(c: Client, dossierId: string, year: number): P
   return { employer, year, annual, totals };
 }
 
+// État 301 — état nominatif annuel des salaires (récapitulatif DGI de fin
+// d'exercice : par salarié, cumuls brut / imposable / retenues / net). Porté
+// d'Ivoire Paie. Document paysage.
+export async function etatAnnuelSalairesPdf(c: Client, dossierId: string, year: number): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, money, meta } = await employerMeta(c, dossierId);
+  const data = await payrollYear(c, dossierId, year);
+  const a: any[] = data.annual ?? [];
+  const t: any = data.totals ?? {};
+  const columns: any[] = [
+    { label: 'Mat.', width: 46 }, { label: 'Nom & prénoms', width: 132 }, { label: 'Mois', width: 34, align: 'right' },
+    { label: 'Brut', width: 78, align: 'right' }, { label: 'Brut impos.', width: 78, align: 'right' },
+    { label: 'CNPS sal.', width: 66, align: 'right' }, { label: 'ITS', width: 60, align: 'right' },
+    { label: 'CN', width: 52, align: 'right' }, { label: 'IGR', width: 60, align: 'right' },
+    { label: 'CMU', width: 50, align: 'right' }, { label: 'Net payé', width: 82, align: 'right' },
+  ];
+  const rows = a.map((x) => [x.matricule ?? '', `${x.nom} ${x.prenoms}`, String(x.mois ?? 0), money(x.brut), money(x.brutImposable), money(x.cnpsSalarial), money(x.its), money(x.cn), money(x.igr), money(x.cmu), money(x.net)]);
+  const totals = ['', 'TOTAUX', '', money(t.brut), money(t.brutImposable), money(t.cnpsSalarial), money(t.its), money(t.cn), money(t.igr), money(t.cmu), money(t.net)];
+  const buffer = await tablePdf({
+    title: `État 301 — État nominatif annuel des salaires ${year}`,
+    subtitle: `${d.raison_sociale ?? ''} · Exercice ${year}`,
+    meta, landscape: true, columns, rows, totals,
+    footNote: `${a.length} salarié(s). Récapitulatif des salaires et retenues (ITS, CN, IGR, CMU, CNPS) versés sur l'exercice ${year}. Document généré par Nova — à vérifier avant dépôt à la DGI.`,
+  });
+  return { filename: `etat-301-salaires-${year}.pdf`, buffer, count: a.length };
+}
+
 // --- Registre des absences -------------------------------------------------
 export async function listAbsences(c: Client, dossierId: string): Promise<any[]> {
   if (!(await rhTablesReady(c))) return [];

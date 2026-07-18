@@ -651,8 +651,15 @@ function DeclarationsPanel({ dossierId, dossierName, currency }: { dossierId: st
   const [data, setData] = useState<PayrollYear | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [err, setErr] = useState<string | null>(null);
   const load = async () => { setLoading(true); try { setData(await api.payrollYear(dossierId, year)); } finally { setLoading(false); } };
   useEffect(() => { load(); }, [dossierId, year]);
+
+  const downloadEtat301 = async () => {
+    setErr(null);
+    try { await downloadAuthed(`/api/dossiers/${dossierId}/payroll/etat-annuel?year=${year}`, `etat-301-salaires-${year}.pdf`); }
+    catch (e: any) { setErr(e.message); }
+  };
 
   const esc = (s: string) => (s || '').replace(/[&<>]/g, '');
   const employerHead = (title: string) => {
@@ -718,7 +725,9 @@ function DeclarationsPanel({ dossierId, dossierName, currency }: { dossierId: st
           <div className="flex flex-wrap gap-2">
             <button onClick={printDISA} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> DISA annuelle (CNPS)</button>
             <button onClick={printImpots} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> Récap annuel impôts (DGI)</button>
+            <button onClick={downloadEtat301} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileText className="h-4 w-4" /> État 301 (PDF)</button>
           </div>
+          {err && <p className="text-sm text-rose-400">{err}</p>}
 
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
             <table className="w-full text-left text-sm">
