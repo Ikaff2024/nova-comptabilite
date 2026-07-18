@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, ArrowDownRight, ArrowUpRight, AlertTriangle } from 'lucide-react';
-import { api, fmtMoney, type Echeancier as EcheancierData, type EcheanceItem } from '../lib/api';
+import { Loader2, ArrowDownRight, ArrowUpRight, AlertTriangle, FileDown } from 'lucide-react';
+import { api, downloadAuthed, fmtMoney, type Echeancier as EcheancierData, type EcheanceItem } from '../lib/api';
 import { cn } from '../lib/utils';
 
 // Échéancier : créances à encaisser + dettes à payer, par date d'échéance.
@@ -48,6 +48,9 @@ export default function Echeancier({ dossierId, currency }: { dossierId: string;
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/balance-agee`, 'balance-agee-tiers.pdf')} title="Balance âgée des créances et dettes par tiers (antériorité)" className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileDown className="h-4 w-4" /> Balance âgée (PDF)</button>
+      </div>
       <div className="grid gap-3 sm:grid-cols-4">
         <Kpi label="À encaisser" value={m(r.total_a_encaisser)} sub={r.creances_echues ? `dont ${m(r.creances_echues)} échu` : 'à jour'} tone="pos" />
         <Kpi label="À payer" value={m(r.total_a_payer)} sub={r.dettes_echues ? `dont ${m(r.dettes_echues)} échu` : 'à jour'} tone="neg" />

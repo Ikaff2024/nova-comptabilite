@@ -1076,6 +1076,15 @@ export function createApi() {
     res.json(await withUser(userId, (c) => echeancier(c, req.params.id)));
   }));
 
+  // Balance âgée des tiers (antériorité des créances / dettes) — PDF.
+  app.get('/api/dossiers/:id/balance-agee', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, (c) => accdocs.balanceAgeePdf(c, req.params.id));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
+
   // --- Dossier de révision (justification des comptes) -----------------------
   app.get('/api/dossiers/:id/revision', h(async (req, res) => {
     const userId = requireUser(req);

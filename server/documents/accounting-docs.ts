@@ -1,6 +1,7 @@
 import type { Client } from '../db.js';
 import * as acc from '../domain/accounting.js';
 import { vatDeclaration } from '../domain/tax.js';
+import { agedBalance } from '../domain/forecast.js';
 import { tablePdf, sectionsPdf, type RowStyle } from './pdf.js';
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -128,6 +129,39 @@ export async function grandLivreGeneralPdf(c: Client, dossierId: string, fyId?: 
     footNote: `${nbComptes} compte(s), ${lines.length} écriture(s). Grand livre général (art. 19 AUDCIF) — document légal à conserver. Généré par Nova.`,
   });
   return { filename: `grand-livre-general.pdf`, buffer, count: lines.length };
+}
+
+// Balance âgée des tiers — antériorité des créances clients et dettes fournisseurs
+// par tranches (à échoir, 1-30, 31-60, 61-90, > 90 j de retard). Outil de relance
+// et de pilotage du besoin en fonds de roulement.
+export async function balanceAgeePdf(c: Client, dossierId: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, md, money, meta } = await ctx(c, dossierId);
+  const ab: any = await agedBalance(c, dossierId);
+
+  const rows: string[][] = [];
+  const rowStyles: (RowStyle | undefined)[] = [];
+  const push = (r: string[], s?: RowStyle) => { rows.push(r); rowStyles.push(s); };
+  const section = (title: string, part: { rows: any[]; totals: any }) => {
+    push([title, '', '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+    if (!part.rows.length) { push(['(aucun solde ouvert)', '', '', '', '', '']); return; }
+    for (const r of part.rows) push([r.tiers, md(r.aEchoir), md(r.b30), md(r.b60), md(r.b90), md(r.b90p), money(r.total)] as any);
+    const t = part.totals;
+    push(['Sous-total', money(t.aEchoir), money(t.b30), money(t.b60), money(t.b90), money(t.b90p), money(t.total)] as any, { bold: true, line: 'top' });
+  };
+  section('CLIENTS — créances à encaisser', ab.clients);
+  section('FOURNISSEURS — dettes à payer', ab.fournisseurs);
+
+  const nb = ab.clients.rows.length + ab.fournisseurs.rows.length;
+  const buffer = await tablePdf({
+    title: 'Balance âgée des tiers', subtitle: `${d.raison_sociale ?? ''} · antériorité des soldes au ${new Date().toISOString().slice(0, 10)}`, meta,
+    columns: [
+      { label: 'Tiers', width: 150 }, { label: 'À échoir', width: 64, align: 'right' }, { label: '1-30 j', width: 60, align: 'right' },
+      { label: '31-60 j', width: 60, align: 'right' }, { label: '61-90 j', width: 60, align: 'right' }, { label: '> 90 j', width: 60, align: 'right' }, { label: 'Total', width: 72, align: 'right' },
+    ],
+    rows, rowStyles,
+    footNote: `${nb} tiers avec solde ouvert. Les tranches « j » indiquent le retard au-delà de l'échéance. Généré par Nova.`,
+  });
+  return { filename: 'balance-agee-tiers.pdf', buffer, count: nb };
 }
 
 export async function declarationTvaPdf(c: Client, dossierId: string, year: number, month0: number): Promise<{ filename: string; buffer: Buffer }> {

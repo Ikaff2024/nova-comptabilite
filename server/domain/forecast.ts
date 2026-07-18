@@ -125,6 +125,34 @@ export async function cashForecast(
 // --- Échéancier : créances à encaisser + dettes à payer, par date d'échéance --
 // Basé sur les factures (dates d'échéance RÉELLES) non réglées. Calendrier
 // actionnable de recouvrement / paiement, distinct de la prévision hebdomadaire.
+// Balance âgée : agrège les créances clients / dettes fournisseurs par tiers et
+// par tranche d'antériorité (à échoir, 1-30 j, 31-60 j, 61-90 j, > 90 j de retard).
+// Outil de gestion du poste client (relances) et fournisseur.
+export interface AgedRow { tiers: string; aEchoir: number; b30: number; b60: number; b90: number; b90p: number; total: number }
+function bucketize(items: any[]): { rows: AgedRow[]; totals: AgedRow } {
+  const m = new Map<string, AgedRow>();
+  const empty = (t: string): AgedRow => ({ tiers: t, aEchoir: 0, b30: 0, b60: 0, b90: 0, b90p: 0, total: 0 });
+  for (const it of items) {
+    const t = it.tiers || '(sans tiers)';
+    const r = m.get(t) ?? empty(t);
+    const retard = it.jours == null ? 0 : it.jours < 0 ? -it.jours : 0;
+    if (retard === 0) r.aEchoir += it.montant;
+    else if (retard <= 30) r.b30 += it.montant;
+    else if (retard <= 60) r.b60 += it.montant;
+    else if (retard <= 90) r.b90 += it.montant;
+    else r.b90p += it.montant;
+    r.total += it.montant;
+    m.set(t, r);
+  }
+  const rows = [...m.values()].sort((a, b) => b.total - a.total);
+  const totals = rows.reduce((s, r) => ({ tiers: 'TOTAL', aEchoir: s.aEchoir + r.aEchoir, b30: s.b30 + r.b30, b60: s.b60 + r.b60, b90: s.b90 + r.b90, b90p: s.b90p + r.b90p, total: s.total + r.total }), empty('TOTAL'));
+  return { rows, totals };
+}
+export async function agedBalance(c: Client, dossierId: string): Promise<any> {
+  const e = await echeancier(c, dossierId);
+  return { clients: bucketize(e.creances), fournisseurs: bucketize(e.dettes) };
+}
+
 export async function echeancier(c: Client, dossierId: string): Promise<any> {
   const today = new Date().toISOString().slice(0, 10);
   const { rows: cre } = await c.query(

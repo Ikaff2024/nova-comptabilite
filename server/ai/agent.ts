@@ -265,6 +265,7 @@ const READ_TOOLS = [
   { name: 'dettes_fournisseurs', description: 'Balance âgée fournisseurs : ce que l\'entreprise doit, par tiers et ancienneté.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'previsionnel_tresorerie', description: 'Prévision de trésorerie sur les prochaines semaines (encaissements/décaissements attendus).', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'echeancier', description: "Échéancier : factures de VENTE à encaisser (créances) et factures d'ACHAT à payer (dettes) NON RÉGLÉES, avec leur date d'échéance réelle et le nombre de jours restants (ou le retard). Résumé : total à encaisser/à payer, montants échus, à encaisser/à payer sous 30 jours, solde net à 30 j. Pour répondre « qu'est-ce que je dois encaisser/payer et quand ? », prioriser le recouvrement et anticiper les paiements.", input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'balance_agee', description: "Balance âgée : antériorité des créances clients et des dettes fournisseurs, agrégée PAR TIERS et par tranche de retard (à échoir, 1-30 j, 31-60 j, 61-90 j, > 90 j). Pour identifier les tiers à relancer en priorité (créances anciennes), mesurer la qualité du poste client et suivre le risque d'impayé. Le total et les sous-totaux par tranche sont fournis.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'tva', description: 'Situation de TVA (collectée, déductible, à payer/crédit) sur une période. Fournir les dates de début et fin (YYYY-MM-DD).', input_schema: { type: 'object', properties: { debut: { type: 'string', description: 'YYYY-MM-DD' }, fin: { type: 'string', description: 'YYYY-MM-DD' } }, required: ['debut', 'fin'] } },
   { name: 'factures_ventes', description: 'Liste des factures de vente (optionnellement filtrées par statut : draft, issued, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
   { name: 'factures_achats', description: 'Liste des factures fournisseurs (optionnellement filtrées par statut : draft, recorded, paid).', input_schema: { type: 'object', properties: { statut: { type: 'string' } }, required: [] } },
@@ -399,7 +400,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers)' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers) | "balance_agee" (balance âgée des créances/dettes par tiers)' },
               tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
@@ -476,6 +477,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'dettes_fournisseurs': return await purchases.supplierAging(c, dossierId);
     case 'previsionnel_tresorerie': return await forecast.cashForecast(c, dossierId, {});
     case 'echeancier': { const e: any = await forecast.echeancier(c, dossierId); return { ...e, creances: cap(e.creances, 40), dettes: cap(e.dettes, 40) }; }
+    case 'balance_agee': { const a: any = await forecast.agedBalance(c, dossierId); return { clients: { ...a.clients, rows: cap(a.clients.rows, 40) }, fournisseurs: { ...a.fournisseurs, rows: cap(a.fournisseurs.rows, 40) } }; }
     case 'tva': return await tax.vatDeclaration(c, dossierId, String(input?.debut ?? ''), String(input?.fin ?? ''));
     case 'factures_ventes': return cap(await invoicing.listInvoices(c, dossierId, input?.statut, 'invoice'), 50);
     case 'factures_achats': return cap(await purchases.listPurchases(c, dossierId, input?.statut), 50);
@@ -681,6 +683,7 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
     case 'etats_financiers': return await accdocs.etatsFinanciersPdf(c, dossierId, fy);
     case 'livre_journal': { const r = await accdocs.livreJournalPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le livre-journal.' }; return r; }
     case 'grand_livre_general': { const r = await accdocs.grandLivreGeneralPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le grand livre général.' }; return r; }
+    case 'balance_agee': { const r = await accdocs.balanceAgeePdf(c, dossierId); if (r.count === 0) return { error: 'Aucun solde ouvert pour la balance âgée.' }; return r; }
     case 'releve_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(pj.tiers ?? ''));
       if (!cp) return { error: `Tiers « ${pj.tiers} » introuvable pour le relevé de compte.` };
