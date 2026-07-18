@@ -77,7 +77,7 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
     { id: 'facturation', label: 'Facturation', icon: ReceiptText },
     { id: 'achats', label: 'Achats', icon: ShoppingCart },
     { id: 'catalogue', label: 'Catalogue', icon: Package },
-    { id: 'paie', label: 'Paie', icon: Wallet },
+    { id: 'paie', label: 'Paie & RH', icon: Wallet },
     { id: 'capture', label: 'Capture IA', icon: ScanLine },
     { id: 'mobilemoney', label: 'Mobile Money', icon: Smartphone },
     { id: 'saisie', label: 'Saisie', icon: PencilLine },
@@ -111,7 +111,8 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const meta = Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<Tab, { id: Tab; label: string; icon: any }>;
   const groups: { label: string; items: Tab[]; icon: any }[] = [
     { label: 'Pilotage', icon: Gauge, items: ['synthese', 'assistant', 'analyse', 'previsionnel', 'scoring'] },
-    { label: 'Saisie', icon: PencilLine, items: ['capture', 'facturation', 'achats', 'catalogue', 'paie', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
+    { label: 'Saisie', icon: PencilLine, items: ['capture', 'facturation', 'achats', 'catalogue', 'mobilemoney', 'saisie', 'recurrences', 'abonnements'] },
+    { label: 'Paie & RH', icon: Wallet, items: ['paie'] },
     { label: 'Analyse & budget', icon: PieChart, items: ['analytique', 'budget'] },
     { label: 'Comptabilité', icon: Library, items: ['balance', 'grandlivre', 'journaux', 'revision', 'clotures', 'plan'] },
     { label: 'Tiers & trésorerie', icon: Landmark, items: ['tiers', 'banque', 'immos'] },
@@ -193,6 +194,17 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
               {barGroups.map((g) => {
                 const active = g.items.includes(tab);
                 const open = openMenu === g.label;
+                // Catégorie à un seul module : bouton direct (pas de déroulant).
+                if (g.items.length === 1) {
+                  const id = g.items[0];
+                  return (
+                    <button key={g.label} onClick={() => { setTab(id); setOpenMenu(null); }}
+                      className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                        active ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200' : 'border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10')}>
+                      <g.icon className="h-4 w-4 shrink-0" /> {g.label}
+                    </button>
+                  );
+                }
                 return (
                   <div key={g.label} className="relative">
                     <button onClick={() => setOpenMenu(open ? null : g.label)}
