@@ -1575,6 +1575,14 @@ export function createApi() {
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);
   }));
+  app.get('/api/dossiers/:id/tft', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const out = await withUser(userId, (c) => accdocs.tftPdf(c, req.params.id, fy));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
 
   // 404 pour toute route API inconnue
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ressource introuvable' }));

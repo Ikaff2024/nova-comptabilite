@@ -379,6 +379,54 @@ export async function etatsComparatifsPdf(c: Client, dossierId: string, fyId?: s
   return { filename: 'etats-comparatifs.pdf', buffer, hasPrevious: !!prv };
 }
 
+// Tableau de flux de trésorerie (TFT, SYSCOHADA révisé) — méthode indirecte,
+// SIMPLIFIÉ. Trois flux (opérationnel, investissement, financement) + écart de
+// réconciliation explicite avec la variation constatée de trésorerie.
+export async function tftPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer; hasPrevious: boolean }> {
+  const { d, money, meta } = await ctx(c, dossierId);
+  const t: any = await acc.cashFlowStatement(c, dossierId, fyId);
+  if (!t.hasPrevious) {
+    const buffer = await sectionsPdf({
+      title: 'Tableau de flux de trésorerie', subtitle: `${d.raison_sociale ?? ''}`, meta,
+      sections: [{ heading: 'Exercice précédent indisponible', rows: [['Le TFT (méthode indirecte) compare deux exercices.', ''], ['Aucun exercice N-1 avec des mouvements n\'a été trouvé.', '']] }],
+      footNote: 'Généré par Nova.',
+    });
+    return { filename: 'tft.pdf', buffer, hasPrevious: false };
+  }
+  const s = (n: number): [string, string] => ['', money(n)];
+  const R = (label: string, n: number): [string, string] => [label, money(n)];
+
+  const buffer = await sectionsPdf({
+    title: 'Tableau de flux de trésorerie', subtitle: `${d.raison_sociale ?? ''} · ${t.currentLabel ?? 'N'} · méthode indirecte (simplifié)`, meta,
+    sections: [
+      { heading: 'Flux de trésorerie liés à l\'activité opérationnelle', rows: [
+        R('Résultat net de l\'exercice', t.resultatNet),
+        R('+ Dotations aux amortissements et provisions', t.dotations),
+        R('− Variation des créances', t.dCreances),
+        R('− Variation des stocks', t.dStocks),
+        R('+ Variation des dettes circulantes', t.dDettesCirc),
+      ], total: ['= Flux opérationnels (A)', money(t.fluxOperationnels)] },
+      { heading: 'Flux de trésorerie liés à l\'investissement', rows: [
+        R('Acquisitions nettes d\'immobilisations (estimées)', -t.acquisitions),
+      ], total: ['= Flux d\'investissement (B)', money(t.fluxInvestissement)] },
+      { heading: 'Flux de trésorerie liés au financement', rows: [
+        R('Variation des capitaux propres', t.dCapitaux),
+        R('Variation des dettes financières', t.dDettesFin),
+      ], total: ['= Flux de financement (C)', money(t.fluxFinancement)] },
+      { heading: 'Réconciliation', rows: [
+        R('Variation de trésorerie calculée (A + B + C)', t.variationCalculee),
+        R('Écart de réconciliation (dividendes, capital, affectation du résultat…)', t.ecartReconciliation),
+        R('Variation de trésorerie constatée au bilan', t.variationConstatee),
+        R(`Trésorerie d'ouverture (${t.previousLabel ?? 'N-1'})`, t.tresorerieN1),
+        R(`Trésorerie de clôture (${t.currentLabel ?? 'N'})`, t.tresorerieN),
+      ] },
+    ],
+    grandTotal: ['Variation de trésorerie de l\'exercice', money(t.variationConstatee)],
+    footNote: "TFT simplifié (méthode indirecte) reconstitué à partir des grandes masses N et N-1. Il ne capte pas finement les dividendes, mouvements de capital ni l'affectation du résultat : l'ÉCART DE RÉCONCILIATION mesure ces éléments non détaillés. Document indicatif, à valider par un expert-comptable. Généré par Nova.",
+  });
+  return { filename: 'tft.pdf', buffer, hasPrevious: true };
+}
+
 export async function etatsFinanciersPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer }> {
   const { d, money, meta } = await ctx(c, dossierId);
   const fs: any = await acc.financialStatements(c, dossierId, fyId);

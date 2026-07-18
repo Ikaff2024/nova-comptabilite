@@ -45,6 +45,11 @@ export default function FinancialStatements({
             className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">
             <FileText className="h-4 w-4" /> Comparatif N/N-1
           </button>
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/tft${fy ? `?fiscalYearId=${fy}` : ''}`, 'tft.pdf')} disabled={!prev}
+            title={prev ? 'Tableau de flux de trésorerie (méthode indirecte, simplifié)' : 'Le TFT nécessite un exercice précédent'}
+            className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">
+            <FileText className="h-4 w-4" /> Flux de trésorerie
+          </button>
         </div>
       </div>
 

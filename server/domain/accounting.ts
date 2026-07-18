@@ -805,6 +805,57 @@ export async function financialStatementsComparative(c: Client, dossierId: strin
   };
 }
 
+// Tableau de flux de trésorerie (TFT, SYSCOHADA révisé) — méthode INDIRECTE,
+// reconstitué à partir des grandes masses N et N-1. SIMPLIFIÉ : ne capte pas
+// finement les dividendes, mouvements de capital et l'affectation du résultat ;
+// l'ÉCART DE RÉCONCILIATION mesure ces éléments non détaillés. Indicatif.
+export async function cashFlowStatement(c: Client, dossierId: string, fiscalYearId?: string): Promise<any> {
+  const cmp: any = await financialStatementsComparative(c, dossierId, fiscalYearId);
+  const cur = cmp.current, prv = cmp.previous;
+  if (!prv) return { hasPrevious: false, currentLabel: cmp.currentLabel, previousLabel: cmp.previousLabel };
+
+  const A = (bs: any, label: string) => bs.actif.find((x: any) => x.label === label)?.amount ?? 0;
+  const P = (bs: any, label: string) => bs.passif.find((x: any) => x.label === label)?.amount ?? 0;
+  const bsN = cur.balanceSheet, bsP = prv.balanceSheet, isN = cur.incomeStatement;
+
+  const tresorerieN = A(bsN, 'Trésorerie-Actif') - P(bsN, 'Trésorerie-Passif');
+  const tresorerieN1 = A(bsP, 'Trésorerie-Actif') - P(bsP, 'Trésorerie-Passif');
+  const variationConstatee = tresorerieN - tresorerieN1;
+
+  // Charges non décaissées de l'exercice : dotations aux amortissements (68) et provisions (69).
+  const grp = (code: string) => isN.charges.find((x: any) => x.group === code)?.amount ?? 0;
+  const dotations = grp('68') + grp('69');
+  const resultatNet = isN.resultatNet;
+
+  // Variation du besoin en fonds de roulement (une hausse consomme de la trésorerie).
+  const dCreances = A(bsN, 'Créances et emplois assimilés') - A(bsP, 'Créances et emplois assimilés');
+  const dStocks = A(bsN, 'Stocks') - A(bsP, 'Stocks');
+  const dDettesCirc = P(bsN, 'Passif circulant') - P(bsP, 'Passif circulant');
+  const variationBFR = dCreances + dStocks - dDettesCirc;
+  const fluxOperationnels = resultatNet + dotations - variationBFR;
+
+  // Investissement : acquisitions nettes ≈ Δ actif immobilisé net + dotations.
+  const dImmoNet = A(bsN, 'Actif immobilisé (net)') - A(bsP, 'Actif immobilisé (net)');
+  const acquisitions = dImmoNet + dotations;
+  const fluxInvestissement = -acquisitions;
+
+  // Financement : Δ capitaux propres (structurels) + Δ dettes financières.
+  const dCapitaux = P(bsN, 'Capitaux propres') - P(bsP, 'Capitaux propres');
+  const dDettesFin = P(bsN, 'Dettes financières et ressources assimilées') - P(bsP, 'Dettes financières et ressources assimilées');
+  const fluxFinancement = dCapitaux + dDettesFin;
+
+  const variationCalculee = fluxOperationnels + fluxInvestissement + fluxFinancement;
+  const ecartReconciliation = variationConstatee - variationCalculee;
+
+  return {
+    hasPrevious: true, currentLabel: cmp.currentLabel, previousLabel: cmp.previousLabel,
+    resultatNet, dotations, dCreances, dStocks, dDettesCirc, variationBFR, fluxOperationnels,
+    dImmoNet, acquisitions, fluxInvestissement,
+    dCapitaux, dDettesFin, fluxFinancement,
+    variationCalculee, ecartReconciliation, variationConstatee, tresorerieN1, tresorerieN,
+  };
+}
+
 // Consultation d'un journal : écritures (avec leurs lignes) d'un journal.
 export async function journalEntries(
   c: Client, dossierId: string, opts: { journal?: string; fiscalYearId?: string } = {},
