@@ -15,6 +15,7 @@ import * as tglinks from './domain/telegram.js';
 import * as tts from './tts/provider.js';
 import * as mail from './email/provider.js';
 import * as payroll from './domain/payroll.js';
+import * as payrollrh from './domain/payrollrh.js';
 import * as recinv from './domain/recurringinvoices.js';
 import * as watchdog from './ai/watchdog.js';
 import * as mm from './domain/mobilemoney.js';
@@ -1486,6 +1487,13 @@ export function createApi() {
     const userId = requireUser(req);
     const year = Number(req.query.year) || new Date().getUTCFullYear();
     res.json(await withUser(userId, (c) => payroll.payrollYear(c, req.params.id, year)));
+  }));
+  app.get('/api/dossiers/:id/payroll/rh-analysis', h(async (req, res) => {
+    const userId = requireUser(req);
+    const now = new Date();
+    const year = Number(req.query.year) || now.getUTCFullYear();
+    const month0 = req.query.month != null ? Math.max(0, Math.min(11, Number(req.query.month) - 1)) : now.getUTCMonth();
+    res.json(await withUser(userId, (c) => payrollrh.rhAnalysis(c, req.params.id, year, month0)));
   }));
   // Documents de paie en PDF (téléchargement). kind = ordre_virement | livre_paie.
   app.get('/api/dossiers/:id/payroll/document', h(async (req, res) => {

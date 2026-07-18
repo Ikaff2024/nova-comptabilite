@@ -19,6 +19,7 @@ import * as assets from '../domain/assets.js';
 import * as tiers from '../domain/tiers.js';
 import * as bank from '../domain/bank.js';
 import * as payroll from '../domain/payroll.js';
+import * as payrollrh from '../domain/payrollrh.js';
 import * as reporting from '../domain/reporting.js';
 import * as activityreport from '../domain/activityreport.js';
 import * as recurring from '../domain/recurring.js';
@@ -307,6 +308,7 @@ const READ_TOOLS = [
   { name: 'personnel', description: 'Liste des salariés du dossier (matricule, nom, poste, catégorie, salaire de base).', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'livre_paie', description: 'Registre de paie d\'une période : par salarié (brut, net, coût employeur) et statut de comptabilisation. Fournir année et mois (mois 0-11, ou 1-12 : sois explicite).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
   { name: 'etat_rh', description: 'État RH courant : absences non payées enregistrées et avances/prêts en cours (avec restant dû).', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'analyse_rh', description: "Analyse RH (pilotage social) d'un mois : effectif, ancienneté moyenne, brut médian/moyen, masse salariale + variation vs mois précédent, taux de charges patronales, taux d'absentéisme, provision congés payés (estimation par salarié + total) et pyramide d'ancienneté. Pour un point RH / social. Fournir année et mois (1-12).", input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: [] } },
   { name: 'profil_entreprise', description: 'Identité fiscale et légale du dossier : forme juridique, régime fiscal, NCC/IFU, RCCM, banque/RIB. À citer dans les courriers/déclarations.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'echeances_fiscales', description: 'Prochaines échéances fiscales et sociales du dossier (TVA, impôts sur salaires/état 301, CNPS, DSF) dérivées du régime fiscal, avec leurs dates. Pour rappeler proactivement ce qui arrive à échéance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'analyse_mensuelle', description: 'Analyse comparée d\'un mois pour le reporting : chiffre d\'affaires, produits, charges et résultat du mois vs mois précédent (avec variations), cumul annuel, ratios (marge nette, taux de charges), situation (trésorerie, créances, dettes) et principales charges du mois. À commenter (constat → cause → recommandation). Fournir année et mois (1-12).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
@@ -525,6 +527,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'personnel': return cap(await payroll.listEmployees(c, dossierId), 100);
     case 'livre_paie': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return { annee: y, mois: mo + 1, bulletins: await payroll.listPayslips(c, dossierId, y, mo) }; }
     case 'etat_rh': { const abs = await payroll.listAbsences(c, dossierId); const adv = await payroll.listAdvances(c, dossierId); return { absences_non_payees: abs.filter((a: any) => !a.paye), avances_en_cours: adv.filter((a: any) => a.restant > 0) }; }
+    case 'analyse_rh': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); const r: any = await payrollrh.rhAnalysis(c, dossierId, y, mo); return { ...r, provision: cap(r.provision ?? [], 40) }; }
     case 'profil_entreprise': { const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]); const d: any = rows[0]?.j ?? {}; return { raison_sociale: d.raison_sociale, forme_juridique: d.forme_juridique ?? null, regime_fiscal: d.regime_fiscal ?? null, ncc_ifu: d.tax_id ?? null, rccm: d.rccm ?? null, banque: d.bank_name ?? null, rib: d.rib ?? null, pays: d.country ?? 'CI', systeme_comptable: d.accounting_system }; }
     case 'catalogue': {
       const { rows } = await c.query(

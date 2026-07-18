@@ -654,6 +654,7 @@ export const api = {
   runPayroll: (dossierId: string, year: number, month: number) => req<PayrollRunResult>(`/api/dossiers/${dossierId}/payroll/run`, { method: 'POST', body: JSON.stringify({ year, month }) }),
   postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
   payrollYear: (dossierId: string, year: number) => req<PayrollYear>(`/api/dossiers/${dossierId}/payroll/year?year=${year}`),
+  rhAnalysis: (dossierId: string, year: number, month: number) => req<RhAnalysis>(`/api/dossiers/${dossierId}/payroll/rh-analysis?year=${year}&month=${month}`),
   // Factures de vente récurrentes (abonnements)
   recurringInvoices: (dossierId: string) => req<RecurringInvoice[]>(`/api/dossiers/${dossierId}/recurring-invoices`),
   createRecurringInvoice: (dossierId: string, body: any) => req<{ id: string }>(`/api/dossiers/${dossierId}/recurring-invoices`, { method: 'POST', body: JSON.stringify(body) }),
@@ -687,6 +688,13 @@ export interface StcResult { lines: { key: string; label: string; amount: number
 export interface PayrollTimeEntry { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; jour: string; heuresJour: number; heuresNuit: number; ferie: boolean }
 export interface RecurringInvoiceLine { description: string; quantity: number; unit_price: number; vat_rate?: number; account_code?: string }
 export interface RecurringInvoice { id: string; label: string; clientName: string; lines: RecurringInvoiceLine[]; frequency: string; frequencyLabel: string; dayOfMonth: number; startDate: string; endDate: string | null; active: boolean; montantTtc: number; generated: number; due: number }
+export interface RhAnalysis {
+  periode: { year: number; month: number }; devise: string; effectif: number; ancienneteMoy: number;
+  brutMedian: number; brutMoyen: number; masse: number; variationMasse: number | null; tauxCharges: number;
+  absenteisme: number; joursAbs: number; joursTheoriques: number;
+  provisionTotale: number; provision: { nom: string; poste: string; joursRestants: number; provision: number }[];
+  pyramide: { label: string; count: number }[]; bulletins: number;
+}
 export interface PayrollYearEmp { employeeId: string; matricule: string; nom: string; prenoms: string; mois: number; brut: number; brutImposable: number; cnpsSalarial: number; cnpsPatronal: number; its: number; cn: number; igr: number; cmu: number; net: number }
 export interface PayrollYear { employer: { raisonSociale: string; taxId: string | null; rccm: string | null; country: string }; year: number; annual: PayrollYearEmp[]; totals: Omit<PayrollYearEmp, 'employeeId' | 'matricule' | 'nom' | 'prenoms' | 'mois'> }
 export interface PayrollAbsence { id: string; employeeId: string; nom: string; prenoms: string; matricule: string; dateDebut: string; dateFin: string; jours: number; justifiee: boolean; paye: boolean; motif: string | null }

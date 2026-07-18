@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport } from '../lib/api';
+import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock } from 'lucide-react';
+import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
@@ -29,7 +29,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [busy, setBusy] = useState<string | null>(null);
   const [declReport, setDeclReport] = useState<ValidationReport | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [sub, setSub] = useState<'paie' | 'pointage' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
+  const [sub, setSub] = useState<'paie' | 'analyse' | 'pointage' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
 
   // Formulaire salarié
   const [showForm, setShowForm] = useState(false);
@@ -144,7 +144,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
-        {([['paie', 'Bulletins & salariés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte'], ['declarations', 'Déclarations']] as const).map(([k, label]) => (
+        {([['paie', 'Bulletins & salariés'], ['analyse', 'Analyse RH'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte'], ['declarations', 'Déclarations']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setSub(k)}
             className={cn('rounded-lg px-3.5 py-1.5 font-medium transition-colors', sub === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
             {label}
@@ -270,6 +270,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       </section>
       </>)}
 
+      {sub === 'analyse' && <RhAnalysisPanel dossierId={dossierId} year={year} month={month} currency={currency} />}
       {sub === 'pointage' && <TimePanel dossierId={dossierId} employees={employees} />}
       {sub === 'absences' && <AbsencesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'avances' && <AdvancesPanel dossierId={dossierId} employees={employees} currency={currency} />}
@@ -743,6 +744,86 @@ function Card({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="text-xs text-zinc-500">{label}</div>
       <div className="mt-1 font-mono text-lg font-semibold text-zinc-100">{value}</div>
+    </div>
+  );
+}
+
+// --- Analyse RH : pilotage social (porté d'Ivoire Paie) ----------------------
+function RhAnalysisPanel({ dossierId, year, month, currency }: { dossierId: string; year: number; month: number; currency: string }) {
+  const [d, setD] = useState<RhAnalysis | null>(null);
+  const [loading, setLoading] = useState(true);
+  const m = (n: number) => fmtMoney(n, currency);
+  useEffect(() => { setLoading(true); api.rhAnalysis(dossierId, year, month + 1).then(setD).catch(() => setD(null)).finally(() => setLoading(false)); }, [dossierId, year, month]);
+
+  if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Analyse RH…</div>;
+  if (!d) return <p className="text-sm text-zinc-500">Analyse RH indisponible.</p>;
+  const maxPyr = Math.max(1, ...d.pyramide.map((p) => p.count));
+  const varTxt = d.variationMasse == null ? '—' : `${d.variationMasse >= 0 ? '+' : ''}${(d.variationMasse * 100).toFixed(1)} %`;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiRh label="Effectif" value={String(d.effectif)} sub={`ancienneté moy. : ${d.ancienneteMoy} ans`} />
+        <KpiRh label="Brut médian" value={m(d.brutMedian)} sub={`moyenne : ${m(d.brutMoyen)}`} />
+        <KpiRh label="Taux de charges" value={`${(d.tauxCharges * 100).toFixed(1)} %`} sub="charges patronales / brut" />
+        <KpiRh label="Masse salariale" value={varTxt} sub={`${m(d.masse)} ce mois`} tone={d.variationMasse != null && d.variationMasse > 0 ? 'up' : undefined} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+            <span className="flex items-center gap-2 text-sm font-medium text-zinc-200"><CalendarClock className="h-4 w-4 text-emerald-400" /> Provision congés payés</span>
+            <span className="font-mono text-sm font-bold text-emerald-400">{m(d.provisionTotale)}</span>
+          </div>
+          {d.provision.length === 0 ? <p className="px-4 py-4 text-sm text-zinc-500">Aucun salarié.</p> : (
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase text-zinc-500"><tr className="border-b border-white/10">
+                <th className="px-4 py-2 font-medium">Salarié</th><th className="px-4 py-2 text-right font-medium">Jours restants</th><th className="px-4 py-2 text-right font-medium">Provision</th>
+              </tr></thead>
+              <tbody className="divide-y divide-white/5">
+                {d.provision.map((p, i) => (
+                  <tr key={i} className="hover:bg-white/5">
+                    <td className="px-4 py-2"><div className="text-zinc-200">{p.nom}</div>{p.poste && <div className="text-xs text-zinc-500">{p.poste}</div>}</td>
+                    <td className="px-4 py-2 text-right font-mono text-zinc-300">{p.joursRestants} j</td>
+                    <td className="px-4 py-2 text-right font-mono text-zinc-100">{m(p.provision)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="px-4 py-2 text-xs text-zinc-500">Estimation = jours acquis restants (≈ 2,2 j/mois de service, moins congés pris) × brut de référence ÷ 26 jours ouvrables.</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="text-sm text-zinc-400">Taux d'absentéisme</div>
+            <div className={cn('mt-1 font-mono text-2xl font-bold', d.absenteisme > 0.05 ? 'text-amber-400' : 'text-zinc-100')}>{(d.absenteisme * 100).toFixed(1)} %</div>
+            <div className="mt-0.5 text-xs text-zinc-500">{d.joursAbs} j d'absence sur {d.joursTheoriques} théoriques</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-2 text-sm text-zinc-400">Pyramide d'ancienneté</div>
+            <div className="space-y-1.5">
+              {d.pyramide.map((p) => (
+                <div key={p.label} className="flex items-center gap-2 text-xs">
+                  <span className="w-20 shrink-0 text-zinc-400">{p.label}</span>
+                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-zinc-800"><div className="h-full bg-emerald-500/70" style={{ width: `${(p.count / maxPyr) * 100}%` }} /></div>
+                  <span className="w-6 shrink-0 text-right font-mono text-zinc-300">{p.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KpiRh({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'up' }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+      <div className={cn('mt-1.5 font-mono text-2xl font-bold', tone === 'up' ? 'text-emerald-400' : 'text-zinc-100')}>{value}</div>
+      {sub && <div className="mt-0.5 text-xs text-zinc-500">{sub}</div>}
     </div>
   );
 }
