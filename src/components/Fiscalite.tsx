@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles, Calculator, AlertTriangle } from 'lucide-react';
-import { api, downloadAuthed, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate } from '../lib/api';
+import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles, Calculator, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { api, downloadAuthed, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate, type ValidationReport } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
+import AqmReportCard from './AqmReportCard';
 
 const PERIOD_LABEL: Record<string, string> = { monthly: 'Mensuel', quarterly: 'Trimestriel', annual: 'Annuel' };
 
@@ -127,10 +128,18 @@ export default function Fiscalite({ dossierId, dossierName, currency }: { dossie
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<ValidationReport | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const { from, to } = monthRange(month);
-  const load = async () => { setLoading(true); setMsg(null); try { setData(await api.vatDeclaration(dossierId, from, to)); } finally { setLoading(false); } };
+  const load = async () => { setLoading(true); setMsg(null); setReport(null); try { setData(await api.vatDeclaration(dossierId, from, to)); } finally { setLoading(false); } };
   useEffect(() => { load(); }, [dossierId, month]);
+
+  const runCheck = async () => {
+    setChecking(true); setError(null);
+    try { setReport(await api.validateDeclaration(dossierId, { type: 'tva', from, to })); }
+    catch (e: any) { setError(e.message); } finally { setChecking(false); }
+  };
 
   const liquidate = async () => {
     if (!confirm(`Générer l'écriture de liquidation de la TVA du mois ${month} ?`)) return;
@@ -165,9 +174,12 @@ export default function Fiscalite({ dossierId, dossierName, currency }: { dossie
           <div className="flex gap-2">
             <button onClick={exportPdf} disabled={!data} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
             <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/vat/recap?year=${month.slice(0, 4)}`, `recap-tva-${month.slice(0, 4)}.pdf`)} title="Récapitulatif annuel de TVA (12 mois)" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><Printer className="h-4 w-4" /> Récap annuel</button>
+            <button onClick={runCheck} disabled={checking || !data} title="Contrôle qualité AQM avant dépôt" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">{checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Vérifier (AQM)</button>
             <button onClick={liquidate} disabled={busy || !data || (data.collectee === 0 && data.deductible === 0)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />} Générer la liquidation</button>
           </div>
         </div>
+
+        {report && <AqmReportCard report={report} />}
 
         {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul…</div> : !data ? null : (
           <>

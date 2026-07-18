@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear } from '../lib/api';
+import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck } from 'lucide-react';
+import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
+import AqmReportCard from './AqmReportCard';
 
 const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
 const CATEGORIES = ['Ouvrier', 'Employe', 'Agent de Maitrise', 'Cadre'];
@@ -26,6 +27,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [month, setMonth] = useState(now.getUTCMonth());
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [declReport, setDeclReport] = useState<ValidationReport | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sub, setSub] = useState<'paie' | 'pointage' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
 
@@ -94,6 +96,12 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       </tbody></table>
       <p style="margin-top:10px;font-size:11px">Barèmes : ${c.ruleSetLabel ?? c.ruleSetVersion ?? 'CI'}. Édité le ${nowStamp()}.</p>`;
     printDocument(`Bulletin ${p.nom} ${p.prenoms} — ${period}`, `${dossierName} · ${period}`, body);
+  };
+
+  const checkDecl = async () => {
+    setBusy('aqm'); setError(null); setDeclReport(null);
+    try { setDeclReport(await api.validateDeclaration(dossierId, { type: 'cnps', year, month: month + 1 })); }
+    catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
 
   const printDeclaration = (kind: 'cnps' | 'dgi') => {
@@ -198,12 +206,14 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
                 <span className="text-xs uppercase text-zinc-500">Documents :</span>
                 <button onClick={() => printDeclaration('cnps')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10"><FileText className="h-3.5 w-3.5" /> Bordereau CNPS</button>
                 <button onClick={() => printDeclaration('dgi')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10"><FileText className="h-3.5 w-3.5" /> Impôts sur salaires (DGI)</button>
+                <button onClick={checkDecl} disabled={busy === 'aqm'} title="Contrôle qualité AQM des déclarations de paie" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'aqm' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} Vérifier (AQM)</button>
                 <button onClick={downloadOrdreVirement} disabled={busy === 'ordre'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'ordre' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Banknote className="h-3.5 w-3.5" />} Ordre de virement</button>
                 <button onClick={downloadCourrierVirement} disabled={busy === 'courrier'} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{busy === 'courrier' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} Courrier à la banque</button>
               </div>
               {comptabilise ? <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> OD de paie comptabilisée</span>
                 : <button onClick={post} disabled={busy === 'post'} className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">{busy === 'post' ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookCheck className="h-4 w-4" />} Comptabiliser l'OD de paie</button>}
             </div>
+            {declReport && <AqmReportCard report={declReport} />}
           </>
         )}
       </section>

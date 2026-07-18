@@ -478,6 +478,23 @@ export function createApi() {
     res.json(await withUser(userId, (c) => aqm.validateInvoice(c, req.params.id, draft)));
   }));
 
+  // AQM — contrôle qualité d'une déclaration (TVA / CNPS / DGI) avant dépôt.
+  app.post('/api/dossiers/:id/validate-declaration', h(async (req, res) => {
+    const userId = requireUser(req);
+    const b = req.body ?? {};
+    const type = String(b.type ?? 'tva');
+    if (type === 'cnps' || type === 'dgi') {
+      const year = Number(b.year ?? b.annee) || new Date().getUTCFullYear();
+      const month0 = Math.max(0, Math.min(11, (Number(b.month ?? b.mois) || 1) - 1));
+      res.json(await withUser(userId, (c) => aqm.validatePayrollDeclaration(c, req.params.id, year, month0, type as 'cnps' | 'dgi')));
+      return;
+    }
+    const from = String(b.from ?? '');
+    const to = String(b.to ?? '');
+    if (!from || !to) { const e: any = new Error('from et to requis pour la TVA'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => aqm.validateVatDeclaration(c, req.params.id, from, to)));
+  }));
+
   // --- Mobile Money : analyse d'un relevé -> propositions pré-catégorisées ----
   app.post('/api/dossiers/:id/mobile-money/parse', h(async (req, res) => {
     const userId = requireUser(req);

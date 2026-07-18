@@ -417,6 +417,8 @@ export const api = {
     req<ValidationReport>(`/api/dossiers/${dossierId}/validate-entry`, { method: 'POST', body: JSON.stringify(body) }),
   validateInvoice: (dossierId: string, body: { type: 'vente' | 'achat'; date?: string; dueDate?: string; tiers?: string; lines: { description?: string; quantity?: number; unitPrice?: number; vatRate?: number; accountCode?: string }[] }) =>
     req<ValidationReport>(`/api/dossiers/${dossierId}/validate-invoice`, { method: 'POST', body: JSON.stringify(body) }),
+  validateDeclaration: (dossierId: string, body: { type: 'tva' | 'cnps' | 'dgi'; from?: string; to?: string; year?: number; month?: number }) =>
+    req<ValidationReport>(`/api/dossiers/${dossierId}/validate-declaration`, { method: 'POST', body: JSON.stringify(body) }),
   uploadDocument: (dossierId: string, body: { mimeType: string; dataBase64: string; filename?: string; entryId?: string }) =>
     req<{ id: string; url: string; storage: string; size: number }>(`/api/dossiers/${dossierId}/documents`, { method: 'POST', body: JSON.stringify(body) }),
   documents: (dossierId: string) => req<DossierDocument[]>(`/api/dossiers/${dossierId}/documents`),

@@ -1,5 +1,7 @@
 import type { Client } from '../db.js';
 import { tableExists } from '../schema-cache.js';
+import { vatDeclaration } from './tax.js';
+import { listPayslips } from './payroll.js';
 
 // ============================================================================
 // AI Quality Monitor (AQM) — couche de validation DÉTERMINISTE des décisions de
@@ -126,6 +128,97 @@ export async function validateEntry(
 }
 
 function fr(iso: string): string { return iso.split('-').reverse().join('/'); }
+
+// ----------------------------------------------------------------------------
+// Validation d'une DÉCLARATION avant émission/dépôt (TVA, CNPS, DGI/impôts sur
+// salaires). Contrôles déterministes : cohérence avec le régime, la période et
+// les données comptables/paie. Prévient les déclarations aberrantes.
+// ----------------------------------------------------------------------------
+const grpN = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+async function periodeClôturee(c: Client, dossierId: string, isoTo: string): Promise<boolean> {
+  if (!(await tableExists('period_closures'))) return false;
+  const ey = Number(isoTo.slice(0, 4)), em = Number(isoTo.slice(5, 7));
+  const { rows } = await c.query(
+    'select 1 from period_closures where dossier_id=$1 and (year*12 + month) >= ($2*12 + $3) limit 1',
+    [dossierId, ey, em]);
+  return !!rows[0];
+}
+
+// Déclaration de TVA (précède l'écriture de liquidation).
+export async function validateVatDeclaration(c: Client, dossierId: string, from: string, to: string): Promise<ValidationReport> {
+  const checks: Check[] = [];
+  const add = (code: string, label: string, level: CheckLevel, detail?: string) => checks.push({ code, label, level, detail });
+  const { rows: dr } = await c.query('select regime_fiscal, base_currency from dossiers where id=$1', [dossierId]);
+  const regime: string | null = dr[0]?.regime_fiscal ?? null;
+  const cur = dr[0]?.base_currency ?? 'XOF';
+  const money = (n: number) => `${grpN(n)} ${cur}`;
+
+  // 1. Assujettissement à la TVA.
+  if (regime === 'synthetique') add('assujettissement', 'Assujettissement à la TVA', 'fail', "Entreprise sous impôt synthétique : NON assujettie à la TVA — aucune déclaration de TVA à produire.");
+  else if (!regime) add('assujettissement', 'Assujettissement à la TVA', 'warning', "Régime fiscal non renseigné : confirmez que l'entreprise est bien assujettie (réel normal/simplifié).");
+  else add('assujettissement', 'Assujettissement à la TVA', 'pass', `Régime ${regime}.`);
+
+  // 2. Période non clôturée (la liquidation devra être comptabilisable).
+  if (await periodeClôturee(c, dossierId, to)) add('periode', 'Période ouverte', 'warning', `Le mois de ${fr(to)} est clôturé : la liquidation ne pourra pas être comptabilisée sans réouverture.`);
+  else add('periode', 'Période ouverte', 'pass');
+
+  // 3. Déclaration.
+  const vat: any = await vatDeclaration(c, dossierId, from, to);
+  const hasVat = vat.collectee !== 0 || vat.deductible !== 0;
+  if (!hasVat) add('activite', 'Activité TVA sur la période', 'warning', "Aucune TVA collectée ni déductible : déclaration « néant » ? Vérifiez qu'aucune facture n'a été oubliée.");
+  else add('activite', 'Activité TVA sur la période', 'pass', `Collectée ${money(vat.collectee)}, déductible ${money(vat.deductible)}.`);
+
+  // 4. Cohérence : ventes de la période sans TVA collectée.
+  const { rows: sr } = await c.query(
+    `select coalesce(sum(l.amount_credit - l.amount_debit), 0) as ventes
+       from entry_lines l
+       join entries e on e.id = l.entry_id and e.status='posted'
+       join accounts a on a.id = l.account_id
+      where l.dossier_id=$1 and e.entry_date between $2 and $3 and a.account_code like '70%'`,
+    [dossierId, from, to]);
+  const ventes = Number(sr[0]?.ventes ?? 0);
+  if (ventes > 1000 && vat.collectee === 0) add('coherence_ca', 'Cohérence ventes / TVA collectée', 'warning', `Des ventes de ${money(ventes)} sans aucune TVA collectée : vérifiez l'assujettissement, une exonération, ou une TVA non comptabilisée (443).`);
+  else add('coherence_ca', 'Cohérence ventes / TVA collectée', 'pass');
+
+  // 5. Résultat (informatif).
+  if (vat.creditReportable > 0) add('resultat', 'Résultat de TVA', 'pass', `Crédit de TVA de ${money(vat.creditReportable)} : rien à décaisser, report sur la période suivante.`);
+  else add('resultat', 'Résultat de TVA', 'pass', vat.netDue > 0 ? `TVA à payer : ${money(vat.netDue)}.` : 'Solde nul.');
+
+  const { verdict, score } = scoreFromChecks(checks);
+  const nF = checks.filter((k) => k.level === 'fail').length, nW = checks.filter((k) => k.level === 'warning').length;
+  const summary = verdict === 'PASS'
+    ? 'Déclaration de TVA cohérente, prête à être liquidée puis déposée.'
+    : verdict === 'WARNING' ? `${nW} point(s) à vérifier avant de déposer la déclaration.`
+      : `${nF} contrôle(s) bloquant(s) : cette déclaration ne devrait pas être produite en l'état.`;
+  return { verdict, score, checks, summary };
+}
+
+// Déclaration sociale/fiscale de paie (bordereau CNPS, impôts sur salaires DGI).
+export async function validatePayrollDeclaration(c: Client, dossierId: string, year: number, month0: number, kind: 'cnps' | 'dgi'): Promise<ValidationReport> {
+  const checks: Check[] = [];
+  const add = (code: string, label: string, level: CheckLevel, detail?: string) => checks.push({ code, label, level, detail });
+  const slips: any[] = await listPayslips(c, dossierId, year, month0);
+
+  if (!slips.length) add('bulletins', 'Bulletins de la période', 'fail', `Aucun bulletin de paie pour ${month0 + 1}/${year} : lancez la paie avant de produire le bordereau.`);
+  else add('bulletins', 'Bulletins de la période', 'pass', `${slips.length} bulletin(s).`);
+
+  // Cohérence : chaque bulletin doit porter les montants de la déclaration visée.
+  if (slips.length) {
+    const champ = kind === 'cnps' ? 'cnpsSalarial' : 'itsSalarial';
+    const manquants = slips.filter((p) => !p.calculation || p.calculation[champ] == null).length;
+    if (manquants) add('cotisations', kind === 'cnps' ? 'Cotisations CNPS calculées' : 'Impôts sur salaires calculés', 'warning', `${manquants} bulletin(s) sans ${kind === 'cnps' ? 'cotisation CNPS' : 'impôt'} calculé : recalcul de paie recommandé.`);
+    else add('cotisations', kind === 'cnps' ? 'Cotisations CNPS calculées' : 'Impôts sur salaires calculés', 'pass');
+  }
+
+  const { verdict, score } = scoreFromChecks(checks);
+  const nF = checks.filter((k) => k.level === 'fail').length, nW = checks.filter((k) => k.level === 'warning').length;
+  const label = kind === 'cnps' ? 'bordereau CNPS' : 'déclaration DGI (impôts sur salaires)';
+  const summary = verdict === 'PASS' ? `${label} cohérent(e), prêt(e) à être déposé(e).`
+    : verdict === 'WARNING' ? `${nW} point(s) à vérifier avant de produire le ${label}.`
+      : `${nF} contrôle(s) bloquant(s) : ${label} impossible en l'état.`;
+  return { verdict, score, checks, summary };
+}
 
 // ----------------------------------------------------------------------------
 // Validation d'une FACTURE proposée (vente ou achat), avant sa création. Contrôles
