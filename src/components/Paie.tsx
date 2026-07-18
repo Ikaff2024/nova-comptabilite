@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock } from 'lucide-react';
+import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock } from 'lucide-react';
 import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -37,10 +37,25 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [form, setForm] = useState<Partial<PayrollEmployee>>(emptyForm());
   const setF = (p: Partial<PayrollEmployee>) => setForm((f) => ({ ...f, ...p }));
 
+  const [closures, setClosures] = useState<{ year: number; month: number }[]>([]);
   const loadEmployees = async () => { setLoading(true); try { setEmployees(await api.payrollEmployees(dossierId)); } finally { setLoading(false); } };
   const loadPayslips = async () => { try { setPayslips(await api.payrollPayslips(dossierId, year, month)); } catch { setPayslips([]); } };
-  useEffect(() => { loadEmployees(); }, [dossierId]);
+  const loadClosures = async () => { try { const d = await api.closures(dossierId); setClosures(d.closures.map((x) => ({ year: x.year, month: x.month }))); } catch { setClosures([]); } };
+  useEffect(() => { loadEmployees(); loadClosures(); }, [dossierId]);
   useEffect(() => { loadPayslips(); }, [dossierId, year, month]);
+
+  // Mois clôturé = ce mois (1-12) ou un mois antérieur est couvert par une clôture.
+  const closedThrough = closures.reduce((max, c) => (c.year * 12 + c.month > max ? c.year * 12 + c.month : max), 0);
+  const monthClosed = closedThrough >= (year * 12 + month + 1);
+  const isLastClosed = closures.some((c) => c.year === year && c.month === month + 1) && closedThrough === (year * 12 + month + 1);
+  const toggleClosure = async () => {
+    setBusy('lock'); setError(null);
+    try {
+      if (monthClosed) { if (!isLastClosed) { setError(`On ne peut rouvrir que le dernier mois clôturé.`); return; } await api.reopenPeriod(dossierId, year, month + 1); }
+      else { if (!confirm(`Clôturer ${MONTHS[month]} ${year} ? La paie et les écritures de ce mois passeront en lecture seule.`)) return; await api.closePeriod(dossierId, year, month + 1); }
+      await loadClosures();
+    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
 
   const submitEmployee = async () => {
     setBusy('emp'); setError(null);
@@ -166,9 +181,11 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
           <div className="flex items-center gap-2">
             <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className={cn(inputCls, 'w-auto')}>{MONTHS.map((mo, i) => <option key={i} value={i}>{mo}</option>)}</select>
             <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className={cn(inputCls, 'w-24 font-mono')} />
-            <button onClick={run} disabled={busy === 'run' || activeCount === 0 || comptabilise} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy === 'run' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Lancer la paie</button>
+            <button onClick={toggleClosure} disabled={busy === 'lock' || (monthClosed && !isLastClosed)} title={monthClosed ? (isLastClosed ? 'Rouvrir le mois' : 'Seul le dernier mois clôturé peut être rouvert') : 'Clôturer le mois (verrouillage paie + écritures)'} className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium disabled:opacity-40', monthClosed ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10')}>{busy === 'lock' ? <Loader2 className="h-4 w-4 animate-spin" /> : monthClosed ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />} {monthClosed ? 'Clôturé' : 'Clôturer'}</button>
+            <button onClick={run} disabled={busy === 'run' || activeCount === 0 || comptabilise || monthClosed} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy === 'run' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Lancer la paie</button>
           </div>
         </div>
+        {monthClosed && <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300"><Lock className="h-3.5 w-3.5" /> Période clôturée : la paie et les absences de {MONTHS[month]} {year} sont en lecture seule. {isLastClosed ? 'Rouvrez le mois pour modifier.' : ''}</div>}
 
         {payslips.length === 0 ? (
           <p className="text-sm text-zinc-500">{activeCount === 0 ? 'Ajoutez des salariés puis lancez la paie.' : `Aucun bulletin pour ${MONTHS[month]} ${year}. Cliquez « Lancer la paie ».`}</p>

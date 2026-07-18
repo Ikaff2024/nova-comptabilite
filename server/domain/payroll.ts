@@ -3,6 +3,7 @@ import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeduct
 import { postPayrollEntry } from '../payroll/bridge.js';
 import { tablePdf, sectionsPdf, letterPdf } from '../documents/pdf.js';
 import { renderPayslipPdf } from '../payroll/payslip-pdf.js';
+import { isMonthClosed, monthLabel } from './closures.js';
 
 // ============================================================================
 // Paie : salariés + bulletins, branchés sur le moteur porté (payroll/core).
@@ -104,6 +105,7 @@ export async function runPayroll(
   const { rows: posted } = await c.query(
     'select 1 from payroll_payslips where dossier_id=$1 and period_year=$2 and period_month=$3 and entry_id is not null limit 1', [dossierId, year, month]);
   if (posted[0]) throw new Error('Paie déjà comptabilisée pour cette période : contre-passez l\'écriture avant de recalculer.');
+  if (await isMonthClosed(c, dossierId, year, month)) throw new Error(`La période ${monthLabel(year, month + 1)} est clôturée : rouvrez-la (Clôtures) pour recalculer la paie.`);
 
   const { rows: emps } = await c.query('select * from payroll_employees where dossier_id=$1 and actif order by nom', [dossierId]);
 
@@ -504,6 +506,9 @@ export async function listAbsences(c: Client, dossierId: string): Promise<any[]>
   }));
 }
 export async function createAbsence(c: Client, dossierId: string, input: any): Promise<{ id: string }> {
+  const d0 = String(input.dateDebut ?? '');
+  const y = Number(d0.slice(0, 4)), m0 = Number(d0.slice(5, 7)) - 1;
+  if (y && m0 >= 0 && await isMonthClosed(c, dossierId, y, m0)) throw new Error(`La période ${monthLabel(y, m0 + 1)} est clôturée : impossible d'enregistrer une absence sur ce mois.`);
   const { rows } = await c.query(
     `insert into payroll_absences(dossier_id, employee_id, date_debut, date_fin, jours, justifiee, paye, motif)
      values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,

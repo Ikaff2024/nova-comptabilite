@@ -22,6 +22,12 @@ export async function isDateClosed(c: Client, dossierId: string, date: string): 
   return !!rows[0];
 }
 
+// Vrai si le mois (month0 = 0-11) est clôturé (ou couvert par une clôture
+// postérieure). Pratique pour la paie et les registres RH indexés par mois.
+export async function isMonthClosed(c: Client, dossierId: string, year: number, month0: number): Promise<boolean> {
+  return isDateClosed(c, dossierId, `${year}-${String(month0 + 1).padStart(2, '0')}-15`);
+}
+
 // Liste des mois clôturés (récents d'abord) + la borne « clôturé jusqu'à ».
 export async function listClosures(c: Client, dossierId: string): Promise<{ closures: any[]; closedThrough: { year: number; month: number; label: string } | null }> {
   if (!(await tableExists('period_closures'))) return { closures: [], closedThrough: null };
