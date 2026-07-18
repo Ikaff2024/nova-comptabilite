@@ -630,6 +630,7 @@ export const api = {
   agentStatus: (dossierId: string) => req<AgentStatus>(`/api/dossiers/${dossierId}/agent/status`),
   agentChat: (dossierId: string, messages: AgentMessage[]) => req<AgentResult>(`/api/dossiers/${dossierId}/agent/chat`, { method: 'POST', body: JSON.stringify({ messages }) }),
   agentHistory: (dossierId: string) => req<AgentMessage[]>(`/api/dossiers/${dossierId}/agent/history`),
+  clearAgentHistory: (dossierId: string) => req<{ deleted: number }>(`/api/dossiers/${dossierId}/agent/history`, { method: 'DELETE' }),
   decisions: (dossierId: string, limit = 30) => req<DecisionSummary[]>(`/api/dossiers/${dossierId}/decisions?limit=${limit}`),
   decision: (dossierId: string, id: string) => req<DecisionDetail>(`/api/dossiers/${dossierId}/decisions/${id}`),
   qualityDashboard: (dossierId: string) => req<QualityDashboard>(`/api/dossiers/${dossierId}/quality-dashboard`),

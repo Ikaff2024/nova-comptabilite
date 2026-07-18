@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain, SlidersHorizontal, ShieldCheck, ShieldAlert, ShieldX } from 'lucide-react';
+import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain, SlidersHorizontal, ShieldCheck, ShieldAlert, ShieldX, Trash2 } from 'lucide-react';
 import { api, lexaSpeak, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode, type AgentAqm } from '../lib/api';
 import { cn } from '../lib/utils';
 import WhatsAppLink from './WhatsAppLink';
@@ -287,6 +287,12 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
     } finally { setLoading(false); }
   };
 
+  const clearHistory = async () => {
+    if (!turns.length || !confirm('Effacer toute la conversation avec Lexa ? (sa mémoire du dossier n\'est pas affectée)')) return;
+    try { await api.clearAgentHistory(dossierId); } catch { /* ignore */ }
+    setTurns([]); setInput('');
+  };
+
   if (enabled === false) {
     return (
       <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-6 text-sm text-amber-200">
@@ -305,6 +311,10 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
           <div className="text-xs text-zinc-500">Votre comptable IA — {dossierName}</div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <button onClick={clearHistory} disabled={!turns.length} title="Effacer la conversation"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 hover:text-rose-400 disabled:opacity-30">
+            <Trash2 className="h-4 w-4" />
+          </button>
           <button onClick={() => setShowMem((v) => !v)} title="Mémoire de Lexa"
             className={cn('flex h-7 w-7 items-center justify-center rounded-lg border', showMem ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200')}>
             <Brain className="h-4 w-4" />

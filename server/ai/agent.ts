@@ -151,6 +151,12 @@ export async function saveTurns(c: Client, dossierId: string, userId: string, tu
   }
 }
 
+// Efface l'historique de conversation de CET utilisateur pour CE dossier.
+export async function clearHistory(c: Client, dossierId: string, userId: string): Promise<{ deleted: number }> {
+  const { rowCount } = await c.query('delete from lexa_messages where dossier_id=$1 and user_id=$2', [dossierId, userId]);
+  return { deleted: rowCount ?? 0 };
+}
+
 // --- Contexte dossier (mis en cache dans le system prompt) -------------------
 
 const ROLE_FR: Record<string, string> = { owner: 'propriétaire', associe: 'associé(e)', collaborateur: 'collaborateur(trice)', comptable: 'comptable', client: 'client', lecture: 'accès lecture' };

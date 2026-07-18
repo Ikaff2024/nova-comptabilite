@@ -1592,6 +1592,10 @@ export function createApi() {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => agent.loadHistory(c, req.params.id, userId, 50)));
   }));
+  app.delete('/api/dossiers/:id/agent/history', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => agent.clearHistory(c, req.params.id, userId)));
+  }));
   // Decision Ledger — journal de preuves des décisions de Lexa (explicabilité / audit).
   app.get('/api/dossiers/:id/decisions', h(async (req, res) => {
     const userId = requireUser(req);
