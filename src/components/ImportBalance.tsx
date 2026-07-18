@@ -63,10 +63,18 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
     finally { setCommitting(false); }
   };
 
-  const onFile = (f: File) => {
-    const reader = new FileReader();
-    reader.onload = () => { setCsv(String(reader.result ?? '')); setAnalysis(null); setDone(null); };
-    reader.readAsText(f, 'utf-8');
+  // Lit un fichier texte en détectant l'encodage : UTF-8 strict, sinon repli
+  // Windows-1252 (les exports comptables français sont souvent en cp1252 —
+  // lire en UTF-8 forcé transformait « é » en « � »).
+  const readTextSmart = async (f: File): Promise<string> => {
+    const buf = await f.arrayBuffer();
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch { return new TextDecoder('windows-1252').decode(buf); }
+  };
+
+  const onFile = async (f: File) => {
+    const text = await readTextSmart(f);
+    setCsv(text); setAnalysis(null); setDone(null);
   };
 
   const canCommit = analysis && analysis.balanced && !analysis.alreadyImported && analysis.lines.length >= 2
@@ -178,7 +186,7 @@ export default function ImportBalance({ dossierId, dossierName, fiscalYears, cur
               <div className="flex gap-2">
                 <button onClick={() => { setTiersCsv(SAMPLE_TIERS); setTiersItems(null); }} className="text-xs text-zinc-400 hover:text-emerald-400">Exemple</button>
                 <button onClick={() => tiersFileRef.current?.click()} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400"><FileSpreadsheet className="h-3.5 w-3.5" /> Fichier…</button>
-                <input ref={tiersFileRef} type="file" accept=".csv,.txt,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = () => { setTiersCsv(String(r.result ?? '')); setTiersItems(null); }; r.readAsText(f, 'utf-8'); } }} />
+                <input ref={tiersFileRef} type="file" accept=".csv,.txt,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { readTextSmart(f).then((t) => { setTiersCsv(t); setTiersItems(null); }); } }} />
               </div>
             </div>
             <textarea value={tiersCsv} onChange={(e) => { setTiersCsv(e.target.value); setTiersItems(null); }} rows={5}

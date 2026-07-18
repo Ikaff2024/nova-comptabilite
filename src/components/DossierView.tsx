@@ -43,6 +43,18 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   const [journals, setJournals] = useState<Journal[]>([]);
   const [ready, setReady] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
+  const [name, setName] = useState(dossier.raison_sociale);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(dossier.raison_sociale);
+  const [savingName, setSavingName] = useState(false);
+
+  const saveName = async () => {
+    const n = draftName.trim();
+    if (n.length < 2 || n === name) { setEditingName(false); return; }
+    setSavingName(true);
+    try { await api.renameDossier(dossier.id, n); setName(n); dossier.raison_sociale = n; setEditingName(false); }
+    catch { /* garde le nom courant */ } finally { setSavingName(false); }
+  };
 
   const loadStructures = async () => {
     const [fys, js] = await Promise.all([api.fiscalYears(dossier.id), api.journals(dossier.id)]);
@@ -125,7 +137,20 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
         <button onClick={onBack} className="mb-3 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200">
           <ArrowLeft className="h-4 w-4" /> Portefeuille
         </button>
-        <h1 className="font-display text-3xl font-bold tracking-tight">{dossier.raison_sociale}</h1>
+        {editingName ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <input autoFocus value={draftName} onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }}
+              className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 font-display text-2xl font-bold tracking-tight outline-none focus:border-emerald-500/50" />
+            <button onClick={saveName} disabled={savingName} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Enregistrer</button>
+            <button onClick={() => setEditingName(false)} className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+          </div>
+        ) : (
+          <div className="group flex items-center gap-2">
+            <h1 className="font-display text-3xl font-bold tracking-tight">{name}</h1>
+            <button onClick={() => { setDraftName(name); setEditingName(true); }} title="Renommer le dossier" className="rounded-lg p-1.5 text-zinc-500 opacity-0 transition hover:bg-white/5 hover:text-emerald-400 group-hover:opacity-100"><PencilLine className="h-4 w-4" /></button>
+          </div>
+        )}
         <p className="mt-1 text-zinc-400">{dossier.base_currency} · {dossier.accounting_system === 'smt' ? 'Système Minimal de Trésorerie' : 'Système normal'}</p>
       </div>
 

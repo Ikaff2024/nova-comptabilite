@@ -318,6 +318,15 @@ export function createApi() {
     res.status(201).json(out);
   }));
 
+  // Renommer un dossier (raison sociale). Réservé au staff (garde de rôle globale).
+  app.patch('/api/dossiers/:id', h(async (req, res) => {
+    const userId = requireUser(req);
+    const name = String(req.body?.raisonSociale ?? req.body?.name ?? '').trim();
+    if (name.length < 2) { const e: any = new Error('Nom de dossier invalide.'); e.status = 400; throw e; }
+    await withUser(userId, (c) => c.query('update dossiers set raison_sociale=$2 where id=$1', [req.params.id, name]));
+    res.json({ ok: true, raison_sociale: name });
+  }));
+
 
   app.get('/api/dossiers/:id/accounts', h(async (req, res) => {
     const userId = requireUser(req);

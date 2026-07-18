@@ -401,6 +401,8 @@ export const api = {
   onboard: (name: string, country: string) =>
     req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country }) }),
   dossiers: () => req<Dossier[]>('/api/dossiers'),
+  renameDossier: (dossierId: string, raisonSociale: string) =>
+    req<{ ok: boolean; raison_sociale: string }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify({ raisonSociale }) }),
   createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string }) =>
     req<{ id: string; accounts: number }>('/api/dossiers', { method: 'POST', body: JSON.stringify(input) }),
   accounts: (dossierId: string, q?: string, all?: boolean) =>
