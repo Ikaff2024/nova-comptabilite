@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Loader2, CheckCircle2, Save, ShieldCheck } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport, type Account } from '../lib/api';
 import AqmReportCard from './AqmReportCard';
 
 const CHANNELS = [
@@ -41,6 +41,15 @@ export default function EntryForm({
   const [checking, setChecking] = useState(false);
   const [sections, setSections] = useState<AnalyticSection[]>([]);
   useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
+  // Plan de comptes chargé une fois → suggestions par préfixe pendant la saisie.
+  const [accts, setAccts] = useState<Account[]>([]);
+  const [acOpen, setAcOpen] = useState<number | null>(null); // ligne dont le menu est ouvert
+  useEffect(() => { api.accounts(dossierId).then(setAccts).catch(() => {}); }, [dossierId]);
+  const suggest = (v: string): Account[] => {
+    const q = (v ?? '').trim();
+    if (!q) return [];
+    return accts.filter((a) => a.account_code.startsWith(q)).slice(0, 8);
+  };
   const [templates, setTemplates] = useState<EntryTemplate[]>([]);
   const loadTemplates = () => api.entryTemplates(dossierId).then(setTemplates).catch(() => {});
   useEffect(() => { loadTemplates(); }, [dossierId]);
@@ -157,9 +166,27 @@ export default function EntryForm({
           <tbody>
             {lines.map((l) => (
               <tr key={l._key}>
-                <td className="py-1 pr-2">
-                  <input value={l.accountCode} onChange={(e) => setLine(l._key, { accountCode: e.target.value })} placeholder="521"
-                    className="w-20 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono outline-none focus:border-emerald-500/50" />
+                <td className="relative py-1 pr-2">
+                  <input value={l.accountCode}
+                    onChange={(e) => { setLine(l._key, { accountCode: e.target.value }); setAcOpen(l._key); }}
+                    onFocus={() => setAcOpen(l._key)}
+                    onBlur={() => setTimeout(() => setAcOpen((k) => (k === l._key ? null : k)), 150)}
+                    placeholder="521" autoComplete="off"
+                    className="w-24 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono outline-none focus:border-emerald-500/50" />
+                  {acOpen === l._key && suggest(l.accountCode).length > 0 && (
+                    <ul className="absolute z-20 mt-1 max-h-64 w-72 overflow-auto rounded-lg border border-white/10 bg-zinc-900 py-1 shadow-xl">
+                      {suggest(l.accountCode).map((a) => (
+                        <li key={a.account_code}>
+                          <button type="button"
+                            onMouseDown={(e) => { e.preventDefault(); setLine(l._key, { accountCode: a.account_code, label: l.label?.trim() ? l.label : a.label }); setAcOpen(null); }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/5">
+                            <span className="font-mono text-emerald-400">{a.account_code}</span>
+                            <span className="truncate text-zinc-300">{a.label}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </td>
                 <td className="py-1 px-2">
                   <input value={l.label ?? ''} onChange={(e) => setLine(l._key, { label: e.target.value })} placeholder="(optionnel)"

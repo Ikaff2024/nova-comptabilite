@@ -284,6 +284,25 @@ async function createMissingAccounts(c: Client, dossierId: string, lines: Analyz
   return n;
 }
 
+// Auto-réparation des libellés corrompus (mojibake « � » = U+FFFD, ex. un ancien
+// import lu en UTF-8 forcé alors que le fichier était en Windows-1252). Au
+// ré-import avec le fichier propre, on remplace le libellé stocké s'il contient
+// « � » ET que le fichier apporte un libellé sain. Ne touche jamais un libellé correct.
+async function repairCorruptedLabels(c: Client, dossierId: string, lines: AnalyzedLine[]): Promise<number> {
+  const BAD = '�';
+  let n = 0;
+  for (const l of lines) {
+    if (l.status !== 'ok') continue;
+    const cur = l.existingLabel ?? '';
+    const fresh = (l.label ?? '').trim();
+    if (cur.includes(BAD) && fresh && !fresh.includes(BAD)) {
+      await c.query('update accounts set label=$3 where dossier_id=$1 and account_code=$2', [dossierId, l.accountCode, fresh]);
+      n++;
+    }
+  }
+  return n;
+}
+
 // --- Validation / écriture d'à-nouveaux -------------------------------------
 
 export interface CommitOptions {
@@ -349,6 +368,7 @@ export async function commitBalanceImport(
   }
 
   const accountsCreated = opts.createMissing ? await createMissingAccounts(c, dossierId, analysis.lines) : 0;
+  await repairCorruptedLabels(c, dossierId, analysis.lines); // auto-répare les « � » hérités d'un ancien import mal encodé
 
   // Journal des à-nouveaux (créé si absent)
   const { rows: jn } = await c.query("select id from journals where dossier_id=$1 and type='a_nouveaux' limit 1", [dossierId]);
