@@ -40,6 +40,7 @@ import * as analytic from './domain/analytic.js';
 import * as budget from './domain/budget.js';
 import * as budgetcopilot from './domain/budgetcopilot.js';
 import * as clotureworks from './domain/clotureworks.js';
+import * as accdocs from './documents/accounting-docs.js';
 import { postCutoff } from './domain/cutoff.js';
 import * as obligations from './domain/obligations.js';
 import * as entrytemplates from './domain/entrytemplates.js';
@@ -853,6 +854,14 @@ export function createApi() {
       const cur = ds.find((d: any) => d.id === req.params.id)?.base_currency ?? 'XOF';
       return tiers.tiersBalanceLetterPdf(c, req.params.id, req.params.cid, cur);
     });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
+  // Livre-journal (journal général chronologique) — livre légal OHADA, en PDF.
+  app.get('/api/dossiers/:id/livre-journal', h(async (req, res) => {
+    const userId = requireUser(req);
+    const out = await withUser(userId, (c) => accdocs.livreJournalPdf(c, req.params.id, (req.query.fiscalYearId as string) || undefined));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);

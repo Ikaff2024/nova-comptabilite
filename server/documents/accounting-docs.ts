@@ -66,6 +66,29 @@ export async function grandLivrePdf(c: Client, dossierId: string, accountCode: s
   return { filename: `grand-livre-${accountCode}.pdf`, buffer, count: lines.length };
 }
 
+// Livre-journal (journal général chronologique) — livre légal OHADA : toutes les
+// écritures validées de l'exercice, ligne à ligne, dans l'ordre chronologique.
+export async function livreJournalPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, md, money, meta } = await ctx(c, dossierId);
+  const lines = await acc.journalEntries(c, dossierId, { fiscalYearId: fyId });
+  let td = 0, tc = 0;
+  const rows = lines.map((l: any) => {
+    td += l.debit; tc += l.credit;
+    return [l.entry_date, l.journal_code ?? '', l.piece_ref ?? '', l.account_code, (l.label || l.entry_description || '').slice(0, 44), md(l.debit), md(l.credit)];
+  });
+  const buffer = await tablePdf({
+    title: 'Livre-journal', subtitle: `${d.raison_sociale ?? ''} · journal général chronologique`, meta,
+    columns: [
+      { label: 'Date', width: 58 }, { label: 'Jrnl', width: 32 }, { label: 'Pièce', width: 60 }, { label: 'Compte', width: 48 },
+      { label: 'Libellé', width: 150 }, { label: 'Débit', width: 72, align: 'right' }, { label: 'Crédit', width: 72, align: 'right' },
+    ],
+    rows,
+    totals: ['', '', '', '', 'Totaux', money(td), money(tc)],
+    footNote: `${lines.length} ligne(s) d'écriture. Livre-journal (art. 19 AUDCIF) — document légal à conserver. Généré par Nova.`,
+  });
+  return { filename: `livre-journal.pdf`, buffer, count: lines.length };
+}
+
 export async function declarationTvaPdf(c: Client, dossierId: string, year: number, month0: number): Promise<{ filename: string; buffer: Buffer }> {
   const { d, money, meta } = await ctx(c, dossierId);
   const from = `${year}-${String(month0 + 1).padStart(2, '0')}-01`;
