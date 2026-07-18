@@ -7,7 +7,10 @@ import PDFDocument from 'pdfkit';
 // ============================================================================
 
 export interface PdfColumn { label: string; width: number; align?: 'left' | 'right' }
-export interface RowStyle { bold?: boolean; fill?: string; line?: 'top' | 'none' }
+// `band` : ligne « bandeau » (en-tête de groupe) rendue sur TOUTE la largeur —
+// les cellules non vides sont concaténées, ce qui évite qu'un libellé long (nom
+// de tiers, de compte) ne se casse dans une colonne étroite.
+export interface RowStyle { bold?: boolean; fill?: string; line?: 'top' | 'none'; band?: boolean }
 export interface TablePdf {
   title: string;
   subtitle?: string;
@@ -17,11 +20,12 @@ export interface TablePdf {
   rowStyles?: (RowStyle | undefined)[]; // style optionnel par ligne (en-têtes de groupe, sous-totaux)
   totals?: string[];        // ligne de totaux (mêmes colonnes)
   footNote?: string;
+  landscape?: boolean;      // orientation paysage (grands livres larges)
 }
 
 export function tablePdf(spec: TablePdf): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const doc = new PDFDocument({ size: 'A4', margin: 40, layout: spec.landscape ? 'landscape' : 'portrait' });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -42,17 +46,23 @@ export function tablePdf(spec: TablePdf): Promise<Buffer> {
     const widths = spec.columns.map((c) => c.width * scale);
     const xs: number[] = []; let acc = left; for (const w of widths) { xs.push(acc); acc += w; }
 
-    const drawRow = (cells: string[], opts: { bold?: boolean; fill?: string; line?: 'top' | 'none' } = {}) => {
+    const drawRow = (cells: string[], opts: RowStyle = {}) => {
       const rowH = 18;
       if (doc.y + rowH > bottom) { doc.addPage(); doc.y = doc.page.margins.top; drawHeader(); }
       const y = doc.y;
       if (opts.fill) { doc.rect(left, y, right - left, rowH).fill(opts.fill); }
       if (opts.line === 'top') { doc.moveTo(left, y).lineTo(right, y).strokeColor('#ccc').lineWidth(0.5).stroke(); }
       doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8.5).fillColor('#111');
-      spec.columns.forEach((col, i) => {
-        const cell = cells[i] ?? '';
-        doc.text(cell, xs[i] + 3, y + 5, { width: widths[i] - 6, align: col.align ?? 'left', lineBreak: false });
-      });
+      if (opts.band) {
+        // Bandeau pleine largeur : concatène les cellules non vides.
+        const label = cells.filter((v) => (v ?? '').trim() !== '').join('   ·   ');
+        doc.text(label, left + 3, y + 5, { width: right - left - 6, align: 'left', lineBreak: false });
+      } else {
+        spec.columns.forEach((col, i) => {
+          const cell = cells[i] ?? '';
+          doc.text(cell, xs[i] + 3, y + 5, { width: widths[i] - 6, align: col.align ?? 'left', lineBreak: false });
+        });
+      }
       doc.y = y + rowH;
     };
 

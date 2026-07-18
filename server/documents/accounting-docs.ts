@@ -79,6 +79,7 @@ export async function livreJournalPdf(c: Client, dossierId: string, fyId?: strin
     return [l.entry_date, l.journal_code ?? '', l.piece_ref ?? '', l.account_code, (l.label || l.entry_description || '').slice(0, 44), md(l.debit), md(l.credit)];
   });
   const buffer = await tablePdf({
+    landscape: true,
     title: 'Livre-journal', subtitle: `${d.raison_sociale ?? ''} · journal général chronologique`, meta,
     columns: [
       { label: 'Date', width: 58 }, { label: 'Jrnl', width: 32 }, { label: 'Pièce', width: 60 }, { label: 'Compte', width: 48 },
@@ -112,7 +113,7 @@ export async function grandLivreGeneralPdf(c: Client, dossierId: string, fyId?: 
     if (l.account_code !== curr) {
       flush();
       curr = l.account_code; sD = 0; sC = 0; solde = 0; nbComptes++;
-      push([`${l.account_code}`, `${l.account_label ?? ''}`, '', '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+      push([`${l.account_code}`, `${l.account_label ?? ''}`, '', '', '', '', ''], { bold: true, fill: '#f0f0f0', band: true });
     }
     sD += l.debit; sC += l.credit; solde += l.debit - l.credit; gD += l.debit; gC += l.credit;
     push([l.entry_date, l.journal_code ?? '', l.piece_ref ?? '', (l.line_label || l.description || '').slice(0, 42), md(l.debit), md(l.credit), money(solde)]);
@@ -120,6 +121,7 @@ export async function grandLivreGeneralPdf(c: Client, dossierId: string, fyId?: 
   flush();
 
   const buffer = await tablePdf({
+    landscape: true,
     title: 'Grand livre général', subtitle: `${d.raison_sociale ?? ''} · tous les comptes mouvementés`, meta,
     columns: [
       { label: 'Date', width: 58 }, { label: 'Jrnl', width: 32 }, { label: 'Pièce', width: 58 }, { label: 'Libellé', width: 140 },
@@ -261,7 +263,7 @@ export async function grandLivreAuxiliairePdf(c: Client, dossierId: string): Pro
     if (key !== curr) {
       flush();
       curr = key; solde = 0; sD = 0; sC = 0; nbTiers++;
-      push([`${l.aux_code || ''}`, `${l.tiers_name}`, '', '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+      push([`${l.aux_code || ''}`, `${l.tiers_name}`, '', '', '', '', ''], { bold: true, fill: '#f0f0f0', band: true });
     }
     sD += l.debit; sC += l.credit; solde += l.debit - l.credit;
     push([l.entry_date, l.journal_code ?? '', l.piece_ref ?? '', (l.label || '').slice(0, 40), md(l.debit), md(l.credit), money(solde)]);
@@ -269,6 +271,7 @@ export async function grandLivreAuxiliairePdf(c: Client, dossierId: string): Pro
   flush();
 
   const buffer = await tablePdf({
+    landscape: true,
     title: 'Grand livre auxiliaire des tiers', subtitle: `${d.raison_sociale ?? ''} · détail des comptes clients & fournisseurs`, meta,
     columns: [
       { label: 'Date', width: 58 }, { label: 'Jrnl', width: 32 }, { label: 'Pièce', width: 56 }, { label: 'Libellé', width: 138 },
