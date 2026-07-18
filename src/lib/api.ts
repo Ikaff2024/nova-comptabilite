@@ -49,7 +49,7 @@ export async function downloadAuthed(path: string, filename: string): Promise<vo
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-export interface Cabinet { id: string; name: string; country: string; base_currency: string; }
+export interface Cabinet { id: string; name: string; country: string; base_currency: string; account_type?: 'cabinet' | 'entreprise'; }
 export interface Dossier {
   id: string; cabinet_id: string; raison_sociale: string; country: string;
   base_currency: string; accounting_system: string; is_active: boolean;
@@ -398,15 +398,15 @@ export const api = {
   usage: (days = 30) => req<UsageSummary>(`/api/usage?days=${days}`),
   platformOverview: () => req<PlatformOverview>('/api/platform/overview'),
   seedDemo: () => req<{ dossierId: string }>('/api/demo/seed', { method: 'POST', body: '{}' }),
-  onboard: (name: string, country: string) =>
-    req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country }) }),
+  onboard: (name: string, country: string, accountType: 'cabinet' | 'entreprise' = 'cabinet') =>
+    req<{ cabinetId: string }>('/api/onboarding/cabinet', { method: 'POST', body: JSON.stringify({ name, country, accountType }) }),
   dossiers: () => req<Dossier[]>('/api/dossiers'),
   corruptedLabels: (dossierId: string) => req<{ account_code: string; label: string }[]>(`/api/dossiers/${dossierId}/corrupted-labels`),
   repairLabels: (dossierId: string, csv: string) =>
     req<{ repaired: { code: string; old: string; new: string }[] }>(`/api/dossiers/${dossierId}/repair-labels`, { method: 'POST', body: JSON.stringify({ csv }) }),
   renameDossier: (dossierId: string, raisonSociale: string) =>
     req<{ ok: boolean; raison_sociale: string }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify({ raisonSociale }) }),
-  createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string }) =>
+  createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string; rccm?: string }) =>
     req<{ id: string; accounts: number }>('/api/dossiers', { method: 'POST', body: JSON.stringify(input) }),
   accounts: (dossierId: string, q?: string, all?: boolean) =>
     req<Account[]>(`/api/dossiers/${dossierId}/accounts?${q ? `q=${encodeURIComponent(q)}&` : ''}${all ? 'all=1' : ''}`),

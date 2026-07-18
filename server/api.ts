@@ -264,8 +264,9 @@ export function createApi() {
   // Onboarding : créer un cabinet (l'appelant en devient owner)
   app.post('/api/onboarding/cabinet', h(async (req, res) => {
     const userId = requireUser(req);
-    const { name, country, currency } = req.body ?? {};
-    const id = await withUser(userId, (c) => acc.onboardCabinet(c, userId, name, country, currency));
+    const { name, country, currency, accountType } = req.body ?? {};
+    const type = accountType === 'entreprise' ? 'entreprise' : 'cabinet';
+    const id = await withUser(userId, (c) => acc.onboardCabinet(c, userId, name, country, currency, type));
     res.status(201).json({ cabinetId: id });
   }));
 

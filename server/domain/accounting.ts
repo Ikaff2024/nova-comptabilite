@@ -1,6 +1,6 @@
 import type { Client } from '../db.js';
 import { recordAudit } from './audit.js';
-import { tableExists } from '../schema-cache.js';
+import { tableExists, columnExists } from '../schema-cache.js';
 
 // ============================================================================
 // Couche domaine comptable — opérations sûres au-dessus du ledger Postgres.
@@ -65,17 +65,25 @@ export async function onboardCabinet(
   name: string,
   country: OhadaCountry,
   currency: Currency = 'XOF',
+  accountType: 'cabinet' | 'entreprise' = 'cabinet',
 ): Promise<string> {
   const { rows } = await c.query(
     'select onboard_cabinet($1,$2,$3,$4) as id',
     [userId, name, country, currency],
   );
-  return rows[0].id;
+  const id = rows[0].id;
+  // Tolérant au schéma : si la migration 0057 n'est pas encore appliquée, on
+  // ignore (le compte reste « cabinet » par défaut jusqu'à la migration).
+  if (accountType === 'entreprise' && await columnExists('cabinets', 'account_type')) {
+    await c.query("update cabinets set account_type='entreprise' where id=$1", [id]);
+  }
+  return id;
 }
 
 export async function listCabinets(c: Client): Promise<any[]> {
+  const hasType = await columnExists('cabinets', 'account_type');
   const { rows } = await c.query(
-    'select id, name, country, base_currency from cabinets order by name',
+    `select id, name, country, base_currency, ${hasType ? 'account_type' : "'cabinet' as account_type"} from cabinets order by name`,
   );
   return rows;
 }

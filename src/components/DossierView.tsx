@@ -37,7 +37,7 @@ import Scoring from './Scoring';
 
 type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'clotures' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'decisions' | 'portail';
 
-export default function DossierView({ dossier, onBack }: { dossier: Dossier; onBack: () => void }) {
+export default function DossierView({ dossier, onBack, hideBack }: { dossier: Dossier; onBack: () => void; hideBack?: boolean }) {
   const [tab, setTab] = useState<Tab>('synthese');
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [journals, setJournals] = useState<Journal[]>([]);
@@ -135,9 +135,11 @@ export default function DossierView({ dossier, onBack }: { dossier: Dossier; onB
   return (
     <div className="space-y-8">
       <div>
-        <button onClick={onBack} className="mb-3 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200">
-          <ArrowLeft className="h-4 w-4" /> Portefeuille
-        </button>
+        {!hideBack && (
+          <button onClick={onBack} className="mb-3 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200">
+            <ArrowLeft className="h-4 w-4" /> Portefeuille
+          </button>
+        )}
         {editingName ? (
           <div className="flex flex-wrap items-center gap-2">
             <input autoFocus value={draftName} onChange={(e) => setDraftName(e.target.value)}

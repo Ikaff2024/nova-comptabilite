@@ -21,6 +21,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Dossier | null>(null);
   const [nav, setNav] = useState<'dashboard' | 'portefeuille' | 'cabinet' | 'platform'>('dashboard');
+  // Mode entreprise : le compte n'a qu'un dossier (sa propre société), chargé
+  // ici pour un atterrissage direct dans sa comptabilité (pas de portefeuille).
+  const [companyDossier, setCompanyDossier] = useState<Dossier | null>(null);
   const refreshMe = async () => { try { setUser(await api.me()); } catch { /* ignore */ } };
   const [showGuide, setShowGuide] = useState(false);
   const [dashKey, setDashKey] = useState(0); // force refresh du dashboard après démo
@@ -72,10 +75,21 @@ export default function App() {
     })();
   }, []);
 
-  // Guide d'accueil : au premier passage avec un cabinet créé.
+  // Guide d'accueil : au premier passage avec un cabinet créé. En mode
+  // entreprise, on ne propose pas la démo (elle créerait un dossier parasite).
   useEffect(() => {
-    if (user && cabinets.length > 0 && !isWelcomed()) setShowGuide(true);
+    if (user && cabinets.length > 0 && cabinets[0].account_type !== 'entreprise' && !isWelcomed()) setShowGuide(true);
   }, [user, cabinets]);
+
+  // Mode entreprise : précharger le dossier unique de la société.
+  useEffect(() => {
+    const cab = cabinets[0];
+    if (cab && cab.account_type === 'entreprise') {
+      api.dossiers().then((ds) => setCompanyDossier(ds[0] ?? null)).catch(() => setCompanyDossier(null));
+    } else {
+      setCompanyDossier(null);
+    }
+  }, [cabinets]);
 
   const onAuth = async (u: AuthUser) => { setUser(u); await loadCabinets(); };
   const onDemoCreated = (id: string) => { setShowGuide(false); setDashKey((k) => k + 1); openDossierById(id); };
@@ -104,6 +118,21 @@ export default function App() {
   if (cabinets.length === 0) return <Onboarding onDone={loadCabinets} />;
 
   const cabinet = cabinets[0];
+  const isCompany = cabinet.account_type === 'entreprise';
+  type NavItem = { id: 'dashboard' | 'portefeuille' | 'cabinet' | 'platform'; label: string; icon: typeof LayoutDashboard };
+  const platformItem: NavItem[] = user.platformAdmin ? [{ id: 'platform', label: 'Console Nova', icon: Gauge }] : [];
+  const navItems: NavItem[] = isCompany
+    ? [
+        { id: 'dashboard', label: 'Mon entreprise', icon: LayoutDashboard },
+        { id: 'cabinet', label: 'Entreprise & sécurité', icon: Building2 },
+        ...platformItem,
+      ]
+    : [
+        { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
+        { id: 'portefeuille', label: 'Portefeuille', icon: FolderKanban },
+        { id: 'cabinet', label: 'Cabinet & sécurité', icon: Building2 },
+        ...platformItem,
+      ];
 
   return (
     <div className="flex h-screen w-full bg-zinc-950 font-sans text-zinc-50 selection:bg-emerald-500/30">
@@ -121,17 +150,12 @@ export default function App() {
         </div>
 
         <div className="mt-8 rounded-xl border border-white/5 bg-white/5 px-3 py-2.5">
-          <div className="text-xs text-zinc-500">Cabinet</div>
+          <div className="text-xs text-zinc-500">{isCompany ? 'Entreprise' : 'Cabinet'}</div>
           <div className="truncate text-sm font-medium text-zinc-200">{cabinet.name}</div>
         </div>
 
         <nav className="mt-6 flex flex-1 flex-col gap-2">
-          {([
-            { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
-            { id: 'portefeuille', label: 'Portefeuille', icon: FolderKanban },
-            { id: 'cabinet', label: 'Cabinet & sécurité', icon: Building2 },
-            ...(user.platformAdmin ? [{ id: 'platform', label: 'Console Nova', icon: Gauge } as const] : []),
-          ] as const).map((item) => {
+          {navItems.map((item) => {
             const active = !selected && nav === item.id;
             return (
               <button key={item.id} onClick={() => { setSelected(null); setNav(item.id); }}
@@ -183,13 +207,21 @@ export default function App() {
             ? (selected.role === 'client' || selected.role === 'lecture')
               ? <ClientPortal dossier={selected} onBack={() => setSelected(null)} />
               : <DossierView dossier={selected} onBack={() => setSelected(null)} />
-            : nav === 'dashboard'
-              ? <CabinetDashboard refresh={dashKey} cabinetName={cabinet.name} onOpen={openDossierById} onDemo={onDemoCreated} />
-              : nav === 'cabinet'
+            : isCompany
+              ? nav === 'cabinet'
                 ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} onRenamed={loadCabinets} />
                 : nav === 'platform' && user.platformAdmin
                   ? <PlatformConsole />
-                  : <Dossiers cabinet={cabinet} onOpen={setSelected} />}
+                  : companyDossier
+                    ? <DossierView dossier={companyDossier} onBack={() => {}} hideBack />
+                    : <div className="flex h-full items-center justify-center text-zinc-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+              : nav === 'dashboard'
+                ? <CabinetDashboard refresh={dashKey} cabinetName={cabinet.name} onOpen={openDossierById} onDemo={onDemoCreated} />
+                : nav === 'cabinet'
+                  ? <CabinetSettings cabinet={cabinet} user={user} onUserRefresh={refreshMe} onRenamed={loadCabinets} />
+                  : nav === 'platform' && user.platformAdmin
+                    ? <PlatformConsole />
+                    : <Dossiers cabinet={cabinet} onOpen={setSelected} />}
         </div>
       </main>
 
