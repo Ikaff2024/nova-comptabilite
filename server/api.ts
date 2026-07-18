@@ -1518,6 +1518,14 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatementsComparative(c, req.params.id, fy)));
   }));
+  app.get('/api/dossiers/:id/etats-comparatifs', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const out = await withUser(userId, (c) => accdocs.etatsComparatifsPdf(c, req.params.id, fy));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
 
   // 404 pour toute route API inconnue
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ressource introuvable' }));

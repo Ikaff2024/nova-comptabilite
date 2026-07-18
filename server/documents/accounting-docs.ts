@@ -294,6 +294,55 @@ export async function recapTvaAnnuelPdf(c: Client, dossierId: string, year: numb
   return { filename: `recap-tva-${year}.pdf`, buffer, count: nb };
 }
 
+// États financiers comparatifs N / N-1 — SIG et grandes masses du bilan, avec la
+// variation en valeur et en %. Support de la revue analytique et du commentaire
+// de gestion (« pourquoi le résultat a bougé »).
+export async function etatsComparatifsPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer; hasPrevious: boolean }> {
+  const { d, md, money, meta } = await ctx(c, dossierId);
+  const cmp: any = await acc.financialStatementsComparative(c, dossierId, fyId);
+  const cur = cmp.current, prv = cmp.previous;
+  const lblN = cmp.currentLabel ?? 'N', lblN1 = cmp.previousLabel ?? 'N-1';
+
+  const rows: string[][] = [];
+  const rowStyles: (RowStyle | undefined)[] = [];
+  const push = (r: string[], s?: RowStyle) => { rows.push(r); rowStyles.push(s); };
+  const varTxt = (n: number, p: number) => (!p ? (n ? 'n.s.' : '') : `${n - p >= 0 ? '+' : ''}${Math.round((n - p) / Math.abs(p) * 100)} %`);
+  const line = (label: string, n: number, p: number, strong = false) => push([label, md(n), md(p), md(n - p), varTxt(n, p)], strong ? { bold: true } : undefined);
+  const header = (label: string) => push([label, '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+
+  // SIG comparatif (mêmes libellés dans les deux exercices)
+  header('SOLDES INTERMÉDIAIRES DE GESTION');
+  const sigN: any[] = cur?.incomeStatement?.sig ?? [];
+  const sigP: any[] = prv?.incomeStatement?.sig ?? [];
+  for (const s of sigN) {
+    const p = sigP.find((x) => x.label === s.label);
+    line(s.label, s.amount, p?.amount ?? 0, !!s.strong);
+  }
+  // Résultat
+  header('COMPTE DE RÉSULTAT');
+  line('Total des produits', cur?.incomeStatement?.totalProduits ?? 0, prv?.incomeStatement?.totalProduits ?? 0);
+  line('Total des charges', cur?.incomeStatement?.totalCharges ?? 0, prv?.incomeStatement?.totalCharges ?? 0);
+  line('Résultat net', cur?.incomeStatement?.resultatNet ?? 0, prv?.incomeStatement?.resultatNet ?? 0, true);
+  // Bilan — grandes masses
+  header('BILAN — GRANDES MASSES');
+  const masse = (arr: any[], label: string) => arr?.find((x) => x.label === label)?.amount ?? 0;
+  const aN = cur?.balanceSheet?.actif ?? [], aP = prv?.balanceSheet?.actif ?? [];
+  const pN = cur?.balanceSheet?.passif ?? [], pP = prv?.balanceSheet?.passif ?? [];
+  for (const lbl of ['Actif immobilisé (net)', 'Stocks', 'Créances et emplois assimilés', 'Trésorerie-Actif']) line(lbl, masse(aN, lbl), masse(aP, lbl));
+  for (const lbl of ['Capitaux propres', 'Dettes financières et ressources assimilées', 'Passif circulant', 'Trésorerie-Passif']) line(lbl, masse(pN, lbl), masse(pP, lbl));
+
+  const buffer = await tablePdf({
+    title: 'États financiers comparatifs', subtitle: `${d.raison_sociale ?? ''} · ${lblN} vs ${lblN1}`, meta,
+    columns: [
+      { label: 'Poste', width: 178 }, { label: `Exercice ${lblN}`, width: 92, align: 'right' }, { label: `Exercice ${lblN1}`, width: 92, align: 'right' },
+      { label: 'Variation', width: 84, align: 'right' }, { label: '%', width: 52, align: 'right' },
+    ],
+    rows, rowStyles,
+    footNote: prv ? `Variation N vs N-1 en valeur et en %. « n.s. » = non significatif (base nulle). Généré par Nova, référentiel SYSCOHADA révisé.` : `Aucun exercice précédent disponible : la colonne ${lblN1} est à zéro. Généré par Nova.`,
+  });
+  return { filename: 'etats-comparatifs.pdf', buffer, hasPrevious: !!prv };
+}
+
 export async function etatsFinanciersPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer }> {
   const { d, money, meta } = await ctx(c, dossierId);
   const fs: any = await acc.financialStatements(c, dossierId, fyId);

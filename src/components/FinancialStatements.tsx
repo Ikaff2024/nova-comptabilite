@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS } from '../lib/api';
+import { api, downloadAuthed, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS } from '../lib/api';
 import { cn } from '../lib/utils';
 
 export default function FinancialStatements({
@@ -39,6 +39,11 @@ export default function FinancialStatements({
           <button onClick={exportPdf} disabled={!data}
             className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40">
             <Printer className="h-4 w-4" /> Export PDF
+          </button>
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/etats-comparatifs${fy ? `?fiscalYearId=${fy}` : ''}`, 'etats-comparatifs.pdf')} disabled={!prev}
+            title={prev ? 'États comparatifs N vs N-1 (variation)' : 'Aucun exercice précédent à comparer'}
+            className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40">
+            <FileText className="h-4 w-4" /> Comparatif N/N-1
           </button>
         </div>
       </div>
