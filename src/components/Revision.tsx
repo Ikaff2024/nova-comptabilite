@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, ClipboardCheck, CheckCircle2, Circle } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type RevisionReport, type RevisionAccount } from '../lib/api';
+import { Loader2, ClipboardCheck, CheckCircle2, Circle, ShieldCheck, AlertTriangle, ChevronDown } from 'lucide-react';
+import { api, fmtMoney, type FiscalYear, type RevisionReport, type RevisionAccount, type InterModuleReport, type CoherenceNiveau } from '../lib/api';
 import { cn } from '../lib/utils';
 
 export default function Revision({ dossierId, currency, fiscalYears }: { dossierId: string; currency: string; fiscalYears: FiscalYear[] }) {
@@ -46,6 +46,8 @@ export default function Revision({ dossierId, currency, fiscalYears }: { dossier
         </div>
       </div>
 
+      <CoherencePanel dossierId={dossierId} fy={fy} currency={currency} />
+
       {data && (
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="mb-2 flex items-center justify-between text-sm"><span className="text-zinc-300">Avancement de la révision</span><span className="font-mono text-zinc-200">{data.progress.reviewed} / {data.progress.total} comptes justifiés</span></div>
@@ -81,6 +83,67 @@ export default function Revision({ dossierId, currency, fiscalYears }: { dossier
             </table>
           </div>
         ))}
+    </div>
+  );
+}
+
+// AQM 2.0 — cohérence inter-modules : la paie/les immos correspondent-elles à la
+// compta ? Panneau repliable en tête de la révision.
+const NIVEAU_STYLE: Record<CoherenceNiveau, { chip: string; label: string; ring: string }> = {
+  haute: { chip: 'bg-rose-500/15 text-rose-300 border-rose-500/30', label: 'Risque élevé', ring: 'text-rose-400' },
+  moyenne: { chip: 'bg-amber-500/15 text-amber-300 border-amber-500/30', label: 'À vérifier', ring: 'text-amber-400' },
+  info: { chip: 'bg-sky-500/15 text-sky-300 border-sky-500/30', label: 'Info', ring: 'text-sky-400' },
+  ok: { chip: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', label: 'Cohérent', ring: 'text-emerald-400' },
+};
+
+function CoherencePanel({ dossierId, fy, currency }: { dossierId: string; fy: string; currency: string }) {
+  const [data, setData] = useState<InterModuleReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(true);
+  const m = (n: number) => fmtMoney(n, currency);
+
+  useEffect(() => { let on = true; setLoading(true); api.coherence(dossierId, fy || undefined).then((d) => { if (on) setData(d); }).catch(() => { if (on) setData(null); }).finally(() => { if (on) setLoading(false); }); return () => { on = false; }; }, [dossierId, fy]);
+
+  if (loading) return <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Contrôle de cohérence inter-modules…</div>;
+  if (!data || data.controles.length === 0) return null;
+
+  const gStyle = NIVEAU_STYLE[data.niveauGlobal];
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.03]">
+        <ShieldCheck className={cn('h-5 w-5', gStyle.ring)} />
+        <div className="flex-1">
+          <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">Cohérence inter-modules <span className="text-xs font-normal text-zinc-500">(AQM 2.0)</span></div>
+          <div className="text-xs text-zinc-500">Paie, immobilisations et comptabilité racontent-elles la même histoire ?{data.exercice ? ` · ${data.exercice}` : ''}</div>
+        </div>
+        <span className={cn('rounded-full border px-2.5 py-1 text-xs font-medium', gStyle.chip)}>{gStyle.label}</span>
+        {(data.resume.haute + data.resume.moyenne) > 0 && <span className="flex items-center gap-1 text-xs text-amber-300"><AlertTriangle className="h-3.5 w-3.5" /> {data.resume.haute + data.resume.moyenne}</span>}
+        <ChevronDown className={cn('h-4 w-4 text-zinc-500 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="divide-y divide-white/5 border-t border-white/10">
+          {data.controles.map((chk) => {
+            const s = NIVEAU_STYLE[chk.niveau];
+            return (
+              <div key={chk.regle} className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium', s.chip)}>{s.label}</span>
+                  <span className="text-sm font-medium text-zinc-200">{chk.libelle}</span>
+                  <span className="text-xs text-zinc-500">· {chk.module}</span>
+                </div>
+                <p className="mt-1 text-xs text-zinc-400">{chk.explication}</p>
+                {(chk.attendu !== 0 || chk.constate !== 0) && (
+                  <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                    <span className="text-zinc-500">Attendu <span className="font-mono text-zinc-300">{m(chk.attendu)}</span></span>
+                    <span className="text-zinc-500">Constaté <span className="font-mono text-zinc-300">{m(chk.constate)}</span></span>
+                    {chk.ecart !== 0 && <span className="text-zinc-500">Écart <span className={cn('font-mono', chk.niveau === 'ok' ? 'text-zinc-300' : s.ring)}>{m(chk.ecart)}</span></span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

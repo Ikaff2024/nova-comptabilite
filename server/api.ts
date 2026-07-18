@@ -35,6 +35,7 @@ import * as platform from './domain/platform.js';
 import * as alerts from './domain/alerts.js';
 import * as ratios from './domain/ratios.js';
 import * as controls from './domain/controls.js';
+import * as coherence from './domain/coherence.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
@@ -698,6 +699,12 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => controls.coherenceChecks(c, req.params.id, fy)));
+  }));
+  // AQM 2.0 — cohérence inter-modules (paie ↔ compta, immo ↔ dotations…).
+  app.get('/api/dossiers/:id/coherence', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => coherence.globalCoherence(c, req.params.id, fy)));
   }));
 
   // --- Écritures récurrentes / abonnements -----------------------------------

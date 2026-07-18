@@ -50,6 +50,9 @@ export async function downloadAuthed(path: string, filename: string): Promise<vo
 }
 
 export interface Cabinet { id: string; name: string; country: string; base_currency: string; account_type?: 'cabinet' | 'entreprise'; }
+export type CoherenceNiveau = 'haute' | 'moyenne' | 'info' | 'ok';
+export interface InterModuleCheck { module: string; regle: string; libelle: string; attendu: number; constate: number; ecart: number; niveau: CoherenceNiveau; explication: string; }
+export interface InterModuleReport { dossierId: string; devise: string; exercice: string | null; annee: number; resume: { haute: number; moyenne: number; info: number; ok: number; total: number }; niveauGlobal: CoherenceNiveau; controles: InterModuleCheck[]; }
 export interface Dossier {
   id: string; cabinet_id: string; raison_sociale: string; country: string;
   base_currency: string; accounting_system: string; is_active: boolean;
@@ -388,6 +391,7 @@ export const api = {
   setup2fa: () => req<{ secret: string; otpauth: string }>('/api/auth/2fa/setup', { method: 'POST', body: '{}' }),
   enable2fa: (code: string) => req<{ enabled: boolean }>('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
   disable2fa: () => req<{ enabled: boolean }>('/api/auth/2fa/disable', { method: 'POST', body: '{}' }),
+  coherence: (dossierId: string, fiscalYearId?: string) => req<InterModuleReport>(`/api/dossiers/${dossierId}/coherence${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   renameCabinet: (cabinetId: string, name: string) => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   setCabinetType: (cabinetId: string, accountType: 'cabinet' | 'entreprise') => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ accountType }) }),
   members: (cabinetId: string) => req<CabinetMember[]>(`/api/cabinets/${cabinetId}/members`),
