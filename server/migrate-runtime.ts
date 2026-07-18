@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import pg from 'pg';
 import { pool } from './db.js';
 
 // ============================================================================
@@ -20,9 +21,24 @@ function migrationsDir(): string | null {
 export async function applyPendingMigrations(): Promise<{ applied: number; skipped: number } | null> {
   const dir = migrationsDir();
   if (!dir) { console.warn('[migrate] dossier supabase/migrations introuvable — ignoré.'); return null; }
+
+  // Les migrations (DDL) requièrent un rôle avec droits sur le schéma. Si
+  // MIGRATION_DATABASE_URL est défini (rôle owner/admin), on l'utilise via un pool
+  // dédié ; sinon on retombe sur le pool applicatif (rôle restreint, sans DDL).
+  const adminUrl = process.env.MIGRATION_DATABASE_URL;
+  let ownPool: pg.Pool | null = null;
   let client;
-  try { client = await pool.connect(); }
-  catch (e: any) { console.warn('[migrate] connexion impossible, migrations ignorées :', e.message); return null; }
+  try {
+    if (adminUrl) {
+      const needsSsl = /neon\.tech|sslmode=require|render\.com|supabase\.co/.test(adminUrl) || process.env.PGSSL === 'require';
+      ownPool = new pg.Pool({ connectionString: adminUrl, ssl: needsSsl ? { rejectUnauthorized: false } : undefined });
+      client = await ownPool.connect();
+      console.log('[migrate] connexion via MIGRATION_DATABASE_URL (rôle admin).');
+    } else {
+      client = await pool.connect();
+    }
+  }
+  catch (e: any) { console.warn('[migrate] connexion impossible, migrations ignorées :', e.message); if (ownPool) await ownPool.end().catch(() => {}); return null; }
   try {
     await client.query('create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())');
     const { rows } = await client.query('select name from _migrations');
@@ -52,5 +68,6 @@ export async function applyPendingMigrations(): Promise<{ applied: number; skipp
     return null;
   } finally {
     try { client.release(); } catch { /* ignore */ }
+    if (ownPool) await ownPool.end().catch(() => {});
   }
 }

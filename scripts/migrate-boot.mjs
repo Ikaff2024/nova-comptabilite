@@ -8,8 +8,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pg from 'pg';
 
-const url = process.env.DATABASE_URL;
-if (!url) { console.warn('[migrate-boot] DATABASE_URL absent — démarrage sans migration.'); process.exit(0); }
+// Les migrations (DDL) requièrent un rôle avec droits de création de schéma.
+// Si MIGRATION_DATABASE_URL est défini (rôle owner/admin), on l'utilise pour les
+// migrations ; sinon on retombe sur DATABASE_URL (rôle applicatif restreint, qui
+// n'a en général PAS les droits DDL → migrations « ignorées », à appliquer à la main).
+const url = process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
+if (!url) { console.warn('[migrate-boot] Aucune URL de base — démarrage sans migration.'); process.exit(0); }
+console.log(`[migrate-boot] connexion via ${process.env.MIGRATION_DATABASE_URL ? 'MIGRATION_DATABASE_URL (admin)' : 'DATABASE_URL (runtime)'}.`);
 
 const needsSsl = /neon\.tech|sslmode=require|render\.com|supabase\.co/.test(url) || process.env.PGSSL === 'require';
 
