@@ -829,6 +829,33 @@ export async function journalEntries(
   return rows.map((r: any) => ({ ...r, debit: Number(r.debit), credit: Number(r.credit) }));
 }
 
+// Journal centralisateur : récapitulatif mensuel par journal (totaux débit/crédit
+// de chaque journal, mois par mois). Livre comptable de synthèse OHADA.
+export async function journalCentralisateur(
+  c: Client, dossierId: string, fiscalYearId?: string,
+): Promise<any[]> {
+  const params: any[] = [dossierId];
+  let where = "e.dossier_id = $1 and e.status = 'posted'";
+  if (fiscalYearId) { params.push(fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
+  const { rows } = await c.query(
+    `select j.code as journal_code, j.label as journal_label,
+            to_char(date_trunc('month', e.entry_date), 'YYYY-MM') as mois,
+            coalesce(sum(l.amount_debit), 0)  as debit,
+            coalesce(sum(l.amount_credit), 0) as credit
+       from entries e
+       join journals j on j.id = e.journal_id
+       join entry_lines l on l.entry_id = e.id
+      where ${where}
+      group by j.code, j.label, mois
+      order by j.code, mois`,
+    params,
+  );
+  return rows.map((r: any) => ({
+    journal_code: r.journal_code, journal_label: r.journal_label, mois: r.mois,
+    debit: Number(r.debit), credit: Number(r.credit),
+  }));
+}
+
 // Clôture d'exercice : reporte les soldes de bilan (classes 1-5) en à-nouveaux
 // dans l'exercice suivant, transfère le résultat (6-7) en report à nouveau (12),
 // et clôture l'exercice. Le résultat part en 121 (bénéfice) ou 129 (perte).

@@ -164,6 +164,44 @@ export async function balanceAgeePdf(c: Client, dossierId: string): Promise<{ fi
   return { filename: 'balance-agee-tiers.pdf', buffer, count: nb };
 }
 
+// Journal centralisateur — récapitulatif mensuel par journal (livre de synthèse
+// OHADA) : chaque journal en en-tête, ses totaux mensuels débit/crédit, un
+// sous-total par journal, puis le total général.
+export async function journalCentralisateurPdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { d, money, meta } = await ctx(c, dossierId);
+  const data = await acc.journalCentralisateur(c, dossierId, fyId);
+  const moisFr = (ym: string) => { const [y, m] = ym.split('-'); return `${MOIS[Number(m) - 1] ?? m} ${y}`; };
+
+  const rows: string[][] = [];
+  const rowStyles: (RowStyle | undefined)[] = [];
+  const push = (r: string[], s?: RowStyle) => { rows.push(r); rowStyles.push(s); };
+
+  let curr: string | null = null, jD = 0, jC = 0, gD = 0, gC = 0, nbJ = 0;
+  const flush = () => { if (curr !== null) push(['', 'Sous-total journal', money(jD), money(jC)], { bold: true, line: 'top' }); };
+  for (const l of data) {
+    if (l.journal_code !== curr) {
+      flush();
+      curr = l.journal_code; jD = 0; jC = 0; nbJ++;
+      push([l.journal_code, l.journal_label ?? '', '', ''], { bold: true, fill: '#f0f0f0' });
+    }
+    jD += l.debit; jC += l.credit; gD += l.debit; gC += l.credit;
+    push(['', moisFr(l.mois), money(l.debit), money(l.credit)]);
+  }
+  flush();
+
+  const buffer = await tablePdf({
+    title: 'Journal centralisateur', subtitle: `${d.raison_sociale ?? ''} · récapitulatif mensuel par journal`, meta,
+    columns: [
+      { label: 'Jrnl', width: 44 }, { label: 'Libellé / mois', width: 200 },
+      { label: 'Débit', width: 100, align: 'right' }, { label: 'Crédit', width: 100, align: 'right' },
+    ],
+    rows, rowStyles,
+    totals: ['', 'TOTAL GÉNÉRAL', money(gD), money(gC)],
+    footNote: `${nbJ} journal(aux). Les totaux débit et crédit doivent être égaux (partie double). Généré par Nova.`,
+  });
+  return { filename: 'journal-centralisateur.pdf', buffer, count: data.length };
+}
+
 export async function declarationTvaPdf(c: Client, dossierId: string, year: number, month0: number): Promise<{ filename: string; buffer: Buffer }> {
   const { d, money, meta } = await ctx(c, dossierId);
   const from = `${year}-${String(month0 + 1).padStart(2, '0')}-01`;

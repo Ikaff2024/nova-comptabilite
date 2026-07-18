@@ -400,7 +400,7 @@ const ACTION_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers) | "balance_agee" (balance âgée des créances/dettes par tiers)' },
+              document: { type: 'string', description: '"livre_paie" | "ordre_virement" | "courrier_virement" (lettre à la banque) | "bulletin" | "declaration_cnps" | "declaration_dgi" | "declaration_tva" | "rapport_mensuel" | "balance" | "grand_livre" (un compte précis, préciser compte) | "grand_livre_general" (tous les comptes) | "journal_centralisateur" (récap mensuel par journal) | "etats_financiers" | "livre_journal" | "releve_tiers" (relevé de compte d\'un client/fournisseur, préciser tiers) | "etat_immobilisations" | "etat_rapprochement" (rapprochement bancaire, préciser compte ex. 521) | "confirmation_solde" (lettre de confirmation de solde à un tiers, préciser tiers) | "balance_agee" (balance âgée des créances/dettes par tiers)' },
               tiers: { type: 'string', description: 'Pour "releve_tiers" : nom ou code auxiliaire du client/fournisseur' },
               annee: { type: 'number' },
               mois: { type: 'number', description: 'Mois en clair 1-12 (documents de paie/reporting)' },
@@ -683,6 +683,7 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
     case 'etats_financiers': return await accdocs.etatsFinanciersPdf(c, dossierId, fy);
     case 'livre_journal': { const r = await accdocs.livreJournalPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le livre-journal.' }; return r; }
     case 'grand_livre_general': { const r = await accdocs.grandLivreGeneralPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le grand livre général.' }; return r; }
+    case 'journal_centralisateur': { const r = await accdocs.journalCentralisateurPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le journal centralisateur.' }; return r; }
     case 'balance_agee': { const r = await accdocs.balanceAgeePdf(c, dossierId); if (r.count === 0) return { error: 'Aucun solde ouvert pour la balance âgée.' }; return r; }
     case 'releve_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(pj.tiers ?? ''));
