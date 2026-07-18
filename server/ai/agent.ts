@@ -45,7 +45,10 @@ import { upcomingDeadlines } from '../domain/fiscalcalendar.js';
 // questions simples ; modèle profond pour l'analyse (résultat, clôture,
 // diagnostic, incohérences). Coupe fortement le coût sans perdre en qualité
 // là où elle compte. AGENT_ROUTING=0 force le modèle profond partout.
-const MODEL_DEEP = process.env.AGENT_MODEL ?? 'claude-opus-4-8';
+// Palier profond : Sonnet 5 (quasi-Opus sur l'agentique/tool-calling/français) —
+// ~40-60 % moins cher qu'Opus 4.8 en sortie, qualité suffisante pour la compta.
+// Surchargeable via AGENT_MODEL (ex. claude-opus-4-8 pour revenir en arrière).
+const MODEL_DEEP = process.env.AGENT_MODEL ?? 'claude-sonnet-5';
 const MODEL_FAST = process.env.AGENT_MODEL_FAST ?? 'claude-haiku-4-5';
 const ROUTING = (process.env.AGENT_ROUTING ?? '1') !== '0';
 const MAX_STEPS = 6;
@@ -812,16 +815,23 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
     : READ_TOOLS;
   const note = mode === 'assist_plus' ? ASSIST_NOTE + PLUS_NOTE : mode === 'assist' ? ASSIST_NOTE : '';
 
-  // system : garde-fous statiques (mis en cache) + note de palier + contexte dossier.
+  // system : garde-fous statiques + note de palier + contexte dossier. Les DEUX
+  // blocs sont mis en cache (le contexte dossier est stable dans une conversation)
+  // → sur les tours suivants, l'entrée est relue à ~0,1× le prix. Deux points de
+  // césure : outils+garde-fous, puis + contexte dossier.
   const system = [
     { type: 'text', text: SYSTEM_GUARDRAILS + note, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: ctx },
+    { type: 'text', text: ctx, cache_control: { type: 'ephemeral' } },
   ];
 
   // Conversation. Le contenu utilisateur/assistant est du texte simple.
   const messages: any[] = history.slice(-16).map((m) => ({ role: m.role, content: m.content }));
 
   const model = pickModel(history);
+  // Sonnet 5 (et la famille Opus 4.x) activeraient la réflexion adaptative par
+  // défaut ; on la désactive explicitement pour garder le comportement actuel
+  // (pas de réflexion) et un coût maîtrisé. Haiku (rapide) : rien à envoyer.
+  const thinking = /claude-(sonnet-5|opus-4)/.test(model) ? { type: 'disabled' } : undefined;
   const instruction = String([...history].reverse().find((h) => h.role === 'user')?.content ?? '');
   const toolCalls: AgentToolCall[] = [];
   const decisionTools: ledger.DecisionToolRef[] = []; // trace enrichie pour le Decision Ledger
@@ -829,7 +839,7 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
   let tokIn = 0, tokOut = 0; // cumul des tokens sur toutes les étapes du tour
   for (let step = 0; step < MAX_STEPS; step++) {
     const data = await callClaude({
-      model, max_tokens: 2048, system, tools, messages,
+      model, max_tokens: 2048, system, tools, messages, ...(thinking ? { thinking } : {}),
     });
     const u = data.usage ?? {};
     tokIn += (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
