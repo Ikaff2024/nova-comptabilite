@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Loader2, CheckCircle2, Save, ShieldCheck } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport, type Account } from '../lib/api';
+import { Plus, Trash2, Loader2, CheckCircle2, Save, ShieldCheck, Activity } from 'lucide-react';
+import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport, type Account, type SimulationResult } from '../lib/api';
 import AqmReportCard from './AqmReportCard';
 
 const CHANNELS = [
@@ -39,6 +39,7 @@ export default function EntryForm({
   const [ok, setOk] = useState(false);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [checking, setChecking] = useState(false);
+  const [sim, setSim] = useState<SimulationResult | null>(null);
   const [sections, setSections] = useState<AnalyticSection[]>([]);
   useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
   // Plan de comptes chargé une fois → suggestions par préfixe pendant la saisie.
@@ -79,6 +80,15 @@ export default function EntryForm({
   const draftLines = () => lines.filter((l) => l.accountCode.trim()).map((l) => ({
     accountCode: l.accountCode.trim(), debit: Number(l.debit) || undefined, credit: Number(l.credit) || undefined, label: l.label,
   }));
+
+  // Simulation d'impact « avant validation » — mise à jour (débounce) à la saisie.
+  useEffect(() => {
+    const dl = lines.filter((l) => l.accountCode.trim()).map((l) => ({ accountCode: l.accountCode.trim(), debit: Number(l.debit) || undefined, credit: Number(l.credit) || undefined }));
+    if (dl.length === 0 || (totalDebit === 0 && totalCredit === 0)) { setSim(null); return; }
+    const t = setTimeout(() => { api.simulateEntry(dossierId, dl).then(setSim).catch(() => setSim(null)); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dossierId, lines]);
   const runCheck = async () => {
     setChecking(true); setError(null);
     try {
@@ -241,6 +251,18 @@ export default function EntryForm({
         </div>
       </div>
 
+      {sim && (sim.deltaResultat !== 0 || sim.deltaTva !== 0 || sim.deltaTresorerie !== 0) && (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300"><Activity className="h-3.5 w-3.5 text-sky-400" /> Impact si vous validez <span className="font-normal text-zinc-500">(simulation, rien n'est comptabilisé)</span></div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <ImpactTile label="Résultat" value={sim.deltaResultat} currency={currency} good="up" />
+            <ImpactTile label="TVA à payer" value={sim.deltaTva} currency={currency} good="down" />
+            <ImpactTile label="Trésorerie" value={sim.deltaTresorerie} currency={currency} good="up" />
+            <ImpactTile label="IS estimé" value={sim.deltaIsEstime} currency={currency} good="down" hint="indicatif 25 %" />
+          </div>
+        </div>
+      )}
+
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       {report && <AqmReportCard report={report} />}
@@ -257,6 +279,21 @@ export default function EntryForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// Tuile d'impact : couleur selon que la variation est favorable ou non.
+// good='up' → une hausse est favorable (résultat, trésorerie) ; good='down' →
+// une hausse est défavorable (TVA à payer, IS).
+function ImpactTile({ label, value, currency, good, hint }: { label: string; value: number; currency: string; good: 'up' | 'down'; hint?: string }) {
+  const favorable = value === 0 ? null : (good === 'up' ? value > 0 : value < 0);
+  const color = favorable === null ? 'text-zinc-300' : favorable ? 'text-emerald-400' : 'text-amber-400';
+  const sign = value > 0 ? '+' : '';
+  return (
+    <div className="rounded-lg border border-white/5 bg-zinc-900/40 px-3 py-2">
+      <div className="text-[11px] text-zinc-500">{label}{hint ? ` · ${hint}` : ''}</div>
+      <div className={`font-mono text-sm font-semibold ${color}`}>{sign}{fmtMoney(value, currency)}</div>
+    </div>
   );
 }
 

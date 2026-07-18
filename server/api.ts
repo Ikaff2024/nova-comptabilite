@@ -36,6 +36,7 @@ import * as alerts from './domain/alerts.js';
 import * as ratios from './domain/ratios.js';
 import * as controls from './domain/controls.js';
 import * as coherence from './domain/coherence.js';
+import * as simulate from './domain/simulate.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
@@ -705,6 +706,12 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => coherence.globalCoherence(c, req.params.id, fy)));
+  }));
+  // Simulation avant validation : impact d'un brouillon (résultat, TVA, tréso, IS).
+  app.post('/api/dossiers/:id/simulate-entry', h(async (req, res) => {
+    const userId = requireUser(req);
+    const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+    res.json(await withUser(userId, (c) => simulate.simulateEntry(c, req.params.id, lines)));
   }));
 
   // --- Écritures récurrentes / abonnements -----------------------------------
