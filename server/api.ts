@@ -121,7 +121,8 @@ export function createApi() {
         const { rows } = await pool.query(
           `select
              (select count(*) from information_schema.tables  where table_schema='public' and table_name='catalog_items')   > 0 as catalog_items,
-             (select count(*) from information_schema.tables  where table_schema='public' and table_name='period_closures') > 0 as period_closures`);
+             (select count(*) from information_schema.tables  where table_schema='public' and table_name='period_closures') > 0 as period_closures,
+             (select count(*) from information_schema.tables  where table_schema='public' and table_name='decision_ledger') > 0 as decision_ledger`);
         schema = rows[0] ?? {};
       } catch { /* diagnostic best-effort */ }
       res.json({ ok: true, db: true, ...base, schema });

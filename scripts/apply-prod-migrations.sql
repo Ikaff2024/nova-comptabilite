@@ -48,10 +48,35 @@ do $$ begin
     using (dossier_id in (select app_dossier_ids())) with check (dossier_id in (select app_dossier_ids()));
 exception when duplicate_object then null; end $$;
 
+-- 0056 — Decision Ledger (journal de preuves de Lexa : AQM / explicabilité) ----
+create table if not exists decision_ledger (
+  id           uuid primary key default gen_random_uuid(),
+  dossier_id   uuid not null references dossiers(id) on delete cascade,
+  user_id      uuid,
+  created_at   timestamptz not null default now(),
+  question     text,
+  mode         text,
+  model        text,
+  answer       text,
+  tools        jsonb not null default '[]'::jsonb,
+  validations  jsonb not null default '[]'::jsonb,
+  confidence   smallint,
+  tokens_in    integer,
+  tokens_out   integer
+);
+create index if not exists idx_decision_ledger_dossier on decision_ledger(dossier_id, created_at desc);
+alter table decision_ledger enable row level security;
+do $$ begin
+  create policy decision_ledger_rw on decision_ledger for all
+    using (dossier_id in (select app_dossier_ids())) with check (dossier_id in (select app_dossier_ids()));
+exception when duplicate_object then null; end $$;
+
 -- Marque ces migrations (et la 0052 neutralisée) comme appliquées -------------
 create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now());
 insert into _migrations(name) values
   ('20260715000052_secteur_activite.sql'),
   ('20260715000053_catalog_items.sql'),
-  ('20260715000054_period_closures.sql')
+  ('20260715000054_period_closures.sql'),
+  ('20260716000055_voice_xai.sql'),
+  ('20260718000056_decision_ledger.sql')
 on conflict do nothing;
