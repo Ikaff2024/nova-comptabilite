@@ -37,6 +37,7 @@ import * as controls from './domain/controls.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
+import * as activityreport from './domain/activityreport.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
@@ -1084,6 +1085,18 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatements(c, req.params.id, fy)));
+  }));
+
+  // Rapport d'activité mensuel de Lexa (PDF).
+  app.get('/api/dossiers/:id/activity-report', h(async (req, res) => {
+    const userId = requireUser(req);
+    const now = new Date();
+    const year = Number(req.query.year) || now.getUTCFullYear();
+    const month0 = req.query.month != null ? Math.max(0, Math.min(11, Number(req.query.month) - 1)) : now.getUTCMonth();
+    const out = await withUser(userId, (c) => activityreport.activityReportPdf(c, req.params.id, year, month0));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
   }));
 
   // Estimation de l'impôt sur les bénéfices (IS) & IMF — barème Côte d'Ivoire.

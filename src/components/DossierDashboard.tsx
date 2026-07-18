@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Loader2, RotateCcw, TrendingUp, Wallet, Landmark, ArrowDownRight, ArrowUpRight, Sparkles, AlertTriangle, Info, Receipt, Building2 } from 'lucide-react';
-import { api, fmtMoney, type DossierDashboard as DashData } from '../lib/api';
+import { Loader2, RotateCcw, TrendingUp, Wallet, Landmark, ArrowDownRight, ArrowUpRight, Sparkles, AlertTriangle, Info, Receipt, Building2, FileText } from 'lucide-react';
+import { api, fmtMoney, downloadAuthed, type DossierDashboard as DashData } from '../lib/api';
 import { cn } from '../lib/utils';
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -33,7 +33,10 @@ export default function DossierDashboard({ dossierId, currency, onNavigate }: { 
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-zinc-400">Synthèse{d.fiscalYear ? ` · ${d.fiscalYear.label}` : ''}</div>
-        <button onClick={load} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10"><RotateCcw className="h-4 w-4" /> Actualiser</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/activity-report`, 'rapport-activite.pdf')} title="Rapport d'activité du mois préparé par Lexa" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><FileText className="h-4 w-4" /> Rapport d'activité</button>
+          <button onClick={load} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10"><RotateCcw className="h-4 w-4" /> Actualiser</button>
+        </div>
       </div>
 
       {/* Alertes */}
