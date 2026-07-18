@@ -13,7 +13,7 @@ const PROVIDER_COLOR: Record<string, string> = {
 };
 const usd = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`;
 
-export default function ApiCosts() {
+export default function ApiCosts({ isCompany }: { isCompany?: boolean } = {}) {
   const [days, setDays] = useState(30);
   const [u, setU] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,7 +23,7 @@ export default function ApiCosts() {
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Gauge className="h-4 w-4 text-emerald-400" /> Coûts d'API par client <span className="text-xs text-zinc-500">(estimation USD)</span></div>
+        <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Gauge className="h-4 w-4 text-emerald-400" /> {isCompany ? "Coûts d'API" : "Coûts d'API par client"} <span className="text-xs text-zinc-500">(estimation USD)</span></div>
         <div className="flex gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
           {PERIODS.map((p) => (
             <button key={p.d} onClick={() => setDays(p.d)} className={cn('rounded-md px-3 py-1 text-xs', days === p.d ? 'bg-emerald-500 font-semibold text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>{p.l}</button>
@@ -72,7 +72,7 @@ export default function ApiCosts() {
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
-                <th className="px-4 py-3 font-medium">Client</th>
+                <th className="px-4 py-3 font-medium">{isCompany ? 'Société' : 'Client'}</th>
                 <th className="px-4 py-3 text-right font-medium">Lexa (IA)</th>
                 <th className="px-4 py-3 text-right font-medium">Voix</th>
                 <th className="px-4 py-3 text-right font-medium">Autres</th>

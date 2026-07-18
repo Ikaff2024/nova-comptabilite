@@ -25,7 +25,7 @@ export default function CabinetSettings({ cabinet, user, onUserRefresh, onRename
       <CabinetName cabinet={cabinet} onRenamed={onRenamed} isCompany={isCompany} />
       <ProfileName user={user} onUserRefresh={onUserRefresh} />
       <Members cabinet={cabinet} user={user} isCompany={isCompany} />
-      {isOwner && <ApiCosts />}
+      {isOwner && <ApiCosts isCompany={isCompany} />}
       {isOwner && <AccountTypeSwitch cabinet={cabinet} isCompany={!!isCompany} onChanged={onRenamed} />}
       <TwoFactor user={user} onUserRefresh={onUserRefresh} />
     </div>
