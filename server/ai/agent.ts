@@ -14,6 +14,7 @@ import * as controls from '../domain/controls.js';
 import * as coherence from '../domain/coherence.js';
 import * as simulate from '../domain/simulate.js';
 import * as findossier from '../domain/financingdossier.js';
+import * as guide from './guide.js';
 import * as aqm from '../domain/aqm.js';
 import * as budget from '../domain/budget.js';
 import * as budgetcopilot from '../domain/budgetcopilot.js';
@@ -242,6 +243,7 @@ RÈGLES ABSOLUES :
 8. IDENTITÉ FISCALE : tu connais la forme juridique, le régime fiscal, le NCC/IFU, le RCCM et la banque du dossier (voir contexte). Raisonne selon le régime (ex. n'évoque la TVA à collecter que si l'entreprise y est assujettie ; sous l'impôt synthétique, il n'y a pas de TVA), rappelle les obligations et échéances pertinentes, et cite ces références (NCC, RCCM…) quand c'est utile (déclarations, courriers officiels).
 9. REPORTING MENSUEL : pour un « point du mois » / « reporting », appuie-toi sur « analyse_mensuelle » (résultat vs M-1, cumul, ratios, principales charges) — c'est plus riche qu'une simple lecture. Commente en pilotage : ce qui bouge et pourquoi (postes de charges/produits qui varient), les ratios, la trésorerie, puis des recommandations concrètes. Si on te le demande, tu peux joindre le « rapport_mensuel » en PDF par email.
 10. CONTRÔLE QUALITÉ (AQM) : dès que tu PROPOSES ou que tu ÉVALUES une écriture ou une facture, appelle d'abord « valider_ecriture » / « valider_facture ». Tiens compte du verdict : ne propose jamais ce qui est FAIL (corrige d'abord), et signale explicitement les points de VIGILANCE (WARNING). Ton niveau de confiance (score) est affiché à l'utilisateur — c'est un gage de fiabilité, pas un aveu de doute.
+11. « COMMENT FAIRE DANS NOVA » : pour toute question sur l'UTILISATION du logiciel (où trouver un écran, quelle est la marche à suivre, à quoi sert un module), appelle « guide_nova » et réponds À PARTIR DU TEXTE RENVOYÉ, en citant la fiche (ex. « voir la fiche 28 · Achats »). N'INVENTE JAMAIS un chemin de menu, un bouton ou une option : si l'outil ne renvoie rien d'utile, dis simplement que tu ne trouves pas la marche à suivre dans le guide et propose la piste la plus proche. C'est la même exigence que pour les chiffres : aucune affirmation sans source. N'appelle pas cet outil pour une question de DONNÉES (« quel est mon résultat ») — là, ce sont les outils comptables.
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
 
@@ -296,6 +298,7 @@ const READ_TOOLS = [
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'ratios_financiers', description: 'Analyse financière : ratios de liquidité, autonomie/endettement, rentabilité et marges, + grandes masses (BFR, fonds de roulement, trésorerie nette). Pour un diagnostic financier ou du conseil sur la structure et la performance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controles_coherence', description: 'Contrôles de cohérence comptable (révision automatisée) : détecte les soldes anormaux au sens SYSCOHADA (fournisseur 401 débiteur, client 411 créditeur, caisse négative, comptes d\'attente 47 non soldés, TVA inversée…). Pour un contrôle qualité / une révision avant clôture.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'guide_nova', description: "Guide d'utilisation de Nova : renvoie la ou les fiches du guide correspondant à une question sur l'USAGE du logiciel (où trouver un écran, marche à suivre, rôle d'un module, signification d'un indicateur). Utilise-le AVANT de répondre à toute question « comment faire dans Nova », et cite la fiche. N'invente jamais un chemin de menu : si rien ne remonte, dis-le. Ne l'utilise PAS pour les questions de données comptables. Paramètre : question (la formulation de l'utilisateur).", input_schema: { type: 'object', properties: { question: { type: 'string', description: "La question de l'utilisateur, telle quelle" } }, required: ['question'] } },
   { name: 'dossier_financement', description: "Dossier de financement bancaire : où en est l'entreprise pour solliciter un crédit. Renvoie la porte de complétude (ce qui manque, avec les points BLOQUANTS), le besoin exprimé (montant, objet, durée) et la capacité de remboursement (CAF, mensualité et annuité estimées, couverture CAF/annuité). Sers-t'en pour COACHER : dis ce qu'il faut corriger AVANT d'aller voir la banque. Ne présente jamais le score interne comme une notation de crédit — Nova ne prête pas et ne garantit rien.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controle_global', description: "AQM 2.0 — Contrôle de cohérence INTER-MODULES : vérifie que la paie, les immobilisations et la comptabilité racontent la même histoire (masse salariale des bulletins vs compte 661, charges patronales vs 664, dotations aux amortissements dues non comptabilisées, cumul d'amortissements vs comptes 28). Chaque contrôle donne attendu / constaté / écart + niveau de risque. Pour « fais un contrôle global » / « est-ce que tout est cohérent » / avant une clôture ou une liasse.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'resultat_analytique', description: 'Résultat par section analytique (centres de coût / points de vente) : produits, charges, résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
@@ -524,6 +527,11 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'etats_financiers': return await acc.financialStatements(c, dossierId, fy);
     case 'ratios_financiers': return await ratios.financialRatios(c, dossierId, fy);
     case 'controles_coherence': return await controls.coherenceChecks(c, dossierId, fy);
+    case 'guide_nova': {
+      const hits = guide.searchGuide(String(input?.question ?? ''), 2);
+      return hits.length ? { fiches: hits }
+        : { fiches: [], note: "Aucune fiche du guide ne correspond. Ne devine pas de chemin de menu : dis que tu ne trouves pas la marche à suivre." };
+    }
     case 'controle_global': return await coherence.globalCoherence(c, dossierId, fy);
     case 'dossier_financement': {
       const brief = await findossier.getBrief(c, dossierId);
