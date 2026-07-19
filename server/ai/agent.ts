@@ -13,6 +13,7 @@ import * as ratios from '../domain/ratios.js';
 import * as controls from '../domain/controls.js';
 import * as coherence from '../domain/coherence.js';
 import * as simulate from '../domain/simulate.js';
+import * as findossier from '../domain/financingdossier.js';
 import * as aqm from '../domain/aqm.js';
 import * as budget from '../domain/budget.js';
 import * as budgetcopilot from '../domain/budgetcopilot.js';
@@ -295,6 +296,7 @@ const READ_TOOLS = [
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'ratios_financiers', description: 'Analyse financière : ratios de liquidité, autonomie/endettement, rentabilité et marges, + grandes masses (BFR, fonds de roulement, trésorerie nette). Pour un diagnostic financier ou du conseil sur la structure et la performance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controles_coherence', description: 'Contrôles de cohérence comptable (révision automatisée) : détecte les soldes anormaux au sens SYSCOHADA (fournisseur 401 débiteur, client 411 créditeur, caisse négative, comptes d\'attente 47 non soldés, TVA inversée…). Pour un contrôle qualité / une révision avant clôture.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'dossier_financement', description: "Dossier de financement bancaire : où en est l'entreprise pour solliciter un crédit. Renvoie la porte de complétude (ce qui manque, avec les points BLOQUANTS), le besoin exprimé (montant, objet, durée) et la capacité de remboursement (CAF, mensualité et annuité estimées, couverture CAF/annuité). Sers-t'en pour COACHER : dis ce qu'il faut corriger AVANT d'aller voir la banque. Ne présente jamais le score interne comme une notation de crédit — Nova ne prête pas et ne garantit rien.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controle_global', description: "AQM 2.0 — Contrôle de cohérence INTER-MODULES : vérifie que la paie, les immobilisations et la comptabilité racontent la même histoire (masse salariale des bulletins vs compte 661, charges patronales vs 664, dotations aux amortissements dues non comptabilisées, cumul d'amortissements vs comptes 28). Chaque contrôle donne attendu / constaté / écart + niveau de risque. Pour « fais un contrôle global » / « est-ce que tout est cohérent » / avant une clôture ou une liasse.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'resultat_analytique', description: 'Résultat par section analytique (centres de coût / points de vente) : produits, charges, résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'detail_analytique', description: 'Détail des charges/produits d\'une section analytique donnée (par son code).', input_schema: { type: 'object', properties: { section: { type: 'string', description: 'Code de la section analytique, ex. COCODY' } }, required: ['section'] } },
@@ -523,6 +525,14 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'ratios_financiers': return await ratios.financialRatios(c, dossierId, fy);
     case 'controles_coherence': return await controls.coherenceChecks(c, dossierId, fy);
     case 'controle_global': return await coherence.globalCoherence(c, dossierId, fy);
+    case 'dossier_financement': {
+      const brief = await findossier.getBrief(c, dossierId);
+      const [rd, cap] = await Promise.all([
+        findossier.readiness(c, dossierId, fy),
+        findossier.repaymentCapacity(c, dossierId, fy, brief),
+      ]);
+      return { besoin: brief, completude: rd, capacite_remboursement: cap };
+    }
     case 'resultat_analytique': return await analytic.analyticReport(c, dossierId, fy);
     case 'detail_analytique': return await analytic.analyticDetail(c, dossierId, String(input?.section ?? ''), fy);
     case 'creances_clients': return await relances.overdueClients(c, dossierId);

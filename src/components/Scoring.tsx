@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Gauge, TrendingUp, Banknote, CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, Send, Check, X, HandCoins } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type CreditScore, type FinancingRequest } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, type FiscalYear, type CreditScore, type FinancingRequest, type FinancingBrief, type FinancingReadiness } from '../lib/api';
 import { cn } from '../lib/utils';
 
 const RATING_COLOR: Record<string, string> = { A: '#34d399', B: '#a3e635', C: '#fbbf24', D: '#fb7185' };
@@ -91,7 +91,114 @@ export default function Scoring({ dossierId, currency, fiscalYears }: { dossierI
         <Metric label="Créances > 90 j" value={m(data.metrics.overdue90)} tone={data.metrics.overdue90 > 0 ? 'warn' : undefined} />
       </div>
       <p className="flex items-center gap-1.5 text-xs text-zinc-500"><TrendingUp className="h-3.5 w-3.5" /> Score indicatif calculé à partir de la comptabilité (rentabilité, autonomie, trésorerie, recouvrement, croissance). Non contractuel.</p>
+
+      <BankDossierPanel dossierId={dossierId} fy={fy} currency={currency} />
     </div>
+  );
+}
+
+// Dossier de financement bancaire : le besoin, la porte de complétude et le
+// pack PDF. Nova ne prête pas — le dirigeant dépose lui-même son dossier.
+function BankDossierPanel({ dossierId, fy, currency }: { dossierId: string; fy: string; currency: string }) {
+  const [brief, setBrief] = useState<FinancingBrief>({});
+  const [rd, setRd] = useState<FinancingReadiness | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const m = (n: number) => fmtMoney(n, currency);
+
+  const loadAll = async () => {
+    try {
+      const [b, r] = await Promise.all([api.financingBrief(dossierId), api.financingReadiness(dossierId, fy || undefined)]);
+      setBrief(b ?? {}); setRd(r);
+    } catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  };
+  useEffect(() => { setLoading(true); loadAll(); }, [dossierId, fy]);
+
+  const set = (p: Partial<FinancingBrief>) => { setBrief((b) => ({ ...b, ...p })); setSaved(false); };
+
+  const save = async () => {
+    setBusy('save'); setError(null);
+    try { await api.saveFinancingBrief(dossierId, brief); setSaved(true); setRd(await api.financingReadiness(dossierId, fy || undefined)); }
+    catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+  const download = async () => {
+    setBusy('pdf'); setError(null);
+    try { await downloadAuthed(`/api/dossiers/${dossierId}/financing-dossier${fy ? `?fiscalYearId=${fy}` : ''}`, 'dossier-financement.pdf'); }
+    catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
+  const input = 'w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50';
+  const cap = rd?.capacite;
+
+  return (
+    <section className="space-y-4 rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div>
+        <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><HandCoins className="h-4 w-4 text-emerald-400" /> Dossier de financement bancaire</div>
+        <p className="mt-1 text-xs text-zinc-500">Nova assemble, à partir de votre comptabilité, un dossier de présentation que <strong>vous</strong> déposez auprès de votre banque. Ce n'est ni une notation de crédit, ni un engagement de prêt.</p>
+      </div>
+
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : (<>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div><label className="mb-1 block text-xs text-zinc-500">Montant sollicité</label>
+            <input type="number" min="0" value={brief.montant ?? ''} onChange={(e) => set({ montant: e.target.value === '' ? undefined : Number(e.target.value) })} className={input} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Durée (mois)</label>
+            <input type="number" min="1" value={brief.dureeMois ?? ''} onChange={(e) => set({ dureeMois: e.target.value === '' ? undefined : Number(e.target.value) })} className={input} /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Taux annuel (%) <span className="text-zinc-600">hypothèse</span></label>
+            <input type="number" min="0" step="0.1" value={brief.tauxAnnuel ?? ''} onChange={(e) => set({ tauxAnnuel: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="10" className={input} /></div>
+          <div className="sm:col-span-2 lg:col-span-3"><label className="mb-1 block text-xs text-zinc-500">Objet du financement</label>
+            <input value={brief.objet ?? ''} onChange={(e) => set({ objet: e.target.value })} placeholder="Ex : acquisition d'un véhicule utilitaire pour la livraison" className={input} /></div>
+          <div className="sm:col-span-2 lg:col-span-3"><label className="mb-1 block text-xs text-zinc-500">Garanties proposées</label>
+            <input value={brief.garanties ?? ''} onChange={(e) => set({ garanties: e.target.value })} placeholder="Ex : nantissement du matériel, caution du dirigeant" className={input} /></div>
+          <div className="sm:col-span-2 lg:col-span-3"><label className="mb-1 block text-xs text-zinc-500">Engagements bancaires en cours</label>
+            <input value={brief.engagements ?? ''} onChange={(e) => set({ engagements: e.target.value })} placeholder="Ex : découvert 2 000 000 XOF, crédit en cours 5 000 000" className={input} /></div>
+        </div>
+
+        {cap && cap.montant > 0 && (
+          <div className="grid gap-2 sm:grid-cols-4">
+            <Metric label="CAF (autofinancement)" value={m(cap.caf)} />
+            <Metric label="Mensualité estimée" value={m(cap.mensualite)} />
+            <Metric label="Annuité estimée" value={m(cap.annuite)} />
+            <Metric label="Couverture CAF / annuité" value={cap.couverture != null ? `${cap.couverture.toFixed(2)} ×` : '—'} tone={cap.couverture != null && cap.couverture < 1 ? 'warn' : undefined} />
+          </div>
+        )}
+
+        {rd && (
+          <div className="overflow-hidden rounded-xl border border-white/10">
+            <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-2.5">
+              <span className="text-sm text-zinc-300">Complétude du dossier</span>
+              <span className={cn('font-mono text-sm font-semibold', rd.pret ? 'text-emerald-400' : 'text-amber-400')}>{rd.pourcentage} %</span>
+            </div>
+            <div className="divide-y divide-white/5">
+              {rd.items.map((it) => (
+                <div key={it.key} className="flex items-start gap-2.5 px-4 py-2.5">
+                  {it.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                    : <XCircle className={cn('mt-0.5 h-4 w-4 shrink-0', it.blocking ? 'text-rose-400' : 'text-amber-400')} />}
+                  <div>
+                    <div className="text-sm text-zinc-200">{it.label}{!it.ok && it.blocking && <span className="ml-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-300">bloquant</span>}</div>
+                    <div className="text-xs text-zinc-500">{it.detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={save} disabled={busy === 'save'} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-white/10 disabled:opacity-50">
+            {busy === 'save' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Enregistrer le besoin
+          </button>
+          <button onClick={download} disabled={busy === 'pdf' || !rd?.pret} title={rd?.pret ? 'Produire le dossier complet' : 'Complétez les points bloquants'} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">
+            {busy === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Banknote className="h-4 w-4" />} Télécharger le dossier
+          </button>
+          {saved && <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> Enregistré</span>}
+        </div>
+        <p className="text-xs text-zinc-500">Le dossier contient : note de présentation, identité, besoin, capacité de remboursement, indicateurs clés, puis les états financiers, comparatifs N/N-1, tableau de flux de trésorerie et balance âgée.</p>
+      </>)}
+    </section>
   );
 }
 

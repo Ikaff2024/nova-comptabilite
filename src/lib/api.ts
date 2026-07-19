@@ -382,6 +382,10 @@ export interface PlatformOverview {
 }
 export interface CabinetMember { userId: string; email: string; name: string | null; role: string; createdAt: string; }
 export interface PendingInvitation { id: string; email: string; role: string; created_at: string; expires_at: string; expired: boolean; }
+export interface FinancingBrief { montant?: number; objet?: string; dureeMois?: number; tauxAnnuel?: number; garanties?: string; engagements?: string; banque?: string; }
+export interface FinancingReadinessItem { key: string; label: string; ok: boolean; blocking: boolean; detail: string; }
+export interface FinancingCapacity { resultat: number; dotations: number; caf: number; montant: number; dureeMois: number; tauxAnnuel: number; mensualite: number; annuite: number; couverture: number | null; }
+export interface FinancingReadiness { pourcentage: number; pret: boolean; bloquants: number; items: FinancingReadinessItem[]; capacite: FinancingCapacity; }
 export interface DossierProfile {
   raisonSociale: string; adresse: string | null; ville: string | null; telephone: string | null;
   taxId: string | null; rccm: string | null; numeroCnps: string | null;
@@ -426,6 +430,11 @@ export const api = {
   corruptedLabels: (dossierId: string) => req<{ account_code: string; label: string }[]>(`/api/dossiers/${dossierId}/corrupted-labels`),
   repairLabels: (dossierId: string, csv: string) =>
     req<{ repaired: { code: string; old: string; new: string }[] }>(`/api/dossiers/${dossierId}/repair-labels`, { method: 'POST', body: JSON.stringify({ csv }) }),
+  financingBrief: (dossierId: string) => req<FinancingBrief>(`/api/dossiers/${dossierId}/financing-dossier/brief`),
+  saveFinancingBrief: (dossierId: string, brief: FinancingBrief) =>
+    req<FinancingBrief>(`/api/dossiers/${dossierId}/financing-dossier/brief`, { method: 'PUT', body: JSON.stringify(brief) }),
+  financingReadiness: (dossierId: string, fiscalYearId?: string) =>
+    req<FinancingReadiness>(`/api/dossiers/${dossierId}/financing-dossier/readiness${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   dossierProfile: (dossierId: string) => req<DossierProfile>(`/api/dossiers/${dossierId}/profile`),
   updateDossierProfile: (dossierId: string, body: Partial<DossierProfile>) =>
     req<{ ok: boolean; raison_sociale: string; profile: DossierProfile }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify(body) }),

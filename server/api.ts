@@ -39,6 +39,7 @@ import * as coherence from './domain/coherence.js';
 import * as simulate from './domain/simulate.js';
 import * as invitations from './domain/invitations.js';
 import * as dossierprofile from './domain/dossierprofile.js';
+import * as findossier from './domain/financingdossier.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
@@ -381,6 +382,33 @@ export function createApi() {
   }));
 
   // Renommer un dossier (raison sociale). Réservé au staff (garde de rôle globale).
+  // --- Dossier de financement bancaire ---------------------------------------
+  // Nova ne prête pas : il produit un dossier que le dirigeant dépose lui-même.
+  app.get('/api/dossiers/:id/financing-dossier/brief', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => findossier.getBrief(c, req.params.id)));
+  }));
+  app.put('/api/dossiers/:id/financing-dossier/brief', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => findossier.saveBrief(c, req.params.id, req.body ?? {})));
+  }));
+  app.get('/api/dossiers/:id/financing-dossier/readiness', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, async (c) => ({
+      ...(await findossier.readiness(c, req.params.id, fy)),
+      capacite: await findossier.repaymentCapacity(c, req.params.id, fy, await findossier.getBrief(c, req.params.id)),
+    })));
+  }));
+  app.get('/api/dossiers/:id/financing-dossier', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const out = await withUser(userId, (c) => findossier.buildDossierPdf(c, req.params.id, fy));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
+
   // Fiche entreprise : identité légale/fiscale + coordonnées du dossier.
   app.get('/api/dossiers/:id/profile', h(async (req, res) => {
     const userId = requireUser(req);
