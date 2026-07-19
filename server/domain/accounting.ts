@@ -539,10 +539,59 @@ export async function reverseEntry(c: Client, entryId: string, date?: string): P
 export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ dossierId: string }> {
   const { id } = await openDossier(c, { cabinetId, raisonSociale: 'Dossier de démonstration', country: 'CI' });
   const { fiscalYears, journals } = await setupDossierDefaults(c, id);
+  // ⚠️ On capture l'exercice COURANT avant d'ajouter le N-1 : listFiscalYears
+  // trie par date, donc fiscalYears[0] deviendrait 2025 et les écritures 2026
+  // partiraient dans le mauvais exercice.
   const fy = fiscalYears[0].id;
   const J = (code: string) => journals.find((j: any) => j.code === code)!.id;
   const post = (jc: string, date: string, description: string, source: EntrySource, cp: string, lines: EntryLineInput[]) =>
     postEntry(c, { dossierId: id, fiscalYearId: fy, journalId: J(jc), entryDate: date, description, source, counterpartyName: cp, lines });
+
+  // Bloc OPTIONNEL du seed. En Postgres, une requête en erreur avorte TOUTE la
+  // transaction : un simple try/catch ne suffirait pas (tout ce qui suit
+  // échouerait). On isole donc chaque bloc par un SAVEPOINT.
+  let sp = 0;
+  const safe = async (fn: () => Promise<unknown>): Promise<boolean> => {
+    const name = `sp_seed_${++sp}`;
+    await c.query(`savepoint ${name}`);
+    try { await fn(); await c.query(`release savepoint ${name}`); return true; }
+    catch { await c.query(`rollback to savepoint ${name}`); return false; }
+  };
+
+  // --- Identité complète : alimente l'en-tête des bulletins, les attestations,
+  // les courriers, les déclarations et le dossier de financement.
+  const identiteOk = await safe(() => c.query(
+    `update dossiers set raison_sociale=$2, adresse=$3, ville=$4, telephone=$5, tax_id=$6, rccm=$7,
+            numero_cnps=$8, forme_juridique=$9, regime_fiscal=$10, bank_name=$11, rib=$12
+       where id=$1`,
+    [id, 'Éburnéa Distribution SARL', 'Rue du Commerce, Zone 4C', 'Abidjan', '+225 27 21 00 00 00',
+      'CI-2021-B-045178', 'CI-ABJ-2021-B-12345', '1234567', 'SARL', 'reel_simplifie',
+      "Ecobank Côte d'Ivoire", 'CI93 CI000 01234 5678901234 56']));
+  if (!identiteOk) await safe(() => c.query('update dossiers set raison_sociale=$2 where id=$1', [id, 'Éburnéa Distribution SARL']));
+
+  // --- Exercice N-1 : indispensable aux états comparatifs, au TFT et au
+  // dossier de financement (qui exige un historique).
+  // pg renvoie start_date en objet Date : passer par getFullYear(), jamais par
+  // String().slice() (qui donnerait « Thu »…).
+  const curYear = new Date(fiscalYears[0].start_date).getFullYear();
+  const prevYear = curYear - 1;
+  await createFiscalYear(c, id, `Exercice ${prevYear}`, `${prevYear}-01-01`, `${prevYear}-12-31`);
+  const allFys = await listFiscalYears(c, id);
+  const fyPrev = allFys.find((f: any) => new Date(f.start_date).getFullYear() === prevYear)!.id;
+  const postPrev = (jc: string, date: string, description: string, cp: string, lines: EntryLineInput[]) =>
+    postEntry(c, { dossierId: id, fiscalYearId: fyPrev, journalId: J(jc), entryDate: date, description, source: 'manual' as EntrySource, counterpartyName: cp, lines });
+
+  // Apport en capital : sans capitaux propres, le score financier et le dossier
+  // de financement sont mécaniquement au plancher.
+  await postPrev('BQ', `${prevYear}-01-02`, 'Constitution — apport en capital', 'Associés',
+    [{ accountCode: '521', debit: 5000000, paymentChannel: 'bank' }, { accountCode: '101', credit: 5000000 }]);
+  // Activité N-1 (base de comparaison pour l'évolution du CA).
+  for (const [mois, ca, achat] of [['03', 1600000, 900000], ['06', 1900000, 1050000], ['09', 1750000, 980000], ['11', 2100000, 1150000]] as [string, number, number][]) {
+    await postPrev('VE', `${prevYear}-${mois}-18`, 'Ventes du mois', 'Clients divers',
+      [{ accountCode: '521', debit: ca, paymentChannel: 'bank' }, { accountCode: '701', credit: ca, analyticAxis: 'COCODY' }]);
+    await postPrev('AC', `${prevYear}-${mois}-20`, 'Achats de marchandises', 'Grossiste Adjamé',
+      [{ accountCode: '601', debit: achat, analyticAxis: 'COCODY' }, { accountCode: '521', credit: achat, paymentChannel: 'bank' }]);
+  }
 
   // Sections analytiques de démo (deux points de vente) — pour illustrer les
   // restitutions par section et la vue mensuelle.
@@ -567,10 +616,23 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
     [{ accountCode: '628', debit: 29661, analyticAxis: 'YOPOUGON' }, { accountCode: '445', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
   await post('AC', '2026-07-10', 'Loyer boutique', 'manual', 'Bailleur Cocody',
     [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY' }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
-  await post('OD', '2026-07-28', 'Salaires du mois', 'manual', 'Personnel',
-    [{ accountCode: '661', debit: 150000 }, { accountCode: '521', credit: 150000, paymentChannel: 'bank' }]);
   await post('AC', '2026-07-30', 'Frais Mobile Money', 'mobile_money', 'Wave',
     [{ accountCode: '631', debit: 1200 }, { accountCode: '521', credit: 1200, paymentChannel: 'wave' }]);
+  // NB : pas d'écriture de salaire « à la main » ici — la paie est réellement
+  // comptabilisée plus bas (postPayroll), sinon le contrôle de cohérence
+  // AQM paie ↔ compta signalerait un écart dans le dossier de démonstration.
+
+  // Activité du début d'exercice : donne un chiffre d'affaires crédible, un
+  // résultat positif et une tendance lisible (score, budget, prévisionnel).
+  const y = String(curYear);
+  for (const [mois, ca, achat] of [['01', 1850000, 1020000], ['02', 1720000, 960000], ['03', 2050000, 1130000], ['04', 2240000, 1210000]] as [string, number, number][]) {
+    await post('VE', `${y}-${mois}-16`, 'Ventes du mois', 'ocr', 'Clients divers',
+      [{ accountCode: '521', debit: ca, paymentChannel: 'bank' }, { accountCode: '701', credit: ca, analyticAxis: mois === '02' || mois === '04' ? 'YOPOUGON' : 'COCODY' }]);
+    await post('AC', `${y}-${mois}-22`, 'Achats de marchandises', 'ocr', 'Grossiste Adjamé',
+      [{ accountCode: '601', debit: achat, analyticAxis: 'COCODY' }, { accountCode: '521', credit: achat, paymentChannel: 'bank' }]);
+    await post('AC', `${y}-${mois}-28`, 'Loyer des boutiques', 'manual', 'Bailleur Cocody',
+      [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY' }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
+  }
 
   // Cycle achats fournisseurs : factures de démo (statuts variés + balance âgée).
   const { seedDemoPurchases } = await import('./purchases.js');
@@ -594,7 +656,7 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   // Portail client : compte client de démonstration (idempotent) + accès à CE
   // dossier. Permet de se connecter côté « espace client ».
   //   Identifiants démo : client-demo@nova.ci / ClientDemo2026
-  try {
+  await safe(async () => {
     const clientEmail = 'client-demo@nova.ci';
     const { rows: ex } = await c.query('select id from get_user_for_login($1)', [clientEmail]);
     if (!ex[0]) {
@@ -602,17 +664,44 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
       await c.query('select register_user($1,$2,$3)', [clientEmail, hashPassword('ClientDemo2026'), 'Client Démo (Éburnéa)']);
     }
     await c.query('select dossier_client_grant($1,$2)', [id, clientEmail]);
-  } catch { /* seed du portail best-effort */ }
+  });
 
   // Paie de démo : 3 salariés + bulletins de juillet 2026 (non comptabilisés,
   // à valider dans l'onglet Paie) — illustre le module de bout en bout.
-  try {
-    const { createEmployee, runPayroll } = await import('./payroll.js');
-    await createEmployee(c, id, { matricule: 'S001', nom: 'Koné', prenoms: 'Awa', poste: 'Vendeuse', categorie: 'Employe', dateEmbauche: '2022-06-01', salaireBase: 180000, indemniteTransport: 30000 });
-    await createEmployee(c, id, { matricule: 'S002', nom: 'Traoré', prenoms: 'Bakary', poste: 'Chef de boutique', categorie: 'Agent de Maitrise', dateEmbauche: '2020-02-15', salaireBase: 350000, sursalaire: 50000, indemniteTransport: 40000 });
-    await createEmployee(c, id, { matricule: 'S003', nom: 'Diabaté', prenoms: 'Fatou', poste: 'Comptable', categorie: 'Cadre', dateEmbauche: '2019-09-01', salaireBase: 600000, sursalaire: 150000, indemniteTransport: 50000, indemniteLogement: 100000 });
-    await runPayroll(c, id, 2026, 6);
-  } catch { /* seed paie best-effort */ }
+  await safe(async () => {
+    const { createEmployee, runPayroll, postPayroll, createAbsence } = await import('./payroll.js');
+    const e1 = await createEmployee(c, id, { matricule: 'S001', nom: 'Koné', prenoms: 'Awa', poste: 'Vendeuse', categorie: 'Employe', dateEmbauche: '2022-06-01', salaireBase: 180000, indemniteTransport: 30000, email: 'awa.kone@example.ci', typeContrat: 'CDI' });
+    await createEmployee(c, id, { matricule: 'S002', nom: 'Traoré', prenoms: 'Bakary', poste: 'Chef de boutique', categorie: 'Agent de Maitrise', dateEmbauche: '2020-02-15', salaireBase: 350000, sursalaire: 50000, indemniteTransport: 40000, email: 'bakary.traore@example.ci', typeContrat: 'CDI' });
+    await createEmployee(c, id, { matricule: 'S003', nom: 'Diabaté', prenoms: 'Fatou', poste: 'Comptable', categorie: 'Cadre', dateEmbauche: '2019-09-01', salaireBase: 600000, sursalaire: 150000, indemniteTransport: 50000, indemniteLogement: 100000, email: 'fatou.diabate@example.ci', typeContrat: 'CDI' });
+    // Un CDD proche de son terme : illustre les ALERTES LÉGALES RH.
+    const finCdd = new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10);
+    await createEmployee(c, id, { matricule: 'S004', nom: 'Yao', prenoms: 'Serge', poste: 'Magasinier (saison)', categorie: 'Employe', dateEmbauche: `${y}-02-01`, salaireBase: 160000, indemniteTransport: 30000, typeContrat: 'CDD', dateFinContrat: finCdd });
+    // Absences : alimentent le taux d'absentéisme et la provision congés.
+    await createAbsence(c, id, { employeeId: e1.id, dateDebut: `${y}-07-06`, dateFin: `${y}-07-08`, jours: 3, justifiee: true, paye: true, motif: 'Congés payés' });
+    await createAbsence(c, id, { employeeId: e1.id, dateDebut: `${y}-07-20`, dateFin: `${y}-07-21`, jours: 2, justifiee: false, paye: false, motif: 'Absence non justifiée' });
+    await runPayroll(c, id, Number(y), 6);
+    // Comptabilisée pour de vrai : la démo doit être COHÉRENTE (contrôle AQM
+    // paie ↔ compta au vert) et alimenter les charges de personnel.
+    await postPayroll(c, id, Number(y), 6);
+  });
+
+  // Dotations aux amortissements dues : sans elles, le contrôle de cohérence
+  // inter-modules signalerait des dotations en retard sur la démo.
+  await safe(async () => {
+    const { postDepreciationDue } = await import('./assets.js');
+    await postDepreciationDue(c, id);
+  });
+
+  // Besoin de financement pré-rempli : le dossier bancaire est produisible
+  // immédiatement (sinon la porte de complétude le bloque).
+  await safe(() => c.query(
+    `update dossiers set financing_brief = $2::jsonb where id=$1`,
+    [id, JSON.stringify({
+      montant: 8000000, objet: "Acquisition d'un véhicule de livraison et renforcement du stock",
+      dureeMois: 36, tauxAnnuel: 10,
+      garanties: 'Nantissement du véhicule financé + caution solidaire du gérant',
+      engagements: 'Découvert autorisé de 1 500 000 XOF (Ecobank)',
+    })]));
 
   return { dossierId: id };
 }
