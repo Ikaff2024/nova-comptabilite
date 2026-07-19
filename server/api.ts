@@ -300,6 +300,19 @@ export function createApi() {
     res.status(201).json({ status: 'created', token: jwt, user: { id, email: info.email, name: name ?? null } });
   }));
 
+  // Périmètre d'un membre : tous les dossiers du cabinet, ou une sélection.
+  app.get('/api/cabinets/:cid/members/:uid/access', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => users.getMemberAccess(c, req.params.cid, req.params.uid)));
+  }));
+  app.put('/api/cabinets/:cid/members/:uid/access', h(async (req, res) => {
+    const userId = requireUser(req);
+    const restricted = !!req.body?.restricted;
+    const dossierIds = Array.isArray(req.body?.dossierIds) ? req.body.dossierIds.map(String) : [];
+    await withUser(userId, (c) => users.setMemberAccess(c, req.params.cid, req.params.uid, restricted, dossierIds));
+    res.status(204).end();
+  }));
+
   // --- Membres du cabinet (collaborateurs & rôles) ---------------------------
   app.get('/api/cabinets/:cid/members', h(async (req, res) => {
     const userId = requireUser(req);

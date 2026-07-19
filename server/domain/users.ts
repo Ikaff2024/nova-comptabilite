@@ -42,6 +42,21 @@ export async function addMember(c: Client, cabinetId: string, email: string, rol
     throw e;
   }
 }
+// --- Périmètre d'un membre : accès à tous les dossiers, ou à une sélection ---
+export async function getMemberAccess(c: Client, cabinetId: string, userId: string): Promise<{
+  restricted: boolean; dossiers: { id: string; raisonSociale: string; granted: boolean }[];
+}> {
+  const { rows } = await c.query('select * from cabinet_member_access_get($1,$2)', [cabinetId, userId]);
+  return {
+    restricted: !!rows[0]?.restricted,
+    dossiers: rows.map((r: any) => ({ id: r.dossier_id, raisonSociale: r.raison_sociale, granted: !!r.granted })),
+  };
+}
+
+export async function setMemberAccess(c: Client, cabinetId: string, userId: string, restricted: boolean, dossierIds: string[]): Promise<void> {
+  await c.query('select cabinet_member_access_set($1,$2,$3,$4::uuid[])', [cabinetId, userId, !!restricted, dossierIds ?? []]);
+}
+
 export async function setMemberRole(c: Client, cabinetId: string, userId: string, role: string): Promise<void> {
   await c.query('select cabinet_member_set_role($1,$2,$3)', [cabinetId, userId, role]);
 }

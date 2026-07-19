@@ -388,6 +388,7 @@ export interface PlatformOverview {
 }
 export interface CabinetMember { userId: string; email: string; name: string | null; role: string; createdAt: string; }
 export interface PendingInvitation { id: string; email: string; role: string; created_at: string; expires_at: string; expired: boolean; }
+export interface MemberAccess { restricted: boolean; dossiers: { id: string; raisonSociale: string; granted: boolean }[]; }
 export interface FinancingBrief { montant?: number; objet?: string; dureeMois?: number; tauxAnnuel?: number; garanties?: string; engagements?: string; banque?: string; }
 export interface FinancingReadinessItem { key: string; label: string; ok: boolean; blocking: boolean; detail: string; }
 export interface FinancingCapacity { resultat: number; dotations: number; caf: number; montant: number; dureeMois: number; tauxAnnuel: number; mensualite: number; annuite: number; couverture: number | null; }
@@ -414,6 +415,9 @@ export const api = {
   simulateEntry: (dossierId: string, lines: { accountCode: string; debit?: number; credit?: number }[]) => req<SimulationResult>(`/api/dossiers/${dossierId}/simulate-entry`, { method: 'POST', body: JSON.stringify({ lines }) }),
   renameCabinet: (cabinetId: string, name: string) => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   setCabinetType: (cabinetId: string, accountType: 'cabinet' | 'entreprise') => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ accountType }) }),
+  memberAccess: (cabinetId: string, userId: string) => req<MemberAccess>(`/api/cabinets/${cabinetId}/members/${userId}/access`),
+  setMemberAccess: (cabinetId: string, userId: string, restricted: boolean, dossierIds: string[]) =>
+    req<void>(`/api/cabinets/${cabinetId}/members/${userId}/access`, { method: 'PUT', body: JSON.stringify({ restricted, dossierIds }) }),
   inviteMember: (cabinetId: string, email: string, role: string) =>
     req<{ status: 'added' | 'invited'; email: string; role: string }>(`/api/cabinets/${cabinetId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) }),
   invitations: (cabinetId: string) => req<PendingInvitation[]>(`/api/cabinets/${cabinetId}/invitations`),

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Users, ShieldCheck, ShieldOff, Plus, Trash2, KeyRound, CheckCircle2, Building2, Pencil, UserRound, Send } from 'lucide-react';
-import { api, type Cabinet, type AuthUser, type CabinetMember, type PendingInvitation } from '../lib/api';
+import { api, type Cabinet, type AuthUser, type CabinetMember, type PendingInvitation, type MemberAccess } from '../lib/api';
 import { cn } from '../lib/utils';
 import ApiCosts from './ApiCosts';
 
@@ -28,6 +28,67 @@ export default function CabinetSettings({ cabinet, user, onUserRefresh, onRename
       {isOwner && <ApiCosts isCompany={isCompany} />}
       {isOwner && <AccountTypeSwitch cabinet={cabinet} isCompany={!!isCompany} onChanged={onRenamed} />}
       <TwoFactor user={user} onUserRefresh={onUserRefresh} />
+    </div>
+  );
+}
+
+// Périmètre d'un collaborateur : tous les dossiers du cabinet (défaut) ou une
+// sélection. Un propriétaire conserve toujours l'accès complet.
+function MemberScope({ cabinetId, userId, onClose }: { cabinetId: string; userId: string; onClose: () => void }) {
+  const [data, setData] = useState<MemberAccess | null>(null);
+  const [restricted, setRestricted] = useState(false);
+  const [granted, setGranted] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let on = true;
+    api.memberAccess(cabinetId, userId).then((d) => {
+      if (!on) return;
+      setData(d); setRestricted(d.restricted);
+      setGranted(new Set(d.dossiers.filter((x) => x.granted).map((x) => x.id)));
+    }).catch((e) => { if (on) setError(e.message); });
+    return () => { on = false; };
+  }, [cabinetId, userId]);
+
+  const toggle = (id: string) => { setGranted((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }); setSaved(false); };
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    try { await api.setMemberAccess(cabinetId, userId, restricted, [...granted]); setSaved(true); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  if (!data) return <div className="flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement du périmètre…</div>;
+
+  return (
+    <div className="space-y-3">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-200">
+        <input type="checkbox" checked={restricted} onChange={(e) => { setRestricted(e.target.checked); setSaved(false); }} className="h-4 w-4 accent-emerald-500" />
+        Limiter l'accès à une sélection de dossiers
+      </label>
+      <p className="text-xs text-zinc-500">{restricted ? 'Cette personne ne verra que les dossiers cochés ci-dessous.' : 'Cette personne accède à tous les dossiers du cabinet (présents et à venir).'}</p>
+
+      {restricted && (
+        <div className="max-h-56 space-y-1 overflow-auto rounded-lg border border-white/10 bg-zinc-900/40 p-2">
+          {data.dossiers.length === 0 ? <p className="p-2 text-xs text-zinc-500">Aucun dossier dans ce cabinet.</p> : data.dossiers.map((d) => (
+            <label key={d.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-zinc-300 hover:bg-white/5">
+              <input type="checkbox" checked={granted.has(d.id)} onChange={() => toggle(d.id)} className="h-4 w-4 accent-emerald-500" />
+              {d.raisonSociale}
+            </label>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={busy} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer le périmètre
+        </button>
+        <button onClick={onClose} className="text-sm text-zinc-400 hover:text-zinc-200">Fermer</button>
+        {saved && <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> Périmètre enregistré</span>}
+      </div>
     </div>
   );
 }
@@ -149,6 +210,7 @@ function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUse
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingInvitation[]>([]);
+  const [scopeFor, setScopeFor] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -242,14 +304,27 @@ function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUse
                       ? <select value={m.role} onChange={(e) => changeRole(m.userId, e.target.value)} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1 text-xs outline-none">{ROLES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}</select>
                       : <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-zinc-300">{roleLabel(m.role)}</span>}
                   </td>
-                  <td className="px-4 py-2.5 text-right">{canManage && m.userId !== user.id && <button onClick={() => remove(m)} className="text-zinc-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-3">
+                      {canManage && m.userId !== user.id && m.role !== 'owner' && !isCompany && (
+                        <button onClick={() => setScopeFor(scopeFor === m.userId ? null : m.userId)} className="text-xs text-zinc-400 hover:text-emerald-400">Périmètre</button>
+                      )}
+                      {canManage && m.userId !== user.id && <button onClick={() => remove(m)} title="Retirer" className="text-zinc-500 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>}
+                    </div>
+                  </td>
                 </tr>
               ))}
+              {scopeFor && (
+                <tr><td colSpan={4} className="bg-zinc-900/40 px-4 py-3">
+                  <MemberScope cabinetId={cabinet.id} userId={scopeFor} onClose={() => setScopeFor(null)} />
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
       )}
       {!canManage && <p className="text-xs text-zinc-500">Seuls les propriétaires et associés peuvent gérer les collaborateurs.</p>}
+      {!isCompany && <p className="text-xs text-zinc-500">Par défaut, un collaborateur accède à <strong>tous les dossiers</strong> du cabinet. Utilisez « Périmètre » pour le limiter à une sélection.</p>}
     </section>
   );
 }
