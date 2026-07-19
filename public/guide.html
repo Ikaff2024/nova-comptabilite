@@ -87,6 +87,9 @@
     <a href="#mobilemoney">3 · Mobile Money</a>
     <a href="#facturation">4 · Facturation &amp; FNE</a>
     <a href="#saisie">5 · Saisie manuelle</a>
+    <a href="#achats">28 · Achats (fournisseurs)</a>
+    <a href="#catalogue">29 · Catalogue articles</a>
+    <a href="#recurrences">30 · Récurrences &amp; abonnements</a>
     <a class="pillar">Consulter</a>
     <a href="#balance">6 · Balance 6/8 colonnes</a>
     <a href="#grandlivre">7 · Grand livre</a>
@@ -118,6 +121,9 @@
     <a class="pillar">Pilotage</a>
     <a href="#scoring">26 · Score &amp; financement</a>
     <a href="#financement">27 · Dossier de financement bancaire</a>
+    <a href="#previsionnel">31 · Prévisionnel de trésorerie</a>
+    <a href="#budget">32 · Budget &amp; prévision</a>
+    <a href="#analytique">33 · Comptabilité analytique</a>
   </nav>
 
   <!-- ===================== CONTENU ===================== -->
@@ -142,7 +148,8 @@
     </div>
     <div class="pillars">
       <div class="pillar-row"><b>📸 Saisir — faire entrer les opérations sans ressaisie</b>
-        <ol><li>Capture IA (photo de facture/reçu)</li><li>Mobile Money (relevé Wave/Orange/MTN)</li><li>Facturation &amp; FNE</li><li>Saisie manuelle</li></ol></div>
+        <ol><li>Capture IA (photo de facture/reçu)</li><li>Mobile Money (relevé Wave/Orange/MTN)</li><li>Facturation &amp; FNE</li><li>Saisie manuelle</li></ol>
+        <ol start="28"><li>Achats — factures fournisseurs (+ détection de doublons)</li><li>Catalogue d'articles &amp; services</li><li>Récurrences &amp; abonnements</li></ol></div>
       <div class="pillar-row"><b>📚 Consulter — vérifier la comptabilité</b>
         <ol start="6"><li>Balance à 6 ou 8 colonnes</li><li>Grand livre</li><li>Journaux &amp; clôture</li><li>Plan comptable</li></ol></div>
       <div class="pillar-row"><b>👥 Tiers &amp; trésorerie — suivre qui doit quoi &amp; le patrimoine</b>
@@ -160,7 +167,8 @@
       <div class="pillar-row"><b>🛡️ Qualité &amp; compte — fiabilité et mise en place</b>
         <ol start="21"><li>Fiabilité — AQM (contrôle qualité, cohérence inter-modules, simulation, traçabilité)</li><li>Révision &amp; justification des comptes</li><li>Mode entreprise vs cabinet</li><li>Collaborateurs &amp; profils d'accès (inviter, rôles, portail client)</li><li>Fiche entreprise (identité reprise sur tous les documents)</li></ol></div>
       <div class="pillar-row"><b>📈 Pilotage — lire la santé de l'entreprise</b>
-        <ol start="26"><li>Score &amp; financement (note /100 par axe, pré-éligibilité à une avance)</li><li>Dossier de financement bancaire (pack prêt à déposer, capacité de remboursement)</li></ol></div>
+        <ol start="26"><li>Score &amp; financement (note /100 par axe, pré-éligibilité à une avance)</li><li>Dossier de financement bancaire (pack prêt à déposer, capacité de remboursement)</li></ol>
+        <ol start="31"><li>Prévisionnel de trésorerie (point bas à anticiper)</li><li>Budget &amp; prévision de fin d'année</li><li>Comptabilité analytique (résultat par activité)</li></ol></div>
     </div>
 
     <!-- ============ 1 DÉMARRAGE ============ -->
@@ -839,6 +847,143 @@
 
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
         <div class="warn">« Dossier incomplet » au téléchargement : la liste indique précisément les points bloquants. Le plus fréquent sur un dossier récent : pas assez d'écritures, ou la fiche entreprise incomplète.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 28 ACHATS ============ -->
+    <section class="fiche" id="achats">
+      <h2>28 · Achats — factures fournisseurs <span class="tag">Saisir</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Enregistrer les <strong>factures de vos fournisseurs</strong>, les comptabiliser, puis suivre et solder leur <strong>règlement</strong> — sans passer par la saisie manuelle.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Achats</strong> → <strong>Nouvelle facture</strong> : fournisseur, date, n° de la facture <em>du fournisseur</em>, lignes (compte de charge ou d'immobilisation, montant HT, TVA).</li>
+          <li>Elle reste en <strong>brouillon</strong> tant que vous ne l'avez pas comptabilisée : vous pouvez la corriger librement.</li>
+          <li><strong>Comptabiliser</strong> : Nova génère l'écriture d'achat dans le journal <strong>AC</strong> — charge ou immobilisation au débit, <strong>TVA déductible (4452)</strong> au débit, <strong>fournisseur (401)</strong> au crédit.</li>
+          <li>À la réception du paiement : <strong>Régler</strong> → Nova passe 401 au débit / trésorerie au crédit et <strong>lettre automatiquement</strong> le compte fournisseur.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">🛡️</span>Détection des doublons</div>
+        Nova vous alerte avant que vous ne payiez deux fois la même facture. Deux signaux : <strong>doublon fort</strong> (même fournisseur <em>et</em> même numéro de facture) et <strong>doublon probable</strong> (même fournisseur, même montant TTC, à 4 jours près).</div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Une facture <strong>comptabilisée est verrouillée</strong> (elle est rattachée à une écriture immuable). Pour corriger, contre-passez l'écriture.</li>
+          <li>Le solde fournisseur se retrouve dans <a href="#tiers">Tiers</a> (balance âgée, lettrage) et dans l'<a href="#etats">échéancier</a>.</li>
+          <li>Vous pouvez aussi partir d'une photo de facture via la <a href="#capture">Capture IA</a>.</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 29 CATALOGUE ============ -->
+    <section class="fiche" id="catalogue">
+      <h2>29 · Catalogue d'articles &amp; services <span class="tag">Saisir</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Enregistrer une fois pour toutes ce que vous vendez (désignation, <strong>prix HT</strong>, <strong>taux de TVA</strong>, <strong>compte de produit</strong>) pour <strong>pré-remplir les lignes de facture</strong> : saisie plus rapide et, surtout, <strong>imputation toujours cohérente</strong>.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Catalogue</strong> → ajoutez un article : nature (<strong>bien</strong> ou <strong>service</strong>), référence, désignation, unité, prix HT, TVA.</li>
+          <li>Si vous ne précisez pas de compte, Nova applique le compte de produit par défaut : <strong>701</strong> pour une vente de marchandises, <strong>706</strong> pour une prestation de services.</li>
+          <li>Dans <a href="#facturation">Facturation</a>, choisissez l'article : la ligne se remplit seule.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Le catalogue est un <strong>référentiel</strong> : il ne génère <strong>aucune écriture</strong> comptable par lui-même.</li>
+          <li>Désactivez un article plutôt que de le supprimer : l'historique des factures reste intact.</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 30 RÉCURRENCES & ABONNEMENTS ============ -->
+    <section class="fiche" id="recurrences">
+      <h2>30 · Récurrences &amp; abonnements <span class="tag">Saisir</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Automatiser ce qui revient chaque mois. <strong>Deux mécanismes distincts</strong>, à ne pas confondre :</div>
+      <div class="block"><div class="label"><span class="ic">🔁</span>Écritures récurrentes (onglet Récurrences)</div>
+        Pour vos charges régulières (loyer, abonnement internet, assurance…). Vous décrivez <strong>une fois</strong> l'écriture type et sa périodicité ; à la demande, Nova <strong>comptabilise les échéances dues</strong> — sans jamais créer de doublon si vous relancez la génération.</div>
+      <div class="block"><div class="label"><span class="ic">🧾</span>Factures de vente récurrentes (onglet Abonnements)</div>
+        Pour vos clients sous abonnement. À chaque échéance, Nova crée une <strong>facture BROUILLON</strong> — elle n'est <strong>pas émise automatiquement</strong> : vous la vérifiez et l'émettez depuis <a href="#facturation">Facturation</a>. C'est volontaire : une facture émise engage l'entreprise.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Créez un <strong>modèle</strong> : libellé, périodicité, date de début (et de fin si connue), puis les lignes (écriture type) ou le client et les lignes facturées.</li>
+          <li>Laissez-le <strong>actif</strong> tant qu'il doit tourner ; désactivez-le pour l'interrompre sans le supprimer.</li>
+          <li>Cliquez <strong>Générer les échéances dues</strong> — ou demandez-le à Lexa (« génère les récurrences dues »).</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>La <a href="#demarrage">Synthèse</a> vous signale les échéances en attente : rien ne se perd si vous oubliez de générer.</li>
+          <li>Un modèle mal paramétré ? Désactivez-le : les écritures déjà comptabilisées restent (contre-passez-les si besoin).</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 31 PRÉVISIONNEL DE TRÉSORERIE ============ -->
+    <section class="fiche" id="previsionnel">
+      <h2>31 · Prévisionnel de trésorerie <span class="tag">Pilotage</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Savoir <strong>où va votre trésorerie</strong> dans les prochaines semaines — et surtout <strong>quand elle passera par son point bas</strong>. C'est l'outil qui permet d'anticiper au lieu de subir.</div>
+      <div class="block"><div class="label"><span class="ic">🔢</span>Sur quoi c'est calculé</div>
+        Nova part de votre <strong>position actuelle</strong> (comptes de trésorerie, classe 5) puis ajoute, semaine par semaine :
+        <ul class="tips">
+          <li>les <strong>créances clients non lettrées</strong>, attendues à leur échéance (encaissements) ;</li>
+          <li>les <strong>dettes fournisseurs non lettrées</strong>, à leur échéance (décaissements) ;</li>
+          <li>les <strong>écritures récurrentes</strong> à venir (loyer, abonnements…).</li>
+        </ul>
+        L'<strong>horizon</strong> est réglable (13 semaines par défaut, de 4 à 52). Un <strong>délai d'encaissement</strong> est appliqué aux créances sans échéance précise (30 jours par défaut) — ajustez-le à la réalité de vos clients.</div>
+      <div class="block"><div class="label"><span class="ic">👀</span>Comment le lire</div>
+        Regardez d'abord le <strong>point bas</strong> (solde minimum et la semaine où il tombe) : c'est là que se joue le risque. Si le solde projeté devient négatif, vous connaissez la date — donc le temps qu'il vous reste pour agir (relancer un client, décaler un paiement, mobiliser un financement).</div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>C'est une <strong>lecture pure</strong> : le prévisionnel n'écrit jamais d'écriture.</li>
+          <li>Sa fiabilité dépend de vos <strong>échéances</strong> : renseignez-les sur les factures, et lettrez régulièrement (une créance déjà encaissée mais non lettrée fausse la prévision).</li>
+          <li>Demandez à Lexa « quand vais-je manquer de trésorerie ? » — elle commente le point bas et propose des leviers.</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 32 BUDGET ============ -->
+    <section class="fiche" id="budget">
+      <h2>32 · Budget &amp; prévision de fin d'année <span class="tag">Pilotage</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Fixer un <strong>budget par compte</strong> pour l'exercice, puis suivre en continu l'écart avec le <strong>réalisé</strong> — et savoir, dès le milieu de l'année, <strong>où vous atterrirez</strong> si rien ne change.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Budget</strong> : choisissez l'exercice, puis saisissez un montant budgété par compte (charges classe 6, produits classe 7).</li>
+          <li>Plus rapide : <strong>importez un CSV</strong> au format <code>Compte ; Libellé ; Montant</code>. Nova vous indique les lignes rejetées et pourquoi.</li>
+          <li>Le tableau affiche pour chaque compte : <strong>budget</strong>, <strong>réalisé</strong>, <strong>écart</strong> et <strong>taux de réalisation</strong>.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">📈</span>Lire la prévision glissante</div>
+        Nova projette la <strong>fin d'année</strong> en extrapolant votre rythme actuel (réalisé ÷ fraction d'année écoulée). Deux écarts sont donnés, à ne pas confondre :
+        <ul class="tips">
+          <li><strong>Écart de rythme</strong> — réalisé comparé au budget <em>au prorata du temps écoulé</em>. Répond à : « suis-je en avance ou en retard <em>à ce jour</em> ? »</li>
+          <li><strong>Écart projeté</strong> — atterrissage estimé comparé au budget <em>annuel</em>. Répond à : « si je continue ainsi, vais-je dépasser ? »</li>
+        </ul>
+        Une charge en avance de rythme dès le premier trimestre est le signal le plus utile : c'est encore rattrapable.</div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Budgétez d'abord vos <strong>10 plus gros postes</strong> : ils portent l'essentiel de l'écart.</li>
+          <li>L'extrapolation suppose une activité régulière — interprétez-la avec prudence si votre activité est <strong>saisonnière</strong>.</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 33 ANALYTIQUE ============ -->
+    <section class="fiche" id="analytique">
+      <h2>33 · Comptabilité analytique <span class="tag">Pilotage</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Savoir <strong>ce que gagne ou coûte chaque activité</strong> : un chantier, une boutique, un véhicule, un projet, une agence. La comptabilité générale dit « combien » ; l'analytique dit « <strong>pour quoi</strong> ».</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Analytique</strong> → créez vos <strong>sections</strong> (un code + un libellé), par exemple <code>CH01</code> « Chantier Cocody », <code>BQ02</code> « Boutique Yopougon ».</li>
+          <li>À la saisie d'une écriture, affectez la <strong>section analytique</strong> sur les lignes de charges et de produits concernées.</li>
+          <li>Consultez le <strong>résultat analytique</strong> : charges et produits par section, et donc le résultat de chacune.</li>
+          <li>Cliquez une section pour ouvrir son <strong>grand livre analytique</strong> : le détail ligne à ligne, avec sous-totaux par compte.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">👀</span>Le « non ventilé »</div>
+        Les lignes sans section apparaissent en <strong>non ventilé</strong>. C'est un indicateur de qualité à part entière : plus ce bloc est gros, moins vos résultats par activité sont fiables. Visez à le réduire progressivement.</div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Restez <strong>simple</strong> : quelques sections utiles valent mieux qu'un plan analytique détaillé que personne ne remplit.</li>
+          <li>Seules les classes <strong>6 (charges)</strong> et <strong>7 (produits)</strong> sont ventilées — c'est la logique d'un résultat par activité.</li>
+        </ul></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
