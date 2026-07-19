@@ -14,6 +14,17 @@ const REGIMES: [string, string][] = [
   ['synthetique', 'Impôt synthétique'],
 ];
 
+const input = 'w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50';
+
+// ⚠️ Défini AU NIVEAU MODULE, jamais dans le corps du composant : sinon React
+// voit un nouveau type de composant à chaque rendu, démonte/remonte le champ,
+// et l'input perd le focus à chaque caractère saisi.
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div><label className="mb-1 block text-xs text-zinc-500">{label}{hint && <span className="text-zinc-600"> · {hint}</span>}</label>{children}</div>
+  );
+}
+
 export default function FicheEntreprise({ dossierId, onRenamed }: { dossierId: string; onRenamed?: (name: string) => void }) {
   const [p, setP] = useState<DossierProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,11 +60,6 @@ export default function FicheEntreprise({ dossierId, onRenamed }: { dossierId: s
 
   if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement de la fiche…</div>;
   if (!p) return <p className="text-sm text-rose-400">{error ?? 'Fiche indisponible.'}</p>;
-
-  const input = 'w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50';
-  const Field = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => (
-    <div><label className="mb-1 block text-xs text-zinc-500">{label}{hint && <span className="text-zinc-600"> · {hint}</span>}</label>{children}</div>
-  );
 
   return (
     <div className="space-y-5">

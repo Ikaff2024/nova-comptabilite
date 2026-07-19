@@ -25,6 +25,12 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     // 401 sans challenge 2FA = session invalide -> on nettoie le jeton.
     if (res.status === 401 && body.code !== '2FA_REQUIRED' && body.code !== '2FA_INVALID') clearToken();
+    // 502/503/504 : le serveur redémarre (mise à jour) ou est momentanément
+    // injoignable. Ce n'est pas une erreur de saisie : on le dit clairement,
+    // car la réponse du proxy n'est pas du JSON exploitable.
+    if (res.status >= 502 && res.status <= 504) {
+      throw new ApiError("Le serveur est momentanément indisponible (mise à jour en cours). Patientez quelques secondes et réessayez — rien n'a été perdu.", res.status, 'SERVER_UNAVAILABLE');
+    }
     throw new ApiError(body.error ?? `Erreur ${res.status}`, res.status, body.code);
   }
   if (res.status === 204) return undefined as T;
