@@ -107,8 +107,12 @@
     <a href="#audit">17 · Piste d'audit</a>
     <a class="pillar">Assistant &amp; canaux</a>
     <a href="#lexa">18 · Lexa, votre comptable IA</a>
-    <a href="#paie">19 · Paie</a>
+    <a href="#paie">19 · Paie &amp; RH</a>
     <a href="#canaux">20 · WhatsApp &amp; Telegram</a>
+    <a class="pillar">Qualité &amp; compte</a>
+    <a href="#fiabilite">21 · Fiabilité — AQM</a>
+    <a href="#revision">22 · Révision des comptes</a>
+    <a href="#compte">23 · Mode entreprise vs cabinet</a>
   </nav>
 
   <!-- ===================== CONTENU ===================== -->
@@ -147,28 +151,30 @@
       <div class="pillar-row"><b>🔒 Sécurité — traçabilité &amp; confiance</b>
         <ol start="17"><li>Piste d'audit (journal inaltérable des actions)</li></ol></div>
       <div class="pillar-row"><b>🤖 Assistant &amp; canaux — Lexa, votre comptable IA</b>
-        <ol start="18"><li>Lexa (dialogue, voix, niveaux de pouvoir)</li><li>Paie (bulletins &amp; comptabilisation)</li><li>WhatsApp &amp; Telegram (parler à Lexa hors de l'app)</li></ol></div>
+        <ol start="18"><li>Lexa (dialogue, voix, niveaux de pouvoir)</li><li>Paie &amp; RH (bulletins, analyse RH, attestations, comptabilisation)</li><li>WhatsApp &amp; Telegram (parler à Lexa hors de l'app)</li></ol></div>
+      <div class="pillar-row"><b>🛡️ Qualité &amp; compte — fiabilité et mise en place</b>
+        <ol start="21"><li>Fiabilité — AQM (contrôle qualité, cohérence inter-modules, simulation, traçabilité)</li><li>Révision &amp; justification des comptes</li><li>Mode entreprise vs cabinet</li></ol></div>
     </div>
 
     <!-- ============ 1 DÉMARRAGE ============ -->
     <section class="fiche" id="demarrage">
       <h2>1 · Démarrage <span class="tag">Socle</span></h2>
       <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
-        Se connecter, créer votre cabinet et votre premier dossier (une entreprise), puis préparer la comptabilité pour commencer à saisir.</div>
+        Se connecter et créer votre espace, puis préparer la comptabilité pour commencer à saisir. À l'inscription, vous choisissez votre <strong>type de compte</strong> : <strong>Mon entreprise</strong> (vous gérez votre propre société) ou <strong>Cabinet comptable</strong> (vous suivez plusieurs clients).</div>
       <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
-        Tout le monde. Le premier compte créé devient l'administrateur du cabinet.</div>
+        Tout le monde. Le premier compte créé devient l'administrateur.</div>
       <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
         <ol class="steps">
           <li>Ouvrez Nova et <strong>créez un compte</strong> (nom, e-mail, mot de passe), ou connectez-vous.</li>
-          <li>À la première visite, renseignez le <strong>nom de votre cabinet</strong>.</li>
-          <li>Allez dans <strong>Portefeuille</strong> puis <strong>Nouveau dossier</strong> : saisissez la raison sociale, la devise (FCFA) et le système comptable.</li>
-          <li>Ouvrez le dossier et cliquez <strong>Initialiser</strong> : Nova crée l'exercice courant et les journaux standards (AC, VE, BQ, CA, OD).</li>
-          <li>Pas envie de partir de zéro pour tester ? Sur le <strong>Tableau de bord</strong>, lancez le <strong>dossier de démonstration</strong> (déjà rempli).</li>
+          <li>Choisissez <strong>Mon entreprise</strong> ou <strong>Cabinet comptable</strong> (voir la fiche <a href="#compte">Mode entreprise vs cabinet</a>).</li>
+          <li><strong>Entreprise</strong> : renseignez le nom de la société (+ NCC/RCCM en option) — votre comptabilité est créée et vous y arrivez directement. <strong>Cabinet</strong> : renseignez le nom du cabinet, puis créez vos dossiers dans <strong>Portefeuille → Nouveau dossier</strong>.</li>
+          <li>Chaque nouveau dossier crée automatiquement l'exercice courant et les journaux standards (AC, VE, BQ, CA, OD) avec le plan SYSCOHADA.</li>
+          <li>Pas envie de partir de zéro pour tester ? Sur le <strong>Tableau de bord</strong> (comptes cabinet), lancez le <strong>dossier de démonstration</strong> (déjà rempli).</li>
         </ol></div>
       <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
         <ul class="tips">
           <li>Le bouton <strong>Guide de prise en main</strong> (en bas à gauche) rejoue le mini-tour à tout moment.</li>
-          <li>Un dossier = une entreprise. Un cabinet peut gérer autant de dossiers que nécessaire.</li>
+          <li>Un dossier = une entreprise. Un cabinet peut gérer autant de dossiers que nécessaire ; un compte entreprise n'en gère qu'un (le sien).</li>
           <li>À l'ouverture d'un dossier, l'onglet <strong>Synthèse</strong> affiche le tableau de bord de l'entreprise : résultat, trésorerie, TVA du mois, top clients/fournisseurs, tendance sur 12 mois et <strong>alertes cliquables</strong> (brouillons à valider, TVA à déclarer, dotations en attente…).</li>
         </ul></div>
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
@@ -560,33 +566,48 @@
           <li>Lexa <strong>apprend</strong> vos habitudes par entreprise (préférences, tiers récurrents, corrections) et <strong>se souvient</strong> des échanges passés — cliquez l'icône <strong>cerveau</strong> pour voir/gérer sa mémoire.</li>
           <li>Elle est <strong>proactive</strong> : dites-lui simplement « bonjour » et elle propose un point du jour (brouillons à valider, TVA, créances en souffrance…).</li>
           <li>Même en <strong>Assisté</strong>, rien n'est comptabilisé sans votre validation dans l'onglet concerné.</li>
+          <li><strong>Fiabilité affichée</strong> : sous chaque réponse qui propose une écriture, une facture ou une déclaration, Lexa montre un badge <strong>Conforme / Vigilance / Bloquant + score</strong> issu de contrôles déterministes (voir la fiche <a href="#fiabilite">Fiabilité — AQM</a>). Elle cite toujours ses sources et ne comptabilise jamais un document jugé « bloquant ».</li>
         </ul></div>
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
         <div class="warn">Lexa affiche « non activée » ? Le service IA n'est pas encore configuré côté serveur (clé d'accès). La voix trop synthétique ? Une voix naturelle s'active si le canal vocal serveur est configuré, sinon Lexa utilise la voix du navigateur.</div></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
-    <!-- ============ 19 PAIE ============ -->
+    <!-- ============ 19 PAIE & RH ============ -->
     <section class="fiche" id="paie">
-      <h2>19 · Paie <span class="tag">Assistant</span></h2>
+      <h2>19 · Paie &amp; RH <span class="tag">Assistant</span></h2>
       <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
-        Gérer les <strong>salariés</strong>, calculer les <strong>bulletins</strong> selon les règles ivoiriennes (CNPS, IUS/ITS, CMU, heures supplémentaires, absences, avances, solde de tout compte) et <strong>comptabiliser</strong> la paie d'un clic en écriture d'OD équilibrée.</div>
+        Gérer les <strong>salariés</strong>, calculer les <strong>bulletins</strong> selon les règles ivoiriennes (CNPS, IUS/ITS, CMU, heures supplémentaires, absences, avances, solde de tout compte), <strong>comptabiliser</strong> la paie d'un clic en OD équilibrée — et piloter la <strong>RH</strong> (analyse sociale, attestations, distribution des bulletins, veille légale). Un seul module, tout est relié à la compta et à Lexa.</div>
       <div class="block"><div class="label"><span class="ic">👤</span>Qui peut l'utiliser</div>
         Gestionnaire de paie, comptable, chef d'entreprise.</div>
+      <div class="block"><div class="label"><span class="ic">🗂️</span>Les sous-onglets</div>
+        <ul class="tips">
+          <li><strong>Bulletins &amp; salariés</strong> : fiches du personnel et calcul mensuel.</li>
+          <li><strong>Analyse RH</strong> : effectif, ancienneté, masse salariale &amp; variation, taux de charges, absentéisme, <strong>provision congés payés</strong>, pyramide d'ancienneté — et un bandeau <strong>Alertes légales RH</strong> (fins de CDD, fins de période d'essai).</li>
+          <li><strong>Pointage · Absences · Avances &amp; prêts</strong> : les registres qui alimentent automatiquement les bulletins.</li>
+          <li><strong>Solde de tout compte</strong> : calcul au départ d'un salarié (préavis, congés non pris, indemnités).</li>
+          <li><strong>Déclarations</strong> : bordereau CNPS, impôts sur salaires (DGI), DISA, et <strong>État 301</strong> (état nominatif annuel des salaires).</li>
+        </ul></div>
       <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
         <ol class="steps">
-          <li>Onglet <strong>Paie</strong> : créez vos <strong>salariés</strong> (identité, salaire de base, situation).</li>
-          <li>Choisissez la <strong>période</strong>, saisissez les variables du mois (heures sup, absences, primes), puis <strong>Calculer</strong>.</li>
-          <li>Ouvrez un <strong>bulletin</strong> pour le détail ; imprimez-le, ainsi que les <strong>déclarations</strong> (CNPS, DGI).</li>
+          <li>Créez vos <strong>salariés</strong> (identité, contrat, salaire de base, situation).</li>
+          <li>Choisissez la <strong>période</strong>, saisissez les variables du mois (heures sup, absences, primes), puis <strong>Lancer la paie</strong>.</li>
+          <li>Ouvrez un <strong>bulletin</strong> pour le détail ; éditez les <strong>déclarations</strong> et documents (ordre de virement, courrier à la banque).</li>
           <li><strong>Comptabiliser</strong> : Nova génère l'OD de paie (charges 66x, net à payer 42x, CNPS 43x, État 44x).</li>
+          <li>Distribuez : <strong>Envoyer les bulletins</strong> (chaque salarié reçoit son PDF par e-mail) et <strong>Fichier de virement (CSV)</strong> importable en banque.</li>
         </ol></div>
+      <div class="block"><div class="label"><span class="ic">🔒</span>Clôture d'un mois</div>
+        Le bouton <strong>Clôturer</strong> verrouille le mois : la paie et les écritures de cette période passent en lecture seule (plus de recalcul ni d'absence rétroactive). On ne rouvre que le dernier mois clôturé.</div>
+      <div class="block"><div class="label"><span class="ic">📄</span>Attestations</div>
+        Sur chaque salarié, deux boutons génèrent une <strong>attestation de travail</strong> ou de <strong>salaire</strong> en PDF (emploi, poste, ancienneté, rémunération). Lexa peut aussi les envoyer par e-mail.</div>
       <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
         <ul class="tips">
           <li>Le moteur de calcul est <strong>déterministe et testé</strong> : à variables égales, un bulletin donne toujours le même résultat.</li>
           <li>L'écriture comptable est <strong>toujours équilibrée</strong> par construction (net = brut − retenues ; coût = brut + charges patronales).</li>
+          <li>Lexa connaît toute la RH : « fais-moi un point RH de juin », « envoie les bulletins de mai », « quelles fins de CDD ce trimestre ? ».</li>
         </ul></div>
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
-        <div class="warn">Un montant vous surprend ? Ouvrez le bulletin : chaque ligne (cotisation, base, taux) y est détaillée pour vérification.</div></div>
+        <div class="warn">Un montant vous surprend ? Ouvrez le bulletin : chaque ligne (cotisation, base, taux) y est détaillée. « Envoyer les bulletins » indisponible ? Le canal e-mail n'est pas encore configuré côté serveur.</div></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
@@ -610,6 +631,60 @@
         </ul></div>
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
         <div class="warn">« Canal non configuré » ? Le raccordement serveur (compte WhatsApp Business / bot Telegram) n'est pas encore actif. Une fois activé, vos codes et numéros reliés fonctionnent immédiatement.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 21 FIABILITÉ — AQM ============ -->
+    <section class="fiche" id="fiabilite">
+      <h2>21 · Fiabilité — AQM &amp; contrôle qualité <span class="tag">Qualité</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        La force de Nova n'est pas « une IA plus bavarde », c'est une IA <strong>fiable, explicable et auditable</strong>. L'<strong>AQM</strong> (moniteur de qualité) contrôle chaque proposition avec des règles <strong>déterministes</strong> (jamais un avis inventé) et affiche un verdict + un score.</div>
+      <div class="block"><div class="label"><span class="ic">✅</span>Contrôle avant validation (AQM)</div>
+        Sur une <strong>écriture</strong>, une <strong>facture</strong> ou une <strong>déclaration</strong>, le bouton <strong>Vérifier (AQM)</strong> donne un verdict <strong>Conforme / Vigilance / Bloquant</strong> + un score : équilibre débit=crédit, partie double, comptes du plan, sens des classes 6/7, tiers requis, période non clôturée, cohérence ventes/TVA, régime, cotisations… Lexa lance ce contrôle d'elle-même et ne propose jamais un document « bloquant ».</div>
+      <div class="block"><div class="label"><span class="ic">🔗</span>Cohérence inter-modules (AQM 2.0)</div>
+        Au-delà d'un module isolé, Nova vérifie que <strong>tout raconte la même histoire</strong> : la masse salariale des bulletins correspond-elle au compte 661 ? les charges patronales au 664 ? les dotations d'amortissement sont-elles bien passées (registre vs comptes 28) ? Chaque contrôle affiche <strong>attendu / constaté / écart</strong> et un niveau de risque, dans l'onglet <a href="#revision">Révision</a>.</div>
+      <div class="block"><div class="label"><span class="ic">🧮</span>Simulation avant validation</div>
+        Dans la <a href="#saisie">Saisie manuelle</a>, un bandeau <strong>« Impact si vous validez »</strong> montre en direct l'effet du brouillon — <strong>résultat, TVA à payer, trésorerie, IS estimé</strong> — sans rien comptabiliser. Vous décidez en connaissance de cause.</div>
+      <div class="block"><div class="label"><span class="ic">🧾</span>Décisions de Lexa (traçabilité)</div>
+        L'onglet <strong>Décisions Lexa</strong> journalise chaque action de l'assistant (question, outils utilisés, contrôles AQM, score, réponse) avec une vue <strong>« Pourquoi ? »</strong> — pour auditer a posteriori le raisonnement.</div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Le score n'est pas un aveu de doute : c'est un <strong>gage de fiabilité</strong>. Un score élevé = « vous pouvez agir » ; une vigilance = « vérifiez ce point précis ».</li>
+          <li>Ces contrôles sont parfaits <strong>avant une clôture</strong> ou avant de produire la liasse : demandez à Lexa « fais un contrôle global ».</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 22 RÉVISION ============ -->
+    <section class="fiche" id="revision">
+      <h2>22 · Révision &amp; justification des comptes <span class="tag">Consulter</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Passer les comptes en revue comme en cabinet : justifier chaque solde, cocher ce qui est vérifié, et repérer les anomalies — avec en tête le contrôle de <strong>cohérence inter-modules</strong>.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Révision</strong> : en haut, le panneau <strong>Cohérence inter-modules</strong> donne le verdict global (paie ↔ compta, immo ↔ dotations…).</li>
+          <li>Parcourez les comptes par cycle : cochez <strong>justifié</strong> et ajoutez une <strong>note</strong> de justification.</li>
+          <li>Suivez l'<strong>avancement</strong> (comptes justifiés / total) jusqu'à la clôture.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Nova signale seul les <strong>soldes anormaux</strong> au sens SYSCOHADA (fournisseur débiteur, caisse négative, comptes d'attente non soldés, TVA inversée…).</li>
+          <li>Demandez à Lexa « contrôle de cohérence » à tout moment pour le même résultat, expliqué.</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 23 MODE ENTREPRISE ============ -->
+    <section class="fiche" id="compte">
+      <h2>23 · Mode entreprise vs cabinet <span class="tag">Socle</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Nova s'adapte à qui vous êtes. Le <strong>type de compte</strong>, choisi à l'inscription, détermine l'interface — sans changer le moteur comptable ni la sécurité.</div>
+      <div class="block"><div class="label"><span class="ic">🏢</span>Mon entreprise</div>
+        Pour une société qui tient sa propre comptabilité. Vous arrivez <strong>directement dans votre compta</strong> (pas de « portefeuille »), et Lexa devient votre comptable. Menu simplifié : <strong>Mon entreprise · Entreprise &amp; sécurité</strong>.</div>
+      <div class="block"><div class="label"><span class="ic">💼</span>Cabinet comptable</div>
+        Pour suivre plusieurs clients. Vous pilotez un <strong>Portefeuille</strong> de dossiers depuis un <strong>Tableau de bord</strong> transverse, avec les rôles collaborateurs et le suivi des coûts par client.</div>
+      <div class="block"><div class="label"><span class="ic">🔄</span>Changer d'avis</div>
+        Dans <strong>Entreprise / Cabinet &amp; sécurité → Type de compte</strong>, le propriétaire peut convertir le compte à tout moment (les données sont conservées).</div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
