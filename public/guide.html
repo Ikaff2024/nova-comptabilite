@@ -113,6 +113,8 @@
     <a href="#fiabilite">21 · Fiabilité — AQM</a>
     <a href="#revision">22 · Révision des comptes</a>
     <a href="#compte">23 · Mode entreprise vs cabinet</a>
+    <a href="#collaborateurs">24 · Collaborateurs &amp; profils</a>
+    <a href="#identite">25 · Fiche entreprise</a>
   </nav>
 
   <!-- ===================== CONTENU ===================== -->
@@ -153,7 +155,7 @@
       <div class="pillar-row"><b>🤖 Assistant &amp; canaux — Lexa, votre comptable IA</b>
         <ol start="18"><li>Lexa (dialogue, voix, niveaux de pouvoir)</li><li>Paie &amp; RH (bulletins, analyse RH, attestations, comptabilisation)</li><li>WhatsApp &amp; Telegram (parler à Lexa hors de l'app)</li></ol></div>
       <div class="pillar-row"><b>🛡️ Qualité &amp; compte — fiabilité et mise en place</b>
-        <ol start="21"><li>Fiabilité — AQM (contrôle qualité, cohérence inter-modules, simulation, traçabilité)</li><li>Révision &amp; justification des comptes</li><li>Mode entreprise vs cabinet</li></ol></div>
+        <ol start="21"><li>Fiabilité — AQM (contrôle qualité, cohérence inter-modules, simulation, traçabilité)</li><li>Révision &amp; justification des comptes</li><li>Mode entreprise vs cabinet</li><li>Collaborateurs &amp; profils d'accès (inviter, rôles, portail client)</li><li>Fiche entreprise (identité reprise sur tous les documents)</li></ol></div>
     </div>
 
     <!-- ============ 1 DÉMARRAGE ============ -->
@@ -685,6 +687,69 @@
         Pour suivre plusieurs clients. Vous pilotez un <strong>Portefeuille</strong> de dossiers depuis un <strong>Tableau de bord</strong> transverse, avec les rôles collaborateurs et le suivi des coûts par client.</div>
       <div class="block"><div class="label"><span class="ic">🔄</span>Changer d'avis</div>
         Dans <strong>Entreprise / Cabinet &amp; sécurité → Type de compte</strong>, le propriétaire peut convertir le compte à tout moment (les données sont conservées).</div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 24 COLLABORATEURS & PROFILS ============ -->
+    <section class="fiche" id="collaborateurs">
+      <h2>24 · Collaborateurs &amp; profils d'accès <span class="tag">Sécurité</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Donner accès à Nova à vos collaborateurs (ou à votre client) avec, pour chacun, <strong>le bon niveau de pouvoir</strong>. Chaque personne a son <strong>propre compte et son propre mot de passe</strong> : les actions restent nominatives dans la piste d'audit.</div>
+
+      <div class="block"><div class="label"><span class="ic">✉️</span>Inviter un collaborateur (méthode)</div>
+        <ol class="steps">
+          <li>Menu de gauche → <strong>Cabinet &amp; sécurité</strong> (ou <strong>Entreprise &amp; sécurité</strong> en compte entreprise).</li>
+          <li>Section <strong>Collaborateurs</strong> / <strong>Utilisateurs</strong> : saisissez l'<strong>adresse e-mail</strong> de la personne et choisissez son <strong>rôle</strong>.</li>
+          <li>Cliquez <strong>Inviter</strong>. Deux cas, gérés automatiquement :
+            <ul class="tips">
+              <li><strong>Elle a déjà un compte Nova</strong> → elle est <strong>rattachée immédiatement</strong>, elle voit le cabinet à sa prochaine connexion.</li>
+              <li><strong>Elle n'a pas de compte</strong> → elle reçoit un <strong>e-mail d'invitation</strong>. En cliquant sur le lien, elle choisit son nom et son mot de passe (son adresse est déjà remplie), et se retrouve <strong>rattachée automatiquement</strong> avec le rôle prévu.</li>
+            </ul>
+          </li>
+          <li>Tant qu'elle n'a pas répondu, l'invitation apparaît dans <strong>Invitations en attente</strong> — vous pouvez l'<strong>annuler</strong> à tout moment.</li>
+        </ol></div>
+
+      <div class="block"><div class="label"><span class="ic">🔐</span>Pourquoi c'est la personne qui crée son mot de passe</div>
+        C'est <strong>volontaire, et plus sûr</strong>. Créer un compte donne une <em>identité</em>, jamais un <em>accès</em> : un compte neuf ne voit <strong>aucune donnée</strong> tant qu'un administrateur ne l'a pas rattaché. Si vous choisissiez le mot de passe à sa place, vous le connaîtriez — il faudrait le transmettre par message (fuite), et la <a href="#audit">piste d'audit</a> perdrait sa valeur : « X a validé cette écriture » ne serait plus opposable. Ici, <strong>vous contrôlez l'autorisation</strong> (qui entre, avec quel rôle), <strong>la personne contrôle son secret</strong>.
+        <div class="warn" style="margin-top:.6rem">Le lien d'invitation est <strong>personnel</strong> : il est à usage unique, expire au bout de 14 jours et crée le compte sur l'adresse invitée. Ne le transférez pas.</div></div>
+
+      <div class="block"><div class="label"><span class="ic">👤</span>Les profils (rôles)</div>
+        <ul class="tips">
+          <li><strong>Propriétaire</strong> — tous les droits. Gère les collaborateurs et leurs rôles, renomme le cabinet, convertit le type de compte, voit les coûts d'API. Il en faut <strong>toujours au moins un</strong>.</li>
+          <li><strong>Associé (admin)</strong> — mêmes droits d'administration : peut inviter, changer les rôles, retirer un membre.</li>
+          <li><strong>Collaborateur</strong> — travaille dans les dossiers (saisie, factures, paie, états) mais <strong>ne gère pas</strong> les membres ni les réglages du cabinet.</li>
+        </ul>
+        <div class="warn" style="margin-top:.6rem"><strong>À savoir :</strong> un membre du cabinet accède à <strong>tous les dossiers du cabinet</strong>. Le rôle règle les pouvoirs d'administration, pas la visibilité dossier par dossier. Pour donner accès à <strong>un seul dossier</strong>, utilisez le <strong>Portail client</strong> (ci-dessous).</div></div>
+
+      <div class="block"><div class="label"><span class="ic">🪟</span>Portail client — accès à un seul dossier</div>
+        Pour votre client (le dirigeant de l'entreprise suivie) : onglet <strong>Portail client</strong> <em>dans le dossier concerné</em> → invitez-le par e-mail. Il n'accède qu'à <strong>son dossier</strong>, en <strong>consultation</strong> (et dépôt de pièces) : il ne peut ni saisir d'écriture, ni voir vos autres clients.</div>
+
+      <div class="block"><div class="label"><span class="ic">🤖</span>Ne pas confondre avec le niveau de pouvoir de Lexa</div>
+        Les rôles ci-dessus concernent les <strong>personnes</strong>. Le <strong>niveau de pouvoir de Lexa</strong> (Lecture seule / Assisté / Assisté + actions) se règle séparément dans l'onglet <a href="#lexa">Lexa</a> et concerne ce que <strong>l'IA</strong> a le droit de faire.</div>
+
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">« Adresse email invalide » : vérifiez le format (une seule « @ », un point avant l'extension — ex. <code>prenom.nom@domaine.ci</code>). L'invitation n'arrive pas ? Vérifiez les indésirables, puis que le domaine d'envoi est bien configuré côté serveur ; en attendant, la personne peut créer son compte elle-même et vous la rattachez avec la même adresse.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 25 FICHE ENTREPRISE ============ -->
+    <section class="fiche" id="identite">
+      <h2>25 · Fiche entreprise <span class="tag">Socle</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Renseigner <strong>une seule fois</strong> l'identité de l'entreprise. Ces informations sont reprises automatiquement sur les <strong>bulletins de paie</strong> (en-tête employeur), les <strong>attestations</strong>, les <strong>courriers à la banque</strong> et les <strong>déclarations</strong>.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Dans le dossier : <strong>Paramètres &amp; accès</strong> → <strong>Fiche entreprise</strong>.</li>
+          <li><strong>Identité &amp; coordonnées</strong> : raison sociale, forme juridique, adresse, ville, téléphone.</li>
+          <li><strong>Identifiants légaux &amp; fiscaux</strong> : NCC/IFU, RCCM, <strong>n° employeur CNPS</strong>, régime fiscal.</li>
+          <li><strong>Banque</strong> : banque et RIB (servent à l'ordre de virement des salaires).</li>
+          <li><strong>Enregistrer</strong>. Les documents produits ensuite reprennent ces mentions.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Complétez-la <strong>avant la première paie</strong> : l'en-tête du bulletin (adresse, N° CC, N° CNPS, téléphone) en dépend.</li>
+          <li>Lexa connaît cette fiche : elle cite ces mentions dans les courriers et déclarations qu'elle rédige.</li>
+        </ul></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
