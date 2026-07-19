@@ -182,9 +182,9 @@ export default function App() {
             const active = !selected && nav === item.id;
             return (
               <button key={item.id} onClick={() => { setSelected(null); setNav(item.id); }}
-                className={cn('group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all',
+                className={cn('group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition-all',
                   active ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200')}>
-                <item.icon className={cn('h-5 w-5', active ? 'text-emerald-400' : 'text-zinc-500 group-hover:text-zinc-400')} />
+                <item.icon className={cn('h-5 w-5 shrink-0', active ? 'text-emerald-400' : 'text-zinc-500 group-hover:text-zinc-400')} />
                 {item.label}
               </button>
             );
@@ -202,16 +202,16 @@ export default function App() {
             ))}
           </div>
           <div className="truncate px-2 pb-2 text-xs text-zinc-500">{user.name || user.email}</div>
-          <button onClick={() => setShowGuide(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-emerald-400">
-            <HelpCircle className="h-5 w-5" />
+          <button onClick={() => setShowGuide(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-emerald-400">
+            <HelpCircle className="h-5 w-5 shrink-0" />
             Guide de prise en main
           </button>
-          <a href="/guide.html" target="_blank" rel="noopener" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-emerald-400">
-            <BookOpen className="h-5 w-5" />
+          <a href="/guide.html" target="_blank" rel="noopener" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-emerald-400">
+            <BookOpen className="h-5 w-5 shrink-0" />
             Guide complet (modules)
           </a>
-          <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-rose-400">
-            <LogOut className="h-5 w-5" />
+          <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-zinc-400 transition-all hover:bg-white/5 hover:text-rose-400">
+            <LogOut className="h-5 w-5 shrink-0" />
             Déconnexion
           </button>
         </div>

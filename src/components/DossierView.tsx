@@ -181,7 +181,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
                     const t = meta[id];
                     return (
                       <button key={id} onClick={() => setTab(id)}
-                        className={cn('flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        className={cn('flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors',
                           tab === id ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200')}>
                         <t.icon className="h-4 w-4 shrink-0" /> {t.label}
                       </button>
@@ -226,7 +226,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
                           const t = meta[id];
                           return (
                             <button key={id} onClick={() => { setTab(id); setOpenMenu(null); }}
-                              className={cn('flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
+                              className={cn('flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition-colors',
                                 tab === id ? 'bg-emerald-500/15 text-emerald-200' : 'text-zinc-300 hover:bg-white/5 hover:text-zinc-100')}>
                               <t.icon className="h-4 w-4 shrink-0" /> {t.label}
                             </button>
