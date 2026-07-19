@@ -382,6 +382,12 @@ export interface PlatformOverview {
 }
 export interface CabinetMember { userId: string; email: string; name: string | null; role: string; createdAt: string; }
 export interface PendingInvitation { id: string; email: string; role: string; created_at: string; expires_at: string; expired: boolean; }
+export interface DossierProfile {
+  raisonSociale: string; adresse: string | null; ville: string | null; telephone: string | null;
+  taxId: string | null; rccm: string | null; numeroCnps: string | null;
+  formeJuridique: string | null; regimeFiscal: string | null;
+  bankName: string | null; rib: string | null; country: string; baseCurrency: string;
+}
 export interface InvitationInfo { email: string; role: string; cabinetName: string; expired: boolean; accepted: boolean; }
 
 export const api = {
@@ -420,6 +426,9 @@ export const api = {
   corruptedLabels: (dossierId: string) => req<{ account_code: string; label: string }[]>(`/api/dossiers/${dossierId}/corrupted-labels`),
   repairLabels: (dossierId: string, csv: string) =>
     req<{ repaired: { code: string; old: string; new: string }[] }>(`/api/dossiers/${dossierId}/repair-labels`, { method: 'POST', body: JSON.stringify({ csv }) }),
+  dossierProfile: (dossierId: string) => req<DossierProfile>(`/api/dossiers/${dossierId}/profile`),
+  updateDossierProfile: (dossierId: string, body: Partial<DossierProfile>) =>
+    req<{ ok: boolean; raison_sociale: string; profile: DossierProfile }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   renameDossier: (dossierId: string, raisonSociale: string) =>
     req<{ ok: boolean; raison_sociale: string }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify({ raisonSociale }) }),
   createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string; rccm?: string }) =>

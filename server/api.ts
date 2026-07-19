@@ -38,6 +38,7 @@ import * as controls from './domain/controls.js';
 import * as coherence from './domain/coherence.js';
 import * as simulate from './domain/simulate.js';
 import * as invitations from './domain/invitations.js';
+import * as dossierprofile from './domain/dossierprofile.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
@@ -380,12 +381,20 @@ export function createApi() {
   }));
 
   // Renommer un dossier (raison sociale). Réservé au staff (garde de rôle globale).
+  // Fiche entreprise : identité légale/fiscale + coordonnées du dossier.
+  app.get('/api/dossiers/:id/profile', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => dossierprofile.getProfile(c, req.params.id)));
+  }));
+  // PATCH accepte soit le simple renommage (raisonSociale/name), soit la fiche.
   app.patch('/api/dossiers/:id', h(async (req, res) => {
     const userId = requireUser(req);
-    const name = String(req.body?.raisonSociale ?? req.body?.name ?? '').trim();
-    if (name.length < 2) { const e: any = new Error('Nom de dossier invalide.'); e.status = 400; throw e; }
-    await withUser(userId, (c) => c.query('update dossiers set raison_sociale=$2 where id=$1', [req.params.id, name]));
-    res.json({ ok: true, raison_sociale: name });
+    const body = { ...(req.body ?? {}) };
+    if (body.name && !body.raisonSociale) body.raisonSociale = body.name;
+    const known = ['raisonSociale', 'adresse', 'ville', 'telephone', 'taxId', 'rccm', 'numeroCnps', 'formeJuridique', 'regimeFiscal', 'bankName', 'rib'];
+    if (!known.some((k) => k in body)) { const e: any = new Error('Aucun champ à mettre à jour.'); e.status = 400; throw e; }
+    const out = await withUser(userId, (c) => dossierprofile.updateProfile(c, req.params.id, body));
+    res.json({ ok: true, raison_sociale: out.raisonSociale, profile: out });
   }));
 
 

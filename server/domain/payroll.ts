@@ -440,7 +440,13 @@ export async function bulletinPdf(c: Client, dossierId: string, who: string, yea
   const now = new Date();
 
   const bytes = await renderPayslipPdf({
-    employer: { name: d.raison_sociale ?? '—', numeroCc: d.tax_id ?? undefined },
+    employer: {
+      name: d.raison_sociale ?? '—',
+      adresse: [d.adresse, d.ville].filter(Boolean).join(', ') || undefined,
+      telephone: d.telephone ?? undefined,
+      numeroCnps: d.numero_cnps ?? undefined,
+      numeroCc: d.tax_id ?? undefined,
+    },
     employee: {
       matricule: emp.matricule, nom: emp.nom, prenoms: emp.prenoms, poste: emp.poste, categorie: String(emp.categorie ?? ''),
       dateEmbauche: emp.dateEmbauche, statutMatrimonial: String(emp.statutMatrimonial ?? ''),

@@ -32,10 +32,11 @@ import RecurringInvoices from './RecurringInvoices';
 import Analytique from './Analytique';
 import Budget from './Budget';
 import Revision from './Revision';
+import FicheEntreprise from './FicheEntreprise';
 import Previsionnel from './Previsionnel';
 import Scoring from './Scoring';
 
-type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'clotures' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'decisions' | 'portail';
+type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'clotures' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'decisions' | 'portail' | 'identite';
 
 export default function DossierView({ dossier, onBack, hideBack }: { dossier: Dossier; onBack: () => void; hideBack?: boolean }) {
   const [tab, setTab] = useState<Tab>('synthese');
@@ -103,6 +104,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
     { id: 'audit', label: 'Audit', icon: History },
     { id: 'decisions', label: 'Décisions Lexa', icon: ScrollText },
     { id: 'portail', label: 'Portail client', icon: UserRound },
+    { id: 'identite', label: 'Fiche entreprise', icon: Building2 },
   ];
 
   // Regroupement des modules par nature. Pilotage et Saisie restent en menu
@@ -117,7 +119,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
     { label: 'Comptabilité', icon: Library, items: ['balance', 'grandlivre', 'journaux', 'revision', 'clotures', 'plan'] },
     { label: 'Tiers & trésorerie', icon: Landmark, items: ['tiers', 'banque', 'immos'] },
     { label: 'États & déclarations', icon: FileText, items: ['etats', 'fiscalite'] },
-    { label: 'Paramètres & accès', icon: Settings2, items: ['regles', 'import', 'audit', 'decisions', 'portail'] },
+    { label: 'Paramètres & accès', icon: Settings2, items: ['identite', 'regles', 'import', 'audit', 'decisions', 'portail'] },
   ];
   const sideGroups = groups.slice(0, 2);   // Pilotage, Saisie (vertical)
   const barGroups = groups.slice(2);       // Comptabilité, Tiers, États, Paramètres (barre horizontale)
@@ -272,6 +274,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
             {tab === 'scoring' && <Scoring dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
             {tab === 'fiscalite' && <Fiscalite dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'regles' && <RulesTab dossierId={dossier.id} />}
+            {tab === 'identite' && <FicheEntreprise dossierId={dossier.id} onRenamed={(n) => { setName(n); dossier.raison_sociale = n; }} />}
             {tab === 'plan' && <PlanTab dossierId={dossier.id} />}
             {tab === 'import' && <ImportBalance dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'recurrences' && <Recurring dossierId={dossier.id} currency={dossier.base_currency} journals={journals} />}

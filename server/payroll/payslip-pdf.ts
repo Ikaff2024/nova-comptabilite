@@ -11,7 +11,7 @@ const NON_WINANSI_SPACES = new RegExp('[\\u00A0\\u2007\\u2009\\u202F\\u2060\\uFE
 const san = (s: string) => (s ?? '').replace(NON_WINANSI_SPACES, ' ');
 
 export interface PayslipPdfInput {
-  employer: { name: string; adresse?: string; numeroCnps?: string; numeroCc?: string };
+  employer: { name: string; adresse?: string; telephone?: string; numeroCnps?: string; numeroCc?: string };
   employee: {
     matricule: string; nom: string; prenoms: string; poste: string; categorie: string;
     dateEmbauche: string; statutMatrimonial: string; nombrePartsIGR: number; nombreEnfants: number;
@@ -56,7 +56,12 @@ export async function renderPayslipPdf(input: PayslipPdfInput): Promise<Uint8Arr
   const topY = y;
   T(employer.name.toUpperCase(), M, 13, bold);
   y -= 14;
-  const eLines = [employer.adresse, employer.numeroCnps && `N° CNPS : ${employer.numeroCnps}`, employer.numeroCc && `N° CC : ${employer.numeroCc}`].filter(Boolean) as string[];
+  const eLines = [
+    employer.adresse,
+    employer.numeroCc && `N° d'identification Fiscale (CC) : ${employer.numeroCc}`,
+    employer.numeroCnps && `N° employeur CNPS : ${employer.numeroCnps}`,
+    employer.telephone,
+  ].filter(Boolean) as string[];
   for (const l of eLines) { T(l, M, 8, font, GRAY); y -= 11; }
 
   // Cartouche à droite.
