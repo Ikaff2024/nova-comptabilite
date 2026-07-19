@@ -389,6 +389,9 @@ export interface PlatformOverview {
 export interface CabinetMember { userId: string; email: string; name: string | null; role: string; createdAt: string; }
 export interface PendingInvitation { id: string; email: string; role: string; created_at: string; expires_at: string; expired: boolean; }
 export interface MemberAccess { restricted: boolean; dossiers: { id: string; raisonSociale: string; granted: boolean }[]; }
+export interface NightlyItem { niveau: 'haute' | 'moyenne' | 'info'; categorie: string; titre: string; detail?: string; montant?: number; echeance?: string; onglet?: string; }
+export interface NightlyResume { haute: number; moyenne: number; info: number; total: number; }
+export interface NightlyState { enabled: boolean; dernier: { generated_at: string; resume: NightlyResume; items: NightlyItem[]; notified_to: string | null } | null; }
 export interface FinancingBrief { montant?: number; objet?: string; dureeMois?: number; tauxAnnuel?: number; garanties?: string; engagements?: string; banque?: string; }
 export interface FinancingReadinessItem { key: string; label: string; ok: boolean; blocking: boolean; detail: string; }
 export interface FinancingCapacity { resultat: number; dotations: number; caf: number; montant: number; dureeMois: number; tauxAnnuel: number; mensualite: number; annuite: number; couverture: number | null; }
@@ -411,6 +414,10 @@ export const api = {
   setup2fa: () => req<{ secret: string; otpauth: string }>('/api/auth/2fa/setup', { method: 'POST', body: '{}' }),
   enable2fa: (code: string) => req<{ enabled: boolean }>('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
   disable2fa: () => req<{ enabled: boolean }>('/api/auth/2fa/disable', { method: 'POST', body: '{}' }),
+  nightly: (dossierId: string) => req<NightlyState>(`/api/dossiers/${dossierId}/nightly`),
+  setNightly: (dossierId: string, enabled: boolean) => req<void>(`/api/dossiers/${dossierId}/nightly`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  runNightly: (dossierId: string, notify = false) =>
+    req<{ resume: NightlyResume; items: NightlyItem[]; notified: string | null }>(`/api/dossiers/${dossierId}/nightly/run`, { method: 'POST', body: JSON.stringify({ notify }) }),
   coherence: (dossierId: string, fiscalYearId?: string) => req<InterModuleReport>(`/api/dossiers/${dossierId}/coherence${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   simulateEntry: (dossierId: string, lines: { accountCode: string; debit?: number; credit?: number }[]) => req<SimulationResult>(`/api/dossiers/${dossierId}/simulate-entry`, { method: 'POST', body: JSON.stringify({ lines }) }),
   renameCabinet: (cabinetId: string, name: string) => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),

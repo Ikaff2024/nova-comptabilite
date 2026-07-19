@@ -2,6 +2,7 @@ import './env.js'; // doit rester en premier (peuple process.env avant db/ai)
 import { createApi } from './api.js';
 import { runDailyPush } from './ai/watchdog.js';
 import { applyPendingMigrations } from './migrate-runtime.js';
+import { startNightlyScheduler } from './nightly-runner.js';
 
 // Railway/Render fournissent PORT ; fallback local API_PORT puis 4000.
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 4000);
@@ -11,7 +12,10 @@ app.listen(port, () => {
   console.log(`Nova Comptabilité API → port ${port}`);
   // Applique les migrations en attente in-process (même base que l'API, quelle
   // que soit la commande de lancement). Best-effort : ne bloque pas le service.
-  applyPendingMigrations().catch((e) => console.warn('[migrate] non appliqué :', e?.message));
+  applyPendingMigrations()
+    .catch((e) => console.warn('[migrate] non appliqué :', e?.message))
+    // La veille lit une fonction créée par migration : on la démarre après.
+    .finally(() => startNightlyScheduler());
 });
 
 // Agent nocturne : pousse le digest quotidien une fois par jour (après 6h UTC).

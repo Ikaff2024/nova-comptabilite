@@ -40,6 +40,7 @@ import * as simulate from './domain/simulate.js';
 import * as invitations from './domain/invitations.js';
 import * as dossierprofile from './domain/dossierprofile.js';
 import * as findossier from './domain/financingdossier.js';
+import * as nightly from './domain/nightly.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
@@ -805,6 +806,29 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => controls.coherenceChecks(c, req.params.id, fy)));
   }));
+  // --- Veille nocturne de Lexa ------------------------------------------------
+  app.get('/api/dossiers/:id/nightly', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, async (c) => ({
+      enabled: await nightly.isEnabled(c, req.params.id),
+      dernier: await nightly.latestDigest(c, req.params.id),
+    })));
+  }));
+  app.put('/api/dossiers/:id/nightly', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => nightly.setEnabled(c, req.params.id, !!req.body?.enabled));
+    res.status(204).end();
+  }));
+  // Déclenchement manuel (utile pour tester sans attendre la nuit).
+  app.post('/api/dossiers/:id/nightly/run', h(async (req, res) => {
+    const userId = requireUser(req);
+    const notify = req.body?.notify === true;
+    res.json(await withUser(userId, async (c) => {
+      const me = await users.getUser(c, userId);
+      return nightly.runForDossier(c, req.params.id, { notifyTo: notify ? me?.email : undefined });
+    }));
+  }));
+
   // AQM 2.0 — cohérence inter-modules (paie ↔ compta, immo ↔ dotations…).
   app.get('/api/dossiers/:id/coherence', h(async (req, res) => {
     const userId = requireUser(req);

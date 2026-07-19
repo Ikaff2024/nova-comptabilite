@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Sparkles, Send, Wrench, User, Lock, PencilLine, Mic, Volume2, VolumeX, MessageCircle, Brain, SlidersHorizontal, ShieldCheck, ShieldAlert, ShieldX, Trash2 } from 'lucide-react';
-import { api, lexaSpeak, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode, type AgentAqm } from '../lib/api';
+import { api, lexaSpeak, AGENT_WRITE_TOOLS, AGENT_MODE_LABELS, type AgentMessage, type AgentStatus, type AgentMode, type AgentAqm, type NightlyState } from '../lib/api';
 import { cn } from '../lib/utils';
 import WhatsAppLink from './WhatsAppLink';
 import TelegramLink from './TelegramLink';
@@ -354,6 +354,7 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
         </div>
       </div>
 
+      <div className="border-b border-white/10 p-3"><NightlyPanel dossierId={dossierId} /></div>
       {showMem && <div className="border-b border-white/10 p-3"><LexaMemory dossierId={dossierId} /></div>}
       {showWa && <div className="border-b border-white/10 p-3"><WhatsAppLink dossierId={dossierId} /></div>}
       {showTg && <div className="border-b border-white/10 p-3"><TelegramLink dossierId={dossierId} /></div>}
@@ -432,6 +433,77 @@ export default function Assistant({ dossierId, dossierName }: { dossierId: strin
         </button>
       </form>
       <p className="px-4 pb-3 text-center text-[11px] text-zinc-600">{mode === 'readonly' ? 'Lecture seule : Lexa lit vos données mais ne saisit rien. Vérifiez toujours avant décision.' : mode === 'assist' ? 'Mode assisté : Lexa peut préparer des brouillons — rien n\'est comptabilisé sans votre validation dans les onglets dédiés.' : 'Assisté + actions : brouillons et actions réversibles (lettrage, relances) — jamais d\'écriture au grand livre sans votre validation.'}</p>
+    </div>
+  );
+}
+
+// Veille nocturne : Lexa analyse le dossier chaque nuit et signale ce qui
+// mérite attention. Elle ALERTE, elle ne comptabilise rien d'elle-même.
+const NIVEAU_DOT: Record<string, string> = { haute: 'bg-rose-400', moyenne: 'bg-amber-400', info: 'bg-sky-400' };
+
+function NightlyPanel({ dossierId }: { dossierId: string }) {
+  const [st, setSt] = useState<NightlyState | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => { try { setSt(await api.nightly(dossierId)); } catch { /* non bloquant */ } };
+  useEffect(() => { load(); }, [dossierId]);
+
+  const toggle = async () => {
+    if (!st) return;
+    setBusy('toggle'); setError(null);
+    try { await api.setNightly(dossierId, !st.enabled); await load(); }
+    catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+  const runNow = async () => {
+    setBusy('run'); setError(null);
+    try { await api.runNightly(dossierId, false); await load(); setOpen(true); }
+    catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
+  if (!st) return null;
+  const d = st.dernier;
+  const aTraiter = d ? d.resume.haute + d.resume.moyenne : 0;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => setOpen((o) => !o)} className="flex flex-1 items-center gap-2 text-left text-sm font-medium text-zinc-200">
+          <Sparkles className="h-4 w-4 shrink-0 text-emerald-400" />
+          Veille de Lexa
+          {d
+            ? <span className={cn('rounded-full px-2 py-0.5 text-xs', aTraiter > 0 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')}>
+                {aTraiter > 0 ? `${aTraiter} point(s) à traiter` : 'rien à signaler'}
+              </span>
+            : <span className="text-xs font-normal text-zinc-500">jamais exécutée</span>}
+        </button>
+        <button onClick={runNow} disabled={busy === 'run'} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-300 hover:bg-white/10 disabled:opacity-50">
+          {busy === 'run' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Analyser maintenant
+        </button>
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-400">
+          <input type="checkbox" checked={st.enabled} onChange={toggle} disabled={busy === 'toggle'} className="h-3.5 w-3.5 accent-emerald-500" />
+          chaque nuit
+        </label>
+      </div>
+
+      {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
+
+      {open && d && (
+        <div className="mt-3 space-y-1.5">
+          <div className="text-xs text-zinc-500">Analyse du {d.generated_at.replace('T', ' à ')}{d.notified_to ? ` · envoyée à ${d.notified_to}` : ''}</div>
+          {d.items.length === 0 ? <p className="text-xs text-zinc-500">Aucun point détecté — tout est en ordre.</p> : d.items.slice(0, 12).map((it, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-lg bg-zinc-900/40 px-2.5 py-1.5">
+              <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', NIVEAU_DOT[it.niveau] ?? 'bg-zinc-500')} />
+              <div className="min-w-0">
+                <div className="text-sm text-zinc-200">{it.titre}</div>
+                {it.detail && <div className="text-xs text-zinc-500">{it.detail}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {open && !d && <p className="mt-2 text-xs text-zinc-500">Lancez une première analyse, ou activez « chaque nuit » pour recevoir le digest par email.</p>}
     </div>
   );
 }

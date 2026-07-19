@@ -15,6 +15,7 @@ import * as coherence from '../domain/coherence.js';
 import * as simulate from '../domain/simulate.js';
 import * as findossier from '../domain/financingdossier.js';
 import * as guide from './guide.js';
+import * as nightly from '../domain/nightly.js';
 import * as aqm from '../domain/aqm.js';
 import * as budget from '../domain/budget.js';
 import * as budgetcopilot from '../domain/budgetcopilot.js';
@@ -298,6 +299,7 @@ const READ_TOOLS = [
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'ratios_financiers', description: 'Analyse financière : ratios de liquidité, autonomie/endettement, rentabilité et marges, + grandes masses (BFR, fonds de roulement, trésorerie nette). Pour un diagnostic financier ou du conseil sur la structure et la performance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controles_coherence', description: 'Contrôles de cohérence comptable (révision automatisée) : détecte les soldes anormaux au sens SYSCOHADA (fournisseur 401 débiteur, client 411 créditeur, caisse négative, comptes d\'attente 47 non soldés, TVA inversée…). Pour un contrôle qualité / une révision avant clôture.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'veille_nocturne', description: "Veille de Lexa : le dernier digest calculé pour ce dossier (points prioritaires détectés la nuit — trésorerie, créances, TVA, échéances, cohérence inter-modules, dotations dues, alertes RH). Utilise-le pour « qu'est-ce qui a été détecté », « quoi de neuf », ou pour ouvrir un point du jour. Si aucun digest n'existe, dis que la veille n'a pas encore tourné (elle s'active dans l'onglet Lexa).", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'guide_nova', description: "Guide d'utilisation de Nova : renvoie la ou les fiches du guide correspondant à une question sur l'USAGE du logiciel (où trouver un écran, marche à suivre, rôle d'un module, signification d'un indicateur). Utilise-le AVANT de répondre à toute question « comment faire dans Nova », et cite la fiche. N'invente jamais un chemin de menu : si rien ne remonte, dis-le. Ne l'utilise PAS pour les questions de données comptables. Paramètre : question (la formulation de l'utilisateur).", input_schema: { type: 'object', properties: { question: { type: 'string', description: "La question de l'utilisateur, telle quelle" } }, required: ['question'] } },
   { name: 'dossier_financement', description: "Dossier de financement bancaire : où en est l'entreprise pour solliciter un crédit. Renvoie la porte de complétude (ce qui manque, avec les points BLOQUANTS), le besoin exprimé (montant, objet, durée) et la capacité de remboursement (CAF, mensualité et annuité estimées, couverture CAF/annuité). Sers-t'en pour COACHER : dis ce qu'il faut corriger AVANT d'aller voir la banque. Ne présente jamais le score interne comme une notation de crédit — Nova ne prête pas et ne garantit rien.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controle_global', description: "AQM 2.0 — Contrôle de cohérence INTER-MODULES : vérifie que la paie, les immobilisations et la comptabilité racontent la même histoire (masse salariale des bulletins vs compte 661, charges patronales vs 664, dotations aux amortissements dues non comptabilisées, cumul d'amortissements vs comptes 28). Chaque contrôle donne attendu / constaté / écart + niveau de risque. Pour « fais un contrôle global » / « est-ce que tout est cohérent » / avant une clôture ou une liasse.", input_schema: { type: 'object', properties: {}, required: [] } },
@@ -527,6 +529,11 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'etats_financiers': return await acc.financialStatements(c, dossierId, fy);
     case 'ratios_financiers': return await ratios.financialRatios(c, dossierId, fy);
     case 'controles_coherence': return await controls.coherenceChecks(c, dossierId, fy);
+    case 'veille_nocturne': {
+      const d = await nightly.latestDigest(c, dossierId);
+      return d ? { genere_le: d.generated_at, resume: d.resume, points: cap(d.items ?? [], 25), notifie_a: d.notified_to }
+        : { aucun: true, note: "Aucun digest : la veille n'a pas encore tourné pour ce dossier (elle s'active dans l'onglet Lexa)." };
+    }
     case 'guide_nova': {
       const hits = guide.searchGuide(String(input?.question ?? ''), 2);
       return hits.length ? { fiches: hits }
