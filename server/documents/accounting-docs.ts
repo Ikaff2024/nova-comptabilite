@@ -145,7 +145,7 @@ export async function balanceAgeePdf(c: Client, dossierId: string): Promise<{ fi
   const rowStyles: (RowStyle | undefined)[] = [];
   const push = (r: string[], s?: RowStyle) => { rows.push(r); rowStyles.push(s); };
   const section = (title: string, part: { rows: any[]; totals: any }) => {
-    push([title, '', '', '', '', ''], { bold: true, fill: '#f0f0f0' });
+    push([title, '', '', '', '', '', ''], { bold: true, fill: '#f0f0f0' });
     if (!part.rows.length) { push(['(aucun solde ouvert)', '', '', '', '', '']); return; }
     for (const r of part.rows) push([r.tiers, md(r.aEchoir), md(r.b30), md(r.b60), md(r.b90), md(r.b90p), money(r.total)] as any);
     const t = part.totals;
@@ -157,9 +157,12 @@ export async function balanceAgeePdf(c: Client, dossierId: string): Promise<{ fi
   const nb = ab.clients.rows.length + ab.fournisseurs.rows.length;
   const buffer = await tablePdf({
     title: 'Balance âgée des tiers', subtitle: `${d.raison_sociale ?? ''} · antériorité des soldes au ${new Date().toISOString().slice(0, 10)}`, meta,
+    // Paysage : 7 colonnes de montants — en portrait, les libellés de tiers et
+    // les tranches d'antériorité se tassent et deviennent difficiles à lire.
+    landscape: true,
     columns: [
-      { label: 'Tiers', width: 150 }, { label: 'À échoir', width: 64, align: 'right' }, { label: '1-30 j', width: 60, align: 'right' },
-      { label: '31-60 j', width: 60, align: 'right' }, { label: '61-90 j', width: 60, align: 'right' }, { label: '> 90 j', width: 60, align: 'right' }, { label: 'Total', width: 72, align: 'right' },
+      { label: 'Tiers', width: 260 }, { label: 'À échoir', width: 92, align: 'right' }, { label: '1-30 j', width: 88, align: 'right' },
+      { label: '31-60 j', width: 88, align: 'right' }, { label: '61-90 j', width: 88, align: 'right' }, { label: '> 90 j', width: 88, align: 'right' }, { label: 'Total', width: 100, align: 'right' },
     ],
     rows, rowStyles,
     footNote: `${nb} tiers avec solde ouvert. Les tranches « j » indiquent le retard au-delà de l'échéance. Généré par Nova.`,
