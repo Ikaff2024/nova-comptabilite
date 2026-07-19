@@ -117,6 +117,7 @@
     <a href="#identite">25 · Fiche entreprise</a>
     <a class="pillar">Pilotage</a>
     <a href="#scoring">26 · Score &amp; financement</a>
+    <a href="#financement">27 · Dossier de financement bancaire</a>
   </nav>
 
   <!-- ===================== CONTENU ===================== -->
@@ -159,7 +160,7 @@
       <div class="pillar-row"><b>🛡️ Qualité &amp; compte — fiabilité et mise en place</b>
         <ol start="21"><li>Fiabilité — AQM (contrôle qualité, cohérence inter-modules, simulation, traçabilité)</li><li>Révision &amp; justification des comptes</li><li>Mode entreprise vs cabinet</li><li>Collaborateurs &amp; profils d'accès (inviter, rôles, portail client)</li><li>Fiche entreprise (identité reprise sur tous les documents)</li></ol></div>
       <div class="pillar-row"><b>📈 Pilotage — lire la santé de l'entreprise</b>
-        <ol start="26"><li>Score &amp; financement (note /100 par axe, pré-éligibilité à une avance)</li></ol></div>
+        <ol start="26"><li>Score &amp; financement (note /100 par axe, pré-éligibilité à une avance)</li><li>Dossier de financement bancaire (pack prêt à déposer, capacité de remboursement)</li></ol></div>
     </div>
 
     <!-- ============ 1 DÉMARRAGE ============ -->
@@ -796,6 +797,48 @@
 
       <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
         <div class="warn">Score à 21 avec plusieurs axes à 0 sur un dossier neuf ? C'est normal : comptabilisez d'abord vos ventes, achats et mouvements de trésorerie, puis rouvrez l'onglet. Un montant vous surprend ? Demandez à Lexa « pourquoi mon score est bas ? » — elle détaille l'axe en cause à partir de vos chiffres.</div></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 27 DOSSIER DE FINANCEMENT ============ -->
+    <section class="fiche" id="financement">
+      <h2>27 · Dossier de financement bancaire <span class="tag">Pilotage</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Produire, en un clic et à partir de votre comptabilité réelle, le <strong>dossier de présentation</strong> qu'une banque attend pour étudier une demande de crédit. En Côte d'Ivoire, beaucoup de demandes échouent non pas sur le risque, mais parce que le dossier est <strong>incomplet ou peu crédible</strong> : c'est exactement ce que ce module corrige.
+        <div class="warn" style="margin-top:.6rem"><strong>Ce que Nova ne fait pas :</strong> Nova ne prête pas d'argent, ne transmet votre dossier à aucune banque et ne garantit aucun accord. Le dossier <strong>vous appartient</strong> : c'est vous qui le déposez auprès de votre banque.</div></div>
+
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li>Onglet <strong>Score &amp; financement</strong> → section <strong>Dossier de financement bancaire</strong>.</li>
+          <li>Renseignez votre besoin : <strong>montant</strong>, <strong>durée</strong>, <strong>objet</strong> (soyez précis : « acquisition d'un véhicule de livraison » vaut mieux que « besoin de trésorerie »), <strong>garanties</strong> proposées et <strong>engagements bancaires en cours</strong>. Le taux annuel n'est qu'une <em>hypothèse</em> pour simuler la mensualité.</li>
+          <li>Cliquez <strong>Enregistrer le besoin</strong>. Nova calcule aussitôt votre <strong>capacité de remboursement</strong>.</li>
+          <li>Consultez la <strong>complétude du dossier</strong> et corrigez les points marqués <strong>bloquants</strong>.</li>
+          <li>Quand tout est vert : <strong>Télécharger le dossier</strong>.</li>
+        </ol></div>
+
+      <div class="block"><div class="label"><span class="ic">🧮</span>La capacité de remboursement</div>
+        C'est le chiffre que le banquier regarde en premier. Nova calcule :
+        <ul class="tips">
+          <li><strong>CAF</strong> (capacité d'autofinancement) = résultat net + dotations aux amortissements — ce que l'entreprise dégage réellement pour rembourser.</li>
+          <li><strong>Mensualité / annuité</strong> estimées à partir du montant, de la durée et du taux hypothétique.</li>
+          <li><strong>Couverture = CAF ÷ annuité</strong>. Au-dessus de <strong>1,5 ×</strong> c'est confortable ; autour de <strong>1 ×</strong> la marge est mince ; <strong>en dessous de 1 ×</strong>, l'entreprise ne dégage pas de quoi rembourser — réduisez le montant ou allongez la durée avant de vous présenter.</li>
+        </ul></div>
+
+      <div class="block"><div class="label"><span class="ic">🚦</span>La porte de complétude</div>
+        Nova <strong>refuse volontairement</strong> de produire un dossier creux : un mauvais dossier vous dessert plus qu'il ne vous sert. Sont vérifiés : une comptabilité suffisamment alimentée, l'existence d'un <strong>exercice N-1</strong> (pour les comparatifs et le tableau de flux), une <a href="#identite">fiche entreprise</a> complète (NCC, RCCM, adresse), le besoin exprimé, l'absence d'<strong>incohérence majeure</strong> au <a href="#fiabilite">contrôle AQM</a>, et des capitaux propres positifs. Les points <strong>bloquants</strong> doivent être réglés ; les autres sont des conseils.</div>
+
+      <div class="block"><div class="label"><span class="ic">📎</span>Ce que contient le dossier</div>
+        Un PDF unique : page de garde, <strong>note de présentation</strong> (identité, activité, chiffres clés), le <strong>besoin</strong>, la <strong>capacité de remboursement</strong>, les <strong>indicateurs financiers clés</strong>, puis en pièces jointes les <a href="#etats">états financiers</a>, les <strong>comparatifs N/N-1</strong>, le <strong>tableau de flux de trésorerie</strong> et la <strong>balance âgée</strong> des créances.</div>
+
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Le <strong>score A–D</strong> de la page est un <strong>coach interne</strong> : il ne figure <strong>pas</strong> dans le dossier remis à la banque — ce n'est pas une notation de crédit. Servez-vous-en pour savoir quoi améliorer <em>avant</em> d'y aller.</li>
+          <li>Demandez à Lexa « <em>suis-je prêt pour une demande de financement ?</em> » : elle liste ce qu'il reste à corriger, chiffres à l'appui.</li>
+          <li>Préparez aussi, hors Nova, les pièces que la banque réclame toujours : attestation de régularité fiscale et sociale, statuts, pièce d'identité du dirigeant.</li>
+        </ul></div>
+
+      <div class="block"><div class="label"><span class="ic">🆘</span>En cas de problème</div>
+        <div class="warn">« Dossier incomplet » au téléchargement : la liste indique précisément les points bloquants. Le plus fréquent sur un dossier récent : pas assez d'écritures, ou la fiche entreprise incomplète.</div></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
 
