@@ -11,6 +11,7 @@ import CabinetDashboard from './components/CabinetDashboard';
 import CabinetSettings from './components/CabinetSettings';
 import PlatformConsole from './components/PlatformConsole';
 import WelcomeGuide from './components/WelcomeGuide';
+import InviteAccept from './components/InviteAccept';
 import { cn } from './lib/utils';
 
 export default function App() {
@@ -25,6 +26,14 @@ export default function App() {
   // ici pour un atterrissage direct dans sa comptabilité (pas de portefeuille).
   const [companyDossier, setCompanyDossier] = useState<Dossier | null>(null);
   const [companyLoaded, setCompanyLoaded] = useState(false);
+  // Lien d'invitation reçu par email : /?invite=<token>
+  const [inviteToken, setInviteToken] = useState<string | null>(() => {
+    try { return new URLSearchParams(window.location.search).get('invite'); } catch { return null; }
+  });
+  const clearInvite = () => {
+    setInviteToken(null);
+    try { window.history.replaceState({}, '', window.location.pathname); } catch { /* ignore */ }
+  };
   const refreshMe = async () => { try { setUser(await api.me()); } catch { /* ignore */ } };
   const [showGuide, setShowGuide] = useState(false);
   const [dashKey, setDashKey] = useState(0); // force refresh du dashboard après démo
@@ -99,6 +108,18 @@ export default function App() {
 
   if (booting) {
     return <div className="flex h-screen items-center justify-center bg-zinc-950 text-zinc-400"><Loader2 className="h-5 w-5 animate-spin" /></div>;
+  }
+
+  // Lien d'invitation : écran dédié, accessible même sans être connecté.
+  if (inviteToken) {
+    return (
+      <InviteAccept
+        token={inviteToken}
+        loggedIn={!!user}
+        onDone={async (u) => { clearInvite(); if (u) setUser(u); await loadCabinets(); }}
+        onCancel={clearInvite}
+      />
+    );
   }
 
   if (!user) return <Auth onAuth={onAuth} />;

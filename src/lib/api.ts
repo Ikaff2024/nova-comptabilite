@@ -381,6 +381,8 @@ export interface PlatformOverview {
   generatedAt: string;
 }
 export interface CabinetMember { userId: string; email: string; name: string | null; role: string; createdAt: string; }
+export interface PendingInvitation { id: string; email: string; role: string; created_at: string; expires_at: string; expired: boolean; }
+export interface InvitationInfo { email: string; role: string; cabinetName: string; expired: boolean; accepted: boolean; }
 
 export const api = {
   register: (email: string, password: string, name: string) =>
@@ -396,6 +398,13 @@ export const api = {
   simulateEntry: (dossierId: string, lines: { accountCode: string; debit?: number; credit?: number }[]) => req<SimulationResult>(`/api/dossiers/${dossierId}/simulate-entry`, { method: 'POST', body: JSON.stringify({ lines }) }),
   renameCabinet: (cabinetId: string, name: string) => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   setCabinetType: (cabinetId: string, accountType: 'cabinet' | 'entreprise') => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ accountType }) }),
+  inviteMember: (cabinetId: string, email: string, role: string) =>
+    req<{ status: 'added' | 'invited'; email: string; role: string }>(`/api/cabinets/${cabinetId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) }),
+  invitations: (cabinetId: string) => req<PendingInvitation[]>(`/api/cabinets/${cabinetId}/invitations`),
+  revokeInvitation: (cabinetId: string, id: string) => req<void>(`/api/cabinets/${cabinetId}/invitations/${id}`, { method: 'DELETE' }),
+  invitationInfo: (token: string) => req<InvitationInfo>(`/api/invitations/${token}`),
+  acceptInvitation: (token: string, body: { password?: string; name?: string }) =>
+    req<{ status: 'joined' | 'created'; token?: string; user?: AuthUser }>(`/api/invitations/${token}/accept`, { method: 'POST', body: JSON.stringify(body) }),
   members: (cabinetId: string) => req<CabinetMember[]>(`/api/cabinets/${cabinetId}/members`),
   addMember: (cabinetId: string, email: string, role: string) => req<{ id: string }>(`/api/cabinets/${cabinetId}/members`, { method: 'POST', body: JSON.stringify({ email, role }) }),
   setMemberRole: (cabinetId: string, uid: string, role: string) => req<void>(`/api/cabinets/${cabinetId}/members/${uid}`, { method: 'PATCH', body: JSON.stringify({ role }) }),

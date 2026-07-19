@@ -37,6 +37,7 @@ import * as ratios from './domain/ratios.js';
 import * as controls from './domain/controls.js';
 import * as coherence from './domain/coherence.js';
 import * as simulate from './domain/simulate.js';
+import * as invitations from './domain/invitations.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
@@ -242,6 +243,59 @@ export function createApi() {
       if (accountType === 'cabinet' || accountType === 'entreprise') await acc.setCabinetAccountType(c, req.params.cid, accountType);
     });
     res.status(204).end();
+  }));
+
+  // --- Invitations de collaborateurs -----------------------------------------
+  // Un seul geste : compte existant -> rattaché ; sinon -> invitation par email.
+  app.post('/api/cabinets/:cid/invitations', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { email, role } = req.body ?? {};
+    const out = await withUser(userId, (c) => invitations.inviteMember(c, req.params.cid, String(email ?? ''), String(role ?? 'collaborateur'), userId));
+    res.status(201).json(out);
+  }));
+  app.get('/api/cabinets/:cid/invitations', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => invitations.listInvitations(c, req.params.cid)));
+  }));
+  app.delete('/api/cabinets/:cid/invitations/:iid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => invitations.revokeInvitation(c, req.params.cid, req.params.iid));
+    res.status(204).end();
+  }));
+
+  // --- Côté invité (public : le token EST le secret) --------------------------
+  app.get('/api/invitations/:token', h(async (req, res) => {
+    const info = await invitations.invitationInfo(req.params.token);
+    if (!info) { const e: any = new Error('Invitation introuvable.'); e.status = 404; throw e; }
+    res.json(info);
+  }));
+  // Accepte : soit l'utilisateur est déjà connecté (on rattache son compte),
+  // soit il crée son compte avec l'adresse invitée (mot de passe fourni).
+  app.post('/api/invitations/:token/accept', h(async (req: any, res) => {
+    const token = req.params.token;
+    const info = await invitations.invitationInfo(token);
+    if (!info) { const e: any = new Error('Invitation introuvable.'); e.status = 404; throw e; }
+    if (info.accepted) { const e: any = new Error('Cette invitation a déjà été utilisée.'); e.status = 409; throw e; }
+    if (info.expired) { const e: any = new Error('Cette invitation a expiré. Demandez-en une nouvelle.'); e.status = 410; throw e; }
+
+    // 1) Déjà connecté -> on rattache le compte courant.
+    if (req.userId) {
+      await invitations.acceptInvitation(token, req.userId);
+      return res.json({ status: 'joined' });
+    }
+    // 2) Sinon -> création du compte avec l'adresse INVITÉE (non modifiable).
+    const { password, name } = req.body ?? {};
+    if (!password || String(password).length < 8) { const e: any = new Error('Mot de passe : 8 caractères minimum'); e.status = 400; throw e; }
+    let id: string;
+    try {
+      id = await withUser(null, (c) => users.registerUser(c, info.email, hashPassword(String(password)), name ?? null));
+    } catch (err: any) {
+      if (String(err.message).includes('EMAIL_TAKEN')) { const e: any = new Error('Un compte existe déjà pour cette adresse : connectez-vous, puis rouvrez le lien.'); e.status = 409; throw e; }
+      throw err;
+    }
+    await invitations.acceptInvitation(token, id);
+    const jwt = issueToken({ id, email: info.email, name: name ?? undefined });
+    res.status(201).json({ status: 'created', token: jwt, user: { id, email: info.email, name: name ?? null } });
   }));
 
   // --- Membres du cabinet (collaborateurs & rôles) ---------------------------

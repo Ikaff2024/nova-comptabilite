@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Users, ShieldCheck, ShieldOff, Plus, Trash2, KeyRound, CheckCircle2, Building2, Pencil, UserRound } from 'lucide-react';
-import { api, type Cabinet, type AuthUser, type CabinetMember } from '../lib/api';
+import { Loader2, Users, ShieldCheck, ShieldOff, Plus, Trash2, KeyRound, CheckCircle2, Building2, Pencil, UserRound, Send } from 'lucide-react';
+import { api, type Cabinet, type AuthUser, type CabinetMember, type PendingInvitation } from '../lib/api';
 import { cn } from '../lib/utils';
 import ApiCosts from './ApiCosts';
 
@@ -147,8 +147,16 @@ function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUse
   const [role, setRole] = useState('collaborateur');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingInvitation[]>([]);
 
-  const load = async () => { setLoading(true); try { setRows(await api.members(cabinet.id)); } catch (e: any) { setError(e.message); } finally { setLoading(false); } };
+  const load = async () => {
+    setLoading(true);
+    try {
+      setRows(await api.members(cabinet.id));
+      try { setPending(await api.invitations(cabinet.id)); } catch { setPending([]); }
+    } catch (e: any) { setError(e.message); } finally { setLoading(false); }
+  };
   useEffect(() => { load(); }, [cabinet.id]);
 
   const myRole = rows.find((r) => r.userId === user.id)?.role;
@@ -163,9 +171,20 @@ function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUse
     const value = email.trim();
     if (!value) return;
     if (!EMAIL_RE.test(value)) { setError(`Adresse email invalide : « ${value} ». Vérifiez le format (ex. prenom.nom@domaine.ci) — une seule « @ » et un point avant l'extension.`); return; }
-    setBusy(true); setError(null);
-    try { await api.addMember(cabinet.id, value, role); setEmail(''); await load(); }
-    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const r = await api.inviteMember(cabinet.id, value, role);
+      setNotice(r.status === 'added'
+        ? `${r.email} a été rattaché(e) immédiatement (compte Nova existant).`
+        : `Invitation envoyée à ${r.email}. La personne rejoindra ${cabinet.name} en créant son compte via le lien reçu.`);
+      setEmail('');
+      await load();
+    } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  const revoke = async (inv: PendingInvitation) => {
+    if (!confirm(`Annuler l'invitation de ${inv.email} ?`)) return;
+    setError(null);
+    try { await api.revokeInvitation(cabinet.id, inv.id); await load(); } catch (e: any) { setError(e.message); }
   };
   const changeRole = async (uid: string, r: string) => { setError(null); try { await api.setMemberRole(cabinet.id, uid, r); await load(); } catch (e: any) { setError(e.message); } };
   const remove = async (m: CabinetMember) => { if (!confirm(`Retirer ${m.name || m.email} du cabinet ?`)) return; setError(null); try { await api.removeMember(cabinet.id, m.userId); await load(); } catch (e: any) { setError(e.message); } };
@@ -176,15 +195,36 @@ function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUse
 
       {canManage && (
         <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Email du collaborateur (compte Nova existant)</label>
+          <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Email de la personne à inviter</label>
             <input type="email" inputMode="email" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="collaborateur@cabinet.ci" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" />
-            <p className="mt-1 text-xs text-zinc-500">La personne doit avoir déjà créé son compte Nova avec cette adresse.</p></div>
+            <p className="mt-1 text-xs text-zinc-500">Si elle a déjà un compte Nova, elle est rattachée aussitôt. Sinon, elle reçoit un lien d'invitation par email.</p></div>
           <div><label className="mb-1 block text-xs text-zinc-500">Rôle</label>
             <select value={role} onChange={(e) => setRole(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50">{ROLES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}</select></div>
-          <button type="submit" disabled={busy} className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Ajouter</button>
+          <button type="submit" disabled={busy} className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Inviter</button>
         </form>
       )}
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+      {notice && <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{notice}</p>}
+
+      {pending.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-amber-500/25 bg-amber-500/5">
+          <div className="border-b border-amber-500/20 px-4 py-2.5 text-sm font-medium text-amber-300">Invitations en attente ({pending.length})</div>
+          <table className="w-full text-left text-sm">
+            <tbody className="divide-y divide-amber-500/10">
+              {pending.map((inv) => (
+                <tr key={inv.id}>
+                  <td className="px-4 py-2.5 text-zinc-200">{inv.email}</td>
+                  <td className="px-4 py-2.5 text-zinc-400">{roleLabel(inv.role)}</td>
+                  <td className="px-4 py-2.5 text-xs text-zinc-500">{inv.expired ? 'expirée' : `expire le ${inv.expires_at}`}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {canManage && <button onClick={() => revoke(inv)} className="text-xs text-zinc-500 hover:text-rose-400">Annuler</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : (
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
