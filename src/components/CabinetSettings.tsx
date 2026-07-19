@@ -154,10 +154,17 @@ function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUse
   const myRole = rows.find((r) => r.userId === user.id)?.role;
   const canManage = myRole === 'owner' || myRole === 'associe';
 
+  // Format d'adresse vérifié avant l'appel : sinon l'API répondrait « aucun
+  // compte Nova », message trompeur quand c'est en fait une faute de frappe.
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
   const add = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!email.trim()) return;
+    e.preventDefault();
+    const value = email.trim();
+    if (!value) return;
+    if (!EMAIL_RE.test(value)) { setError(`Adresse email invalide : « ${value} ». Vérifiez le format (ex. prenom.nom@domaine.ci) — une seule « @ » et un point avant l'extension.`); return; }
     setBusy(true); setError(null);
-    try { await api.addMember(cabinet.id, email.trim(), role); setEmail(''); await load(); }
+    try { await api.addMember(cabinet.id, value, role); setEmail(''); await load(); }
     catch (e: any) { setError(e.message); } finally { setBusy(false); }
   };
   const changeRole = async (uid: string, r: string) => { setError(null); try { await api.setMemberRole(cabinet.id, uid, r); await load(); } catch (e: any) { setError(e.message); } };
@@ -170,7 +177,8 @@ function Members({ cabinet, user, isCompany }: { cabinet: Cabinet; user: AuthUse
       {canManage && (
         <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Email du collaborateur (compte Nova existant)</label>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="collaborateur@cabinet.ci" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+            <input type="email" inputMode="email" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="collaborateur@cabinet.ci" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" />
+            <p className="mt-1 text-xs text-zinc-500">La personne doit avoir déjà créé son compte Nova avec cette adresse.</p></div>
           <div><label className="mb-1 block text-xs text-zinc-500">Rôle</label>
             <select value={role} onChange={(e) => setRole(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50">{ROLES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}</select></div>
           <button type="submit" disabled={busy} className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Ajouter</button>
