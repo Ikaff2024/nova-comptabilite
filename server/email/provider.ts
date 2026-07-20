@@ -12,6 +12,12 @@ export function emailEnabled(): boolean {
   return !!apiKey();
 }
 
+// Adresse expéditrice réellement utilisée (diagnostic). Tant qu'elle pointe sur
+// le domaine de test de Resend, les envois n'aboutissent qu'au titulaire du
+// compte Resend : c'est LA cause n°1 d'« email non reçu ».
+export function emailFrom(): string { return from(); }
+export function emailIsTestSender(): boolean { return /resend\.dev/i.test(from()); }
+
 export interface EmailAttachment { filename: string; content: string } // content = base64
 export interface EmailInput { to: string; subject: string; html?: string; text?: string; replyTo?: string; attachments?: EmailAttachment[] }
 

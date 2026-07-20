@@ -424,6 +424,8 @@ export const api = {
   simulateEntry: (dossierId: string, lines: { accountCode: string; debit?: number; credit?: number }[]) => req<SimulationResult>(`/api/dossiers/${dossierId}/simulate-entry`, { method: 'POST', body: JSON.stringify({ lines }) }),
   renameCabinet: (cabinetId: string, name: string) => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   setCabinetType: (cabinetId: string, accountType: 'cabinet' | 'entreprise') => req<void>(`/api/cabinets/${cabinetId}`, { method: 'PATCH', body: JSON.stringify({ accountType }) }),
+  emailStatus: () => req<{ enabled: boolean; from: string; testSender: boolean }>('/api/email/status'),
+  emailTest: (to?: string) => req<{ ok: boolean; id: string; to: string; from: string; testSender: boolean }>('/api/email/test', { method: 'POST', body: JSON.stringify({ to }) }),
   memberAccess: (cabinetId: string, userId: string) => req<MemberAccess>(`/api/cabinets/${cabinetId}/members/${userId}/access`),
   setMemberAccess: (cabinetId: string, userId: string, restricted: boolean, dossierIds: string[]) =>
     req<void>(`/api/cabinets/${cabinetId}/members/${userId}/access`, { method: 'PUT', body: JSON.stringify({ restricted, dossierIds }) }),

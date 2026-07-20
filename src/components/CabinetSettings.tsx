@@ -3,6 +3,7 @@ import { Loader2, Users, ShieldCheck, ShieldOff, Plus, Trash2, KeyRound, CheckCi
 import { api, type Cabinet, type AuthUser, type CabinetMember, type PendingInvitation, type MemberAccess } from '../lib/api';
 import { cn } from '../lib/utils';
 import ApiCosts from './ApiCosts';
+import EmailChannel from './EmailChannel';
 
 const ROLES = [
   { v: 'owner', l: 'Propriétaire' },
@@ -25,6 +26,7 @@ export default function CabinetSettings({ cabinet, user, onUserRefresh, onRename
       <CabinetName cabinet={cabinet} onRenamed={onRenamed} isCompany={isCompany} />
       <ProfileName user={user} onUserRefresh={onUserRefresh} />
       <Members cabinet={cabinet} user={user} isCompany={isCompany} />
+      {isOwner && <EmailChannel />}
       {isOwner && <ApiCosts isCompany={isCompany} />}
       {isOwner && <AccountTypeSwitch cabinet={cabinet} isCompany={!!isCompany} onChanged={onRenamed} />}
       <TwoFactor user={user} onUserRefresh={onUserRefresh} />

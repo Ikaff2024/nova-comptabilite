@@ -250,6 +250,34 @@ export function createApi() {
     res.status(204).end();
   }));
 
+  // --- Diagnostic du canal email ---------------------------------------------
+  // Permet de vérifier la configuration d'envoi sans passer par une vraie
+  // invitation, et de voir l'erreur EXACTE renvoyée par le fournisseur.
+  app.get('/api/email/status', h(async (req, res) => {
+    requireUser(req);
+    res.json({ enabled: mail.emailEnabled(), from: mail.emailFrom(), testSender: mail.emailIsTestSender() });
+  }));
+  app.post('/api/email/test', h(async (req: any, res) => {
+    const userId = requireUser(req);
+    if (!mail.emailEnabled()) { const e: any = new Error("Canal email non configuré (RESEND_API_KEY absente)."); e.status = 400; throw e; }
+    const me = await withUser(userId, (c) => users.getUser(c, userId));
+    const to = String(req.body?.to ?? me?.email ?? '').trim();
+    if (!to.includes('@')) { const e: any = new Error('Adresse de test invalide.'); e.status = 400; throw e; }
+    try {
+      const { id } = await mail.sendEmail({
+        to, subject: 'Test d\'envoi — Nova Comptabilité',
+        html: `<p>Bonjour,</p><p>Cet email confirme que le canal d'envoi de <strong>Nova Comptabilité</strong> fonctionne.</p>
+               <p style="color:#555;font-size:13px">Expéditeur utilisé : <code>${mail.emailFrom()}</code></p>
+               <p style="color:#888;font-size:12px">Message de test — aucune action requise.</p>`,
+      });
+      res.json({ ok: true, id, to, from: mail.emailFrom(), testSender: mail.emailIsTestSender() });
+    } catch (err: any) {
+      // On remonte le message du fournisseur tel quel : c'est lui qui explique
+      // « domain not verified », « from address not allowed », etc.
+      const e: any = new Error(`Échec de l'envoi : ${err?.message ?? err}`); e.status = 400; throw e;
+    }
+  }));
+
   // --- Invitations de collaborateurs -----------------------------------------
   // Un seul geste : compte existant -> rattaché ; sinon -> invitation par email.
   app.post('/api/cabinets/:cid/invitations', h(async (req, res) => {
