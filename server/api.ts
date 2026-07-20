@@ -29,6 +29,7 @@ import * as catalog from './domain/catalog.js';
 import * as closures from './domain/closures.js';
 import * as tax from './domain/tax.js';
 import * as importbalance from './domain/importbalance.js';
+import * as importledger from './domain/importledger.js';
 import * as assets from './domain/assets.js';
 import * as audit from './domain/audit.js';
 import * as usage from './domain/usage.js';
@@ -787,6 +788,21 @@ export function createApi() {
     requireUser(req);
     const items = importbalance.parseTiersCsv(String(req.body?.tiersCsv ?? ''));
     res.json({ count: items.length, items });
+  }));
+
+  // Import du GRAND LIVRE (reprise des mouvements détaillés).
+  app.post('/api/dossiers/:id/import-ledger/analyze', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { csv, fiscalYearId } = req.body ?? {};
+    const parsed = importledger.parseLedgerCsv(String(csv ?? ''));
+    res.json(await withUser(userId, (c) => importledger.analyzeLedgerImport(c, req.params.id, parsed, fiscalYearId || undefined)));
+  }));
+  app.post('/api/dossiers/:id/import-ledger/commit', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { csv, fiscalYearId, createMissing } = req.body ?? {};
+    if (!fiscalYearId) { const e: any = new Error('fiscalYearId requis'); e.status = 400; throw e; }
+    const parsed = importledger.parseLedgerCsv(String(csv ?? ''));
+    res.json(await withUser(userId, (c) => importledger.commitLedgerImport(c, req.params.id, parsed, { fiscalYearId, createMissing: !!createMissing, userId })));
   }));
 
   // --- Portail client : rôle effectif + gestion des accès --------------------

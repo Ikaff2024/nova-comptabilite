@@ -22,6 +22,7 @@ import Paie from './Paie';
 import ClientAccess from './ClientAccess';
 import Fiscalite from './Fiscalite';
 import ImportBalance from './ImportBalance';
+import ImportLedger from './ImportLedger';
 import Immobilisations from './Immobilisations';
 import AuditTrail from './AuditTrail';
 import LexaDecisions from './LexaDecisions';
@@ -100,7 +101,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
     { id: 'fiscalite', label: 'Fiscalité', icon: Receipt },
     { id: 'regles', label: 'Règles', icon: ShieldCheck },
     { id: 'plan', label: 'Plan comptable', icon: BookOpen },
-    { id: 'import', label: 'Import balance', icon: Upload },
+    { id: 'import', label: 'Import / reprise', icon: Upload },
     { id: 'audit', label: 'Audit', icon: History },
     { id: 'decisions', label: 'Décisions Lexa', icon: ScrollText },
     { id: 'portail', label: 'Portail client', icon: UserRound },
@@ -276,7 +277,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
             {tab === 'regles' && <RulesTab dossierId={dossier.id} />}
             {tab === 'identite' && <FicheEntreprise dossierId={dossier.id} onRenamed={(n) => { setName(n); dossier.raison_sociale = n; }} />}
             {tab === 'plan' && <PlanTab dossierId={dossier.id} />}
-            {tab === 'import' && <ImportBalance dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
+            {tab === 'import' && <div className="space-y-6"><ImportBalance dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} /><ImportLedger dossierId={dossier.id} fiscalYears={fiscalYears} /></div>}
             {tab === 'recurrences' && <Recurring dossierId={dossier.id} currency={dossier.base_currency} journals={journals} />}
             {tab === 'abonnements' && <RecurringInvoices dossierId={dossier.id} currency={dossier.base_currency} />}
             {tab === 'audit' && <AuditTrail dossierId={dossier.id} />}

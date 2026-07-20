@@ -398,6 +398,7 @@ export interface FinancingBrief { montant?: number; objet?: string; dureeMois?: 
 export interface FinancingReadinessItem { key: string; label: string; ok: boolean; blocking: boolean; detail: string; }
 export interface FinancingCapacity { resultat: number; dotations: number; caf: number; montant: number; dureeMois: number; tauxAnnuel: number; mensualite: number; annuite: number; couverture: number | null; }
 export interface FinancingReadiness { pourcentage: number; pret: boolean; bloquants: number; items: FinancingReadinessItem[]; capacite: FinancingCapacity; }
+export interface LedgerAnalysis { entries: number; movements: number; totalDebit: number; totalCredit: number; balanced: boolean; unbalanced: { date: string; journal: string; piece: string; ecart: number }[]; missingAccounts: string[]; invalidDates: number; outOfRange: number; alreadyImported: boolean; }
 export interface DossierProfile {
   raisonSociale: string; adresse: string | null; ville: string | null; telephone: string | null;
   taxId: string | null; rccm: string | null; numeroCnps: string | null;
@@ -462,6 +463,8 @@ export const api = {
   dossierProfile: (dossierId: string) => req<DossierProfile>(`/api/dossiers/${dossierId}/profile`),
   updateDossierProfile: (dossierId: string, body: Partial<DossierProfile>) =>
     req<{ ok: boolean; raison_sociale: string; profile: DossierProfile }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  analyzeLedgerImport: (dossierId: string, csv: string, fiscalYearId?: string) => req<LedgerAnalysis>(`/api/dossiers/${dossierId}/import-ledger/analyze`, { method: 'POST', body: JSON.stringify({ csv, fiscalYearId }) }),
+  commitLedgerImport: (dossierId: string, csv: string, fiscalYearId: string, createMissing: boolean) => req<{ entriesCreated: number; movements: number; accountsCreated: number; totalDebit: number }>(`/api/dossiers/${dossierId}/import-ledger/commit`, { method: 'POST', body: JSON.stringify({ csv, fiscalYearId, createMissing }) }),
   renameDossier: (dossierId: string, raisonSociale: string) =>
     req<{ ok: boolean; raison_sociale: string }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify({ raisonSociale }) }),
   createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string; rccm?: string }) =>

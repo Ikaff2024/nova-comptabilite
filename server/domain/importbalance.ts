@@ -252,7 +252,7 @@ export async function analyzeBalanceImport(
 // --- Création des comptes manquants (filet de sécurité de reprise) ----------
 
 // Dérive type/sens d'un compte manquant à partir de sa classe et du sens du solde.
-function deriveAccount(code: string, isDebit: boolean): { classNo: number; type: string; side: string } {
+export function deriveAccount(code: string, isDebit: boolean): { classNo: number; type: string; side: string } {
   const classNo = Number(code[0]);
   const sign = isDebit ? 'debit' : 'credit';
   switch (classNo) {
