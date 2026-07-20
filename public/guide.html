@@ -113,6 +113,7 @@
     <a href="#paie">19 · Paie &amp; RH</a>
     <a href="#canaux">20 · WhatsApp &amp; Telegram</a>
     <a href="#veille">34 · Veille de Lexa</a>
+    <a href="#conges">36 · Congés</a>
     <a class="pillar">Qualité &amp; compte</a>
     <a href="#fiabilite">21 · Fiabilité — AQM</a>
     <a href="#revision">22 · Révision des comptes</a>
@@ -165,7 +166,7 @@
       <div class="pillar-row"><b>🔒 Sécurité — traçabilité &amp; confiance</b>
         <ol start="17"><li>Piste d'audit (journal inaltérable des actions)</li></ol></div>
       <div class="pillar-row"><b>🤖 Assistant &amp; canaux — Lexa, votre comptable IA</b>
-        <ol start="18"><li>Lexa (dialogue, voix, niveaux de pouvoir)</li><li>Paie &amp; RH (bulletins, analyse RH, attestations, comptabilisation)</li><li>WhatsApp &amp; Telegram (parler à Lexa hors de l'app)</li></ol><ol start="34"><li>Veille de Lexa (analyse nocturne, alertes proactives)</li></ol></div>
+        <ol start="18"><li>Lexa (dialogue, voix, niveaux de pouvoir)</li><li>Paie &amp; RH (bulletins, analyse RH, attestations, comptabilisation)</li><li>WhatsApp &amp; Telegram (parler à Lexa hors de l'app)</li></ol><ol start="34"><li>Veille de Lexa (analyse nocturne, alertes proactives)</li></ol><ol start="36"><li>Congés (demande, validation, solde)</li></ol></div>
       <div class="pillar-row"><b>🛡️ Qualité &amp; compte — fiabilité et mise en place</b>
         <ol start="21"><li>Fiabilité — AQM (contrôle qualité, cohérence inter-modules, simulation, traçabilité)</li><li>Révision &amp; justification des comptes</li><li>Mode entreprise vs cabinet</li><li>Collaborateurs &amp; profils d'accès (inviter, rôles, portail client)</li><li>Fiche entreprise (identité reprise sur tous les documents)</li></ol></div>
       <div class="pillar-row"><b>📈 Pilotage — lire la santé de l'entreprise</b>
@@ -1039,6 +1040,32 @@
         <ul class="tips">
           <li>Le triage est <strong>borné à votre périmètre</strong> : un collaborateur restreint ne voit que ses dossiers (voir <a href="#collaborateurs">fiche 24</a>).</li>
           <li>Sur un gros portefeuille, laissez travailler la <strong>veille nocturne</strong> : l'écran reste instantané puisqu'il lit des analyses déjà faites.</li>
+        </ul></div>
+      <a class="backtop" href="#sommaire">↑ Sommaire</a>
+    </section>
+
+    <!-- ============ 36 CONGES ============ -->
+    <section class="fiche" id="conges">
+      <h2>36 · Congés — demande, validation, solde <span class="tag">Assistant</span></h2>
+      <div class="block"><div class="label"><span class="ic">🎯</span>À quoi ça sert</div>
+        Gérer les congés de bout en bout : le salarié (ou le gestionnaire pour lui) <strong>dépose une demande</strong>, un responsable l'<strong>approuve ou la refuse</strong>, et le <strong>solde</strong> de chacun se met à jour tout seul.</div>
+      <div class="block"><div class="label"><span class="ic">🪜</span>Pas à pas</div>
+        <ol class="steps">
+          <li><strong>Paie &amp; RH</strong> → sous-onglet <strong>Congés</strong>.</li>
+          <li><strong>Nouvelle demande</strong> : salarié, type (congés payés, maladie, sans solde, autre), période et nombre de <strong>jours ouvrables</strong>.</li>
+          <li>La demande apparaît <strong>En attente</strong> : à ce stade elle n'a <strong>aucun effet</strong> sur la paie.</li>
+          <li>Un responsable clique <strong>Approuver</strong> (ou Refuser). À l'approbation seulement, l'absence est créée.</li>
+        </ol></div>
+      <div class="block"><div class="label"><span class="ic">⚙️</span>Ce que déclenche l'approbation</div>
+        L'absence créée alimente automatiquement la <a href="#paie">paie</a> (déduction le cas échéant), le <strong>taux d'absentéisme</strong> et la <strong>provision congés payés</strong> de l'analyse RH. Un congé payé ou maladie crée une absence <strong>payée</strong> ; un congé <strong>sans solde</strong> crée une absence non payée, donc déduite du bulletin.</div>
+      <div class="block"><div class="label"><span class="ic">📊</span>Lire les soldes</div>
+        Pour chaque salarié : <strong>Acquis</strong> (2,2 jours ouvrables par mois de service, droit ivoirien), <strong>Pris</strong>, <strong>En attente</strong> (demandes non encore tranchées) et <strong>Solde</strong> disponible. Un solde négatif apparaît en rouge : le salarié a pris plus que ses droits acquis.</div>
+      <div class="block"><div class="label"><span class="ic">💡</span>Astuces</div>
+        <ul class="tips">
+          <li>Les demandes en attente sont décomptées du solde : on ne promet pas deux fois les mêmes jours.</li>
+          <li>Lexa sait répondre à « qui a des congés à valider ? » ou « combien de jours reste-t-il à Awa ? ». La <strong>validation reste humaine</strong>.</li>
+          <li>Les demandes en attente remontent aussi dans la <a href="#veille">veille de Lexa</a> : rien ne dort dans la file.</li>
+          <li>Une demande approuvée ne s'annule pas ici : supprimez l'absence correspondante dans le sous-onglet <strong>Absences</strong>.</li>
         </ul></div>
       <a class="backtop" href="#sommaire">↑ Sommaire</a>
     </section>
