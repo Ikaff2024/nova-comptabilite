@@ -39,10 +39,29 @@ export function printDocument(title: string, subtitle: string, bodyHtml: string)
     ${bodyHtml}
     <p style="color:#888;margin-top:18px;font-size:9px">Généré par Nova Comptabilité</p>
   </body></html>`;
-  const w = window.open('', '_blank');
-  if (!w) return;
-  w.document.write(html); w.document.close(); w.focus();
-  setTimeout(() => w.print(), 300);
+  // Impression via un IFRAME CACHÉ plutôt qu'un onglet : window.open laissait
+  // une page « about:blank » ouverte après l'aperçu, et se faisait bloquer par
+  // les bloqueurs de pop-ups. Ici, rien n'apparaît et tout se nettoie seul.
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(frame);
+
+  const win = frame.contentWindow;
+  if (!win) { frame.remove(); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+
+  let cleaned = false;
+  const cleanup = () => { if (cleaned) return; cleaned = true; setTimeout(() => frame.remove(), 300); };
+  win.onafterprint = cleanup;
+
+  setTimeout(() => {
+    try { win.focus(); win.print(); } catch { cleanup(); return; }
+    // Filet de sécurité : certains navigateurs ne déclenchent pas onafterprint.
+    setTimeout(cleanup, 60000);
+  }, 250);
 }
 
 export function nowStamp(): string { return new Date().toLocaleDateString('fr-FR'); }
