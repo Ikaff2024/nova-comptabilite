@@ -520,6 +520,16 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
   if (ACTION_TOOL_NAMES.has(name) && mode !== 'assist_plus') {
     return { error: 'Action non autorisée : activez le mode « assisté + actions » (réservé aux administrateurs).' };
   }
+  // Rôle de la PERSONNE, en plus du mode du dossier : une action irréversible
+  // ou à effet externe reste réservée aux owner/associé, même en assist_plus.
+  // Vérifié ici aussi (et pas seulement au filtrage des outils) : défense en
+  // profondeur, y compris pour les canaux WhatsApp/Telegram.
+  if (ACTION_TOOL_NAMES.has(name)) {
+    const role = await callerCabinetRole(c, dossierId);
+    if (!isCabinetAdmin(role)) {
+      return { error: "Action réservée aux administrateurs du cabinet (propriétaire ou associé). Votre profil peut préparer et consulter, mais pas déclencher cette opération." };
+    }
+  }
 
   switch (name) {
     case 'situation_generale': return await dash.dossierDashboard(c, dossierId, fy);
@@ -866,13 +876,31 @@ export async function runToolForTest(c: Client, dossierId: string, name: string,
   return executeTool(c, dossierId, fyId, name, input, mode);
 }
 
+// Rôle de l'utilisateur courant sur le cabinet qui détient ce dossier.
+// Le mode du dossier dit CE QUE Lexa peut faire ; le rôle dit QUI a le droit de
+// le lui demander. Les deux doivent être réunis pour une action sensible.
+async function callerCabinetRole(c: Client, dossierId: string): Promise<string | null> {
+  try {
+    const { rows } = await c.query(
+      `select cm.role from cabinet_members cm
+         join dossiers d on d.cabinet_id = cm.cabinet_id
+        where d.id = $1 and cm.user_id = app_current_user_id() limit 1`, [dossierId]);
+    return rows[0]?.role ?? null;
+  } catch { return null; }
+}
+const isCabinetAdmin = (role: string | null) => role === 'owner' || role === 'associe';
+
 export async function runAgent(c: Client, dossierId: string, history: AgentMessage[], userId?: string): Promise<AgentResult> {
   if (!agentEnabled()) throw new Error('Assistant IA non configuré (ANTHROPIC_API_KEY absent).');
   const { text: ctx, fyId, mode } = await dossierContext(c, dossierId);
-  const tools = mode === 'assist_plus' ? [...READ_TOOLS, ...DRAFT_TOOLS, ...REVERSIBLE_TOOLS, ...ACTION_TOOLS]
+  // Un collaborateur peut faire travailler Lexa, mais pas déclencher une action
+  // irréversible ou externe (paie, envoi d'email, comptabilisation).
+  const admin = isCabinetAdmin(await callerCabinetRole(c, dossierId));
+  const tools = mode === 'assist_plus' ? [...READ_TOOLS, ...DRAFT_TOOLS, ...REVERSIBLE_TOOLS, ...(admin ? ACTION_TOOLS : [])]
     : mode === 'assist' ? [...READ_TOOLS, ...DRAFT_TOOLS]
     : READ_TOOLS;
-  const note = mode === 'assist_plus' ? ASSIST_NOTE + PLUS_NOTE : mode === 'assist' ? ASSIST_NOTE : '';
+  // Sans droits d'administration, on ne promet pas les actions dans la consigne.
+  const note = mode === 'assist_plus' && admin ? ASSIST_NOTE + PLUS_NOTE : (mode === 'assist_plus' || mode === 'assist') ? ASSIST_NOTE : '';
 
   // system : garde-fous statiques + note de palier + contexte dossier. Les DEUX
   // blocs sont mis en cache (le contexte dossier est stable dans une conversation)
