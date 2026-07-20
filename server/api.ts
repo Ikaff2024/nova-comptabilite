@@ -41,6 +41,7 @@ import * as invitations from './domain/invitations.js';
 import * as dossierprofile from './domain/dossierprofile.js';
 import * as findossier from './domain/financingdossier.js';
 import * as nightly from './domain/nightly.js';
+import * as triage from './domain/cabinettriage.js';
 import * as aqm from './domain/aqm.js';
 import * as ledgerDom from './domain/ledger.js';
 import * as authntic from './integrations/authntic.js';
@@ -348,6 +349,16 @@ export function createApi() {
   app.get('/api/cabinets', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => acc.listCabinets(c)));
+  }));
+
+  // Copilote du cabinet : par quoi commencer ce matin (vue transverse).
+  app.get('/api/cabinet/triage', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => triage.triage(c)));
+  }));
+  app.post('/api/cabinet/triage/run', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => triage.runAll(c)));
   }));
 
   app.get('/api/dashboard', h(async (req, res) => {

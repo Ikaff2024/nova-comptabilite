@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Building2, Sparkles, CalendarDays, TrendingUp, ChevronRight, AlertTriangle, Bot } from 'lucide-react';
-import { api, fmtMoney, type DashboardData } from '../lib/api';
+import { api, fmtMoney, type DashboardData, type CabinetTriage } from '../lib/api';
 import { cn } from '../lib/utils';
 
 const SOURCE_COLOR: Record<string, string> = {
@@ -50,6 +50,8 @@ export default function CabinetDashboard({ cabinetName, onOpen, onDemo, refresh 
         <h1 className="font-display text-3xl font-bold tracking-tight">Tableau de bord</h1>
         <p className="mt-1 text-zinc-400">{cabinetName} · vue d'ensemble du portefeuille</p>
       </div>
+
+      <TriagePanel onOpen={onOpen} />
 
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -157,5 +159,84 @@ function Kpi({ icon: Icon, label, value, highlight, hint, valueClass }: {
       <div className={cn('mt-3 font-display text-3xl font-bold tracking-tight', valueClass ?? (highlight ? 'text-emerald-400' : 'text-white'))}>{value}</div>
       {hint && <div className="mt-1 text-[11px] leading-tight text-zinc-500">{hint}</div>}
     </div>
+  );
+}
+
+// Copilote du cabinet : par quoi commencer ce matin. S'appuie sur les digests
+// de la veille nocturne — on ne recalcule pas tout le portefeuille à l'affichage.
+function TriagePanel({ onOpen }: { onOpen: (id: string) => void }) {
+  const [t, setT] = useState<CabinetTriage | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => { try { setT(await api.cabinetTriage()); } catch { /* non bloquant */ } };
+  useEffect(() => { load(); }, []);
+
+  const runAll = async () => {
+    setBusy(true); setError(null);
+    try { await api.runCabinetTriage(); await load(); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  if (!t) return null;
+  const rien = t.dossiers.length === 0 && t.jamaisAnalyses.length === 0;
+  if (rien) return null;
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 font-display text-lg font-semibold text-zinc-100">
+            <Sparkles className="h-5 w-5 text-emerald-400" /> Par quoi commencer
+          </div>
+          <p className="mt-0.5 text-sm text-zinc-400">
+            {t.resume.dossiers === 0 ? 'Aucun dossier encore analysé.'
+              : <>{t.resume.critiques} dossier(s) critique(s) · {t.resume.aTraiter} point(s) à traiter sur {t.resume.dossiers} dossier(s) analysé(s).</>}
+          </p>
+        </div>
+        <button onClick={runAll} disabled={busy} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-50">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyser le portefeuille
+        </button>
+      </div>
+
+      {error && <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+
+      {t.parCategorie.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {t.parCategorie.slice(0, 6).map((c) => (
+            <span key={c.categorie} className="rounded-full border border-white/10 bg-zinc-900/50 px-3 py-1 text-xs text-zinc-300">
+              {c.libelle} · <span className="font-mono text-zinc-100">{c.dossiers}</span> dossier(s)
+            </span>
+          ))}
+        </div>
+      )}
+
+      {t.dossiers.filter((d) => d.haute + d.moyenne > 0).length > 0 && (
+        <div className="mt-4 overflow-hidden rounded-xl border border-white/10">
+          {t.dossiers.filter((d) => d.haute + d.moyenne > 0).slice(0, 8).map((d) => (
+            <button key={d.dossierId} onClick={() => onOpen(d.dossierId)}
+              className="flex w-full items-start gap-3 border-b border-white/5 px-4 py-3 text-left last:border-0 hover:bg-white/5">
+              <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', d.haute > 0 ? 'bg-rose-400' : 'bg-amber-400')} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-zinc-100">{d.raisonSociale}</div>
+                <div className="truncate text-xs text-zinc-500">{d.points.map((p) => p.titre).join(' · ') || '—'}</div>
+              </div>
+              <span className="shrink-0 text-xs text-zinc-500">
+                {d.haute > 0 && <span className="text-rose-300">{d.haute} urgent(s)</span>}
+                {d.haute > 0 && d.moyenne > 0 && ' · '}
+                {d.moyenne > 0 && <span className="text-amber-300">{d.moyenne} à voir</span>}
+              </span>
+              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-zinc-600" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {t.jamaisAnalyses.length > 0 && (
+        <p className="mt-3 text-xs text-zinc-500">
+          {t.jamaisAnalyses.length} dossier(s) jamais analysé(s) — lancez « Analyser le portefeuille », ou activez la veille dans chaque dossier (onglet Lexa).
+        </p>
+      )}
+    </section>
   );
 }

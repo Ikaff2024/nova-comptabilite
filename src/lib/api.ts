@@ -414,6 +414,8 @@ export const api = {
   setup2fa: () => req<{ secret: string; otpauth: string }>('/api/auth/2fa/setup', { method: 'POST', body: '{}' }),
   enable2fa: (code: string) => req<{ enabled: boolean }>('/api/auth/2fa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
   disable2fa: () => req<{ enabled: boolean }>('/api/auth/2fa/disable', { method: 'POST', body: '{}' }),
+  cabinetTriage: () => req<CabinetTriage>('/api/cabinet/triage'),
+  runCabinetTriage: () => req<{ analyses: number; ignores: number }>('/api/cabinet/triage/run', { method: 'POST', body: '{}' }),
   nightly: (dossierId: string) => req<NightlyState>(`/api/dossiers/${dossierId}/nightly`),
   setNightly: (dossierId: string, enabled: boolean) => req<void>(`/api/dossiers/${dossierId}/nightly`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
   runNightly: (dossierId: string, notify = false) =>
@@ -767,4 +769,13 @@ export const OHADA_COUNTRIES: { code: string; name: string }[] = [
 export function fmtMoney(n: number, currency = 'XOF'): string {
   const decimals = currency === 'XOF' || currency === 'XAF' ? 0 : 2;
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency, minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(n);
+}
+
+export interface TriagePoint { niveau: string; titre: string; categorie: string }
+export interface TriageDossier { dossierId: string; raisonSociale: string; analyseLe: string | null; haute: number; moyenne: number; points: TriagePoint[] }
+export interface CabinetTriage {
+  dossiers: TriageDossier[];
+  jamaisAnalyses: { dossierId: string; raisonSociale: string }[];
+  resume: { dossiers: number; critiques: number; aTraiter: number };
+  parCategorie: { categorie: string; libelle: string; dossiers: number; points: number }[];
 }
