@@ -93,6 +93,51 @@ export async function globalCoherence(c: Client, dossierId: string, fiscalYearId
     }
   }
 
+  // --- TVA ↔ Grand livre : cohérence avec le RÉGIME fiscal -------------------
+  // Contrôle déterministe (pas d'estimation) : sous l'impôt synthétique on ne
+  // collecte pas de TVA ; en réel, une TVA collectée nulle malgré des ventes
+  // est un signal fort.
+  const { rows: rg } = await c.query('select regime_fiscal from dossiers where id=$1', [dossierId]);
+  const regime = String(rg[0]?.regime_fiscal ?? '');
+  const tvaCollectee = round(-balPrefix('443'));   // 443 est créditeur
+  const ventes = round(-balPrefix('70'));          // 70x créditeur
+  if (regime === 'synthetique') {
+    const ok = tvaCollectee === 0;
+    add({
+      module: 'TVA ↔ Grand livre', regle: 'tva_regime_synthetique', libelle: 'TVA collectée vs régime fiscal',
+      attendu: 0, constate: tvaCollectee, niveau: ok ? 'ok' : 'haute',
+      explication: ok ? "Régime de l'impôt synthétique : aucune TVA collectée, conforme."
+        : `Régime de l'impôt synthétique (non assujetti) mais ${tvaCollectee} de TVA collectée en 443 : imputation à revoir, ou régime mal renseigné dans la fiche entreprise.`,
+    });
+  } else if (ventes > 0 || tvaCollectee > 0) {
+    const ok = !(ventes > 500000 && tvaCollectee === 0);
+    add({
+      module: 'TVA ↔ Grand livre', regle: 'tva_collectee_ventes', libelle: 'TVA collectée vs ventes comptabilisées',
+      attendu: 0, constate: tvaCollectee, niveau: ok ? 'ok' : 'moyenne',
+      explication: ok ? 'Des ventes et une TVA collectée sont enregistrées de façon cohérente.'
+        : `Des ventes (${ventes}) sans aucune TVA collectée en 443 : vérifiez l'assujettissement, une exonération, ou une TVA non comptabilisée.`,
+    });
+  }
+
+  // --- Trésorerie ↔ Résultat : bouclage du tableau de flux -------------------
+  // Le TFT calcule déjà l'écart entre la variation de trésorerie CONSTATÉE au
+  // bilan et celle EXPLIQUÉE par les flux. Un écart matériel = des mouvements
+  // de trésorerie que le résultat et les flux n'expliquent pas.
+  try {
+    const tft: any = await acc.cashFlowStatement(c, dossierId, fyId);
+    if (tft?.hasPrevious) {
+      const ecart = round(tft.ecartReconciliation);
+      const base = Math.max(Math.abs(round(tft.variationConstatee)), 1);
+      const ok = Math.abs(ecart) <= Math.max(1000, base * 0.02);
+      add({
+        module: 'Trésorerie ↔ Résultat', regle: 'tft_reconciliation', libelle: 'Bouclage du tableau de flux',
+        attendu: round(tft.variationConstatee), constate: round(tft.variationCalculee), niveau: ok ? 'ok' : 'moyenne',
+        explication: ok ? 'La variation de trésorerie est entièrement expliquée par les flux (exploitation, investissement, financement).'
+          : `La variation de trésorerie constatée n'est pas entièrement expliquée par les flux : écart de ${ecart}. Des mouvements de trésorerie sont mal rattachés (ou un compte de bilan a bougé sans contrepartie identifiée).`,
+      });
+    }
+  } catch { /* TFT indisponible (pas de N-1) : contrôle non applicable */ }
+
   const resume = {
     haute: controles.filter((x) => x.niveau === 'haute').length,
     moyenne: controles.filter((x) => x.niveau === 'moyenne').length,
