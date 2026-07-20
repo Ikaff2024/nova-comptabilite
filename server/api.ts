@@ -488,6 +488,15 @@ export function createApi() {
     const includeInactive = req.query.all === '1';
     res.json(await withUser(userId, (c) => acc.listAccounts(c, req.params.id, { classNo, search, includeInactive })));
   }));
+  // Export du plan comptable : ?format=csv (défaut) | pdf. Codes complétés à 8 chiffres.
+  app.get('/api/dossiers/:id/accounts/export', h(async (req, res) => {
+    const userId = requireUser(req);
+    const pdf = req.query.format === 'pdf';
+    const out = await withUser(userId, (c) => (pdf ? accdocs.chartOfAccountsPdf(c, req.params.id) : csv.chartOfAccountsCsv(c, req.params.id)));
+    res.setHeader('Content-Type', pdf ? 'application/pdf' : 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.buffer);
+  }));
   app.post('/api/dossiers/:id/accounts', h(async (req, res) => {
     const userId = requireUser(req);
     res.status(201).json(await withUser(userId, (c) => acc.createAccount(c, req.params.id, req.body ?? {})));

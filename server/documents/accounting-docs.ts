@@ -450,3 +450,22 @@ export async function etatsFinanciersPdf(c: Client, dossierId: string, fyId?: st
   });
   return { filename: 'etats-financiers.pdf', buffer };
 }
+
+// Plan comptable en PDF. Codes complétés à 8 chiffres (format DGI/import) en
+// première colonne — sans modifier les codes stockés.
+const chartPad8 = (code: string) => { const s = String(code).trim(); return /^\d+$/.test(s) && s.length < 8 ? s.padEnd(8, '0') : s; };
+
+export async function chartOfAccountsPdf(c: Client, dossierId: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const { rows: dr } = await c.query('select raison_sociale from dossiers where id=$1', [dossierId]);
+  const accounts = await acc.listAccounts(c, dossierId, { includeInactive: true, limit: 5000 });
+  const columns = [
+    { label: 'Compte (8 ch.)', width: 90 }, { label: 'Code', width: 60 },
+    { label: 'Intitulé', width: 300 }, { label: 'Cl.', width: 34, align: 'right' as const }, { label: 'Sens', width: 70 },
+  ];
+  const rows = accounts.map((a: any) => [chartPad8(a.account_code), a.account_code, a.label ?? '', String(a.class_no ?? ''), a.normal_side === 'credit' ? 'Créditeur' : 'Débiteur']);
+  const buffer = await tablePdf({
+    title: 'Plan comptable', subtitle: `${dr[0]?.raison_sociale ?? ''} · ${accounts.length} comptes`,
+    columns, rows, footNote: 'Codes présentés complétés à 8 chiffres (format DGI / import). Généré par Nova.',
+  });
+  return { filename: 'plan-comptable.pdf', buffer, count: accounts.length };
+}

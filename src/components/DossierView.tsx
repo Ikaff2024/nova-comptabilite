@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown, Lock, ScrollText } from 'lucide-react';
-import { api, fmtMoney, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import EntryForm from './EntryForm';
@@ -433,6 +433,8 @@ function PlanTab({ dossierId }: { dossierId: string }) {
             className="w-full rounded-lg border border-white/10 bg-zinc-900/50 py-2 pl-9 pr-4 text-sm outline-none focus:border-emerald-500/50" />
         </div>
         <label className="flex items-center gap-1.5 text-xs text-zinc-400"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-emerald-500" /> inclure inactifs</label>
+        <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/accounts/export?format=csv`, 'plan-comptable.csv')} title="Exporter le plan comptable (codes complétés à 8 chiffres)" className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Exporter (CSV)</button>
+        <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/accounts/export?format=pdf`, 'plan-comptable.pdf')} title="Plan comptable en PDF" className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
         <button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Nouveau compte</button>
       </div>
 

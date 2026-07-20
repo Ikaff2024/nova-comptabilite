@@ -38,3 +38,20 @@ export async function grandLivreCsv(c: Client, dossierId: string, accountCode: s
   for (const l of lines) { solde += l.debit - l.credit; out.push([l.entry_date, l.journal_code ?? '', l.piece_ref ?? '', l.line_label || l.description || '', l.debit, l.credit, solde]); }
   return { filename: `grand-livre-${accountCode}.csv`, buffer: toCsv(out), count: lines.length };
 }
+
+// Plan comptable en CSV. `pad8` complète chaque code à 8 chiffres avec des zéros
+// à droite (format attendu par la DGI / d'autres logiciels), SANS modifier les
+// codes stockés — les imputations résolvent par code exact.
+const pad8 = (code: string) => { const s = String(code).trim(); return /^\d+$/.test(s) && s.length < 8 ? s.padEnd(8, '0') : s; };
+const SIDE: Record<string, string> = { debit: 'Débiteur', credit: 'Créditeur' };
+
+export async function chartOfAccountsCsv(c: Client, dossierId: string, pad = true): Promise<{ filename: string; buffer: Buffer; count: number }> {
+  const rows = await acc.listAccounts(c, dossierId, { includeInactive: true, limit: 5000 });
+  const out: (string | number)[][] = [['Compte', 'Compte (8 chiffres)', 'Intitulé', 'Classe', 'Sens normal', 'Collectif', 'Actif']];
+  for (const r of rows) out.push([
+    r.account_code, pad ? pad8(r.account_code) : r.account_code, r.label ?? '',
+    r.class_no ?? '', SIDE[r.normal_side] ?? r.normal_side ?? '',
+    r.is_collective ? 'Oui' : 'Non', r.is_active ? 'Oui' : 'Non',
+  ]);
+  return { filename: 'plan-comptable.csv', buffer: toCsv(out), count: rows.length };
+}
