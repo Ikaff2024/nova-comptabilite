@@ -12,6 +12,7 @@ import * as alerts from '../domain/alerts.js';
 import * as ratios from '../domain/ratios.js';
 import * as controls from '../domain/controls.js';
 import * as coherence from '../domain/coherence.js';
+import * as accountingquality from '../domain/accountingquality.js';
 import * as simulate from '../domain/simulate.js';
 import * as findossier from '../domain/financingdossier.js';
 import * as guide from './guide.js';
@@ -303,6 +304,7 @@ const READ_TOOLS = [
   { name: 'veille_nocturne', description: "Veille de Lexa : le dernier digest calculé pour ce dossier (points prioritaires détectés la nuit — trésorerie, créances, TVA, échéances, cohérence inter-modules, dotations dues, alertes RH). Utilise-le pour « qu'est-ce qui a été détecté », « quoi de neuf », ou pour ouvrir un point du jour. Si aucun digest n'existe, dis que la veille n'a pas encore tourné (elle s'active dans l'onglet Lexa).", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'guide_nova', description: "Guide d'utilisation de Nova : renvoie la ou les fiches du guide correspondant à une question sur l'USAGE du logiciel (où trouver un écran, marche à suivre, rôle d'un module, signification d'un indicateur). Utilise-le AVANT de répondre à toute question « comment faire dans Nova », et cite la fiche. N'invente jamais un chemin de menu : si rien ne remonte, dis-le. Ne l'utilise PAS pour les questions de données comptables. Paramètre : question (la formulation de l'utilisateur).", input_schema: { type: 'object', properties: { question: { type: 'string', description: "La question de l'utilisateur, telle quelle" } }, required: ['question'] } },
   { name: 'dossier_financement', description: "Dossier de financement bancaire : où en est l'entreprise pour solliciter un crédit. Renvoie la porte de complétude (ce qui manque, avec les points BLOQUANTS), le besoin exprimé (montant, objet, durée) et la capacité de remboursement (CAF, mensualité et annuité estimées, couverture CAF/annuité). Sers-t'en pour COACHER : dis ce qu'il faut corriger AVANT d'aller voir la banque. Ne présente jamais le score interne comme une notation de crédit — Nova ne prête pas et ne garantit rien.", input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'score_qualite', description: "Score de QUALITÉ COMPTABLE (0-100, note A-D) : fiabilité de la tenue, agrégé de 5 axes déterministes — exactitude (anomalies de soldes), cohérence inter-modules, justification des comptes (révision), traçabilité (brouillons non validés), échéances fiscales. DIFFÉRENT du score de santé financière/crédit. Pour « quelle est la qualité de ma comptabilité », « qu'est-ce que je dois fiabiliser ». Renvoie le détail par axe + forces/faiblesses.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controle_global', description: "AQM 2.0 — Contrôle de cohérence INTER-MODULES : vérifie que la paie, les immobilisations, la TVA, la trésorerie et la comptabilité racontent la même histoire (masse salariale des bulletins vs compte 661, charges patronales vs 664, dotations dues non comptabilisées, cumul d'amortissements vs 28, TVA collectée vs régime fiscal et vs ventes, bouclage du tableau de flux). Chaque contrôle donne attendu / constaté / écart + niveau de risque. Pour « fais un contrôle global » / « est-ce que tout est cohérent » / avant une clôture ou une liasse.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'resultat_analytique', description: 'Résultat par section analytique (centres de coût / points de vente) : produits, charges, résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'detail_analytique', description: 'Détail des charges/produits d\'une section analytique donnée (par son code).', input_schema: { type: 'object', properties: { section: { type: 'string', description: 'Code de la section analytique, ex. COCODY' } }, required: ['section'] } },
@@ -551,6 +553,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       return hits.length ? { fiches: hits }
         : { fiches: [], note: "Aucune fiche du guide ne correspond. Ne devine pas de chemin de menu : dis que tu ne trouves pas la marche à suivre." };
     }
+    case 'score_qualite': return await accountingquality.qualityScore(c, dossierId, fy);
     case 'controle_global': return await coherence.globalCoherence(c, dossierId, fy);
     case 'dossier_financement': {
       const brief = await findossier.getBrief(c, dossierId);

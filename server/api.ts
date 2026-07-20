@@ -37,6 +37,7 @@ import * as alerts from './domain/alerts.js';
 import * as ratios from './domain/ratios.js';
 import * as controls from './domain/controls.js';
 import * as coherence from './domain/coherence.js';
+import * as accountingquality from './domain/accountingquality.js';
 import * as simulate from './domain/simulate.js';
 import * as invitations from './domain/invitations.js';
 import * as dossierprofile from './domain/dossierprofile.js';
@@ -874,6 +875,12 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => coherence.globalCoherence(c, req.params.id, fy)));
+  }));
+  // Score de qualité comptable (fiabilité de la tenue) — distinct du score crédit.
+  app.get('/api/dossiers/:id/quality-score', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => accountingquality.qualityScore(c, req.params.id, fy)));
   }));
   // Simulation avant validation : impact d'un brouillon (résultat, TVA, tréso, IS).
   app.post('/api/dossiers/:id/simulate-entry', h(async (req, res) => {

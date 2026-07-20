@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, ClipboardCheck, CheckCircle2, Circle, ShieldCheck, AlertTriangle, ChevronDown } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type RevisionReport, type RevisionAccount, type InterModuleReport, type CoherenceNiveau } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type RevisionReport, type RevisionAccount, type InterModuleReport, type CoherenceNiveau, type QualityScore } from '../lib/api';
 import { cn } from '../lib/utils';
 
 export default function Revision({ dossierId, currency, fiscalYears }: { dossierId: string; currency: string; fiscalYears: FiscalYear[] }) {
@@ -46,6 +46,7 @@ export default function Revision({ dossierId, currency, fiscalYears }: { dossier
         </div>
       </div>
 
+      <QualityScorePanel dossierId={dossierId} fy={fy} />
       <CoherencePanel dossierId={dossierId} fy={fy} currency={currency} />
 
       {data && (
@@ -142,6 +143,54 @@ function CoherencePanel({ dossierId, fy, currency }: { dossierId: string; fy: st
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Score de qualité comptable : fiabilité de la tenue (distinct du score crédit).
+const RATING_COLOR: Record<string, string> = { A: '#34d399', B: '#a3e635', C: '#fbbf24', D: '#fb7185' };
+
+function QualityScorePanel({ dossierId, fy }: { dossierId: string; fy: string }) {
+  const [d, setD] = useState<QualityScore | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { let on = true; setLoading(true); api.qualityScore(dossierId, fy || undefined).then((x) => { if (on) setD(x); }).catch(() => { if (on) setD(null); }).finally(() => { if (on) setLoading(false); }); return () => { on = false; }; }, [dossierId, fy]);
+
+  if (loading) return <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Score de qualité…</div>;
+  if (!d) return null;
+  const color = RATING_COLOR[d.rating] ?? '#a1a1aa';
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex flex-wrap items-center gap-5">
+        <div className="flex items-center gap-3">
+          <div className="relative flex h-16 w-16 items-center justify-center">
+            <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+              <circle cx="32" cy="32" r="28" fill="none" stroke="#ffffff14" strokeWidth="6" />
+              <circle cx="32" cy="32" r="28" fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 28} strokeDashoffset={2 * Math.PI * 28 * (1 - d.score / 100)} />
+            </svg>
+            <span className="absolute font-mono text-lg font-bold text-zinc-50">{d.score}</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">Qualité comptable <span className="rounded-full px-2 py-0.5 text-xs font-bold" style={{ background: `${color}22`, color }}>Note {d.rating}</span></div>
+            <div className="text-xs text-zinc-500">Fiabilité de la tenue · sur 100</div>
+          </div>
+        </div>
+        <div className="flex flex-1 flex-wrap gap-x-5 gap-y-1">
+          {d.axes.map((a) => (
+            <div key={a.key} className="min-w-[130px]" title={a.detail}>
+              <div className="flex items-center justify-between text-xs"><span className="text-zinc-400">{a.label}</span><span className="font-mono text-zinc-200">{a.score}</span></div>
+              <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${a.score}%`, background: a.score >= 70 ? '#34d399' : a.score >= 50 ? '#fbbf24' : '#fb7185' }} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {(d.forces.length > 0 || d.faiblesses.length > 0) && (
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs">
+          {d.forces.length > 0 && <span className="text-emerald-300">↗ Points forts : {d.forces.join(', ')}</span>}
+          {d.faiblesses.length > 0 && <span className="text-rose-300">↘ À fiabiliser : {d.faiblesses.join(', ')}</span>}
         </div>
       )}
     </div>
