@@ -633,6 +633,8 @@ export const api = {
     const qs = q.toString();
     return req<JournalLine[]>(`/api/dossiers/${dossierId}/journal-entries${qs ? `?${qs}` : ''}`);
   },
+  createFiscalYear: (dossierId: string, label: string, startDate: string, endDate: string) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/fiscal-years`, { method: 'POST', body: JSON.stringify({ label, startDate, endDate }) }),
   closeExercise: (dossierId: string, fiscalYearId: string) =>
     req<{ anEntryId: string; newFiscalYearId: string; resultat: number }>(`/api/dossiers/${dossierId}/close-exercise`, { method: 'POST', body: JSON.stringify({ fiscalYearId }) }),
   generalLedger: (dossierId: string, opts: { fiscalYearId?: string; account?: string } = {}) => {

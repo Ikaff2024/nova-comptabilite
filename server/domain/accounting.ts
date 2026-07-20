@@ -206,7 +206,10 @@ export async function listAccounts(
     sql += ` and (account_code ilike $${params.length} or label ilike $${params.length})`;
   }
   sql += ' order by account_code';
-  params.push(opts.limit ?? 100); sql += ` limit $${params.length}`;
+  // Un plan comptable est borné (~1500 comptes) : on charge large par défaut,
+  // sinon la recherche/typeahead ne « voit » pas les classes au-delà des 100
+  // premiers codes (les charges/produits 6/7 notamment).
+  params.push(opts.limit ?? 3000); sql += ` limit $${params.length}`;
   const { rows } = await c.query(sql, params);
   return rows;
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Lock, LockOpen, ShieldCheck, AlertTriangle } from 'lucide-react';
-import { api, type ClosuresData } from '../lib/api';
+import { Loader2, Lock, LockOpen, ShieldCheck, AlertTriangle, Calendar } from 'lucide-react';
+import { api, type ClosuresData, type FiscalYear } from '../lib/api';
 import { cn } from '../lib/utils';
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -54,6 +54,7 @@ export default function Clotures({ dossierId }: { dossierId: string }) {
 
   return (
     <div className="space-y-5">
+      <ExercicesPanel dossierId={dossierId} />
       <div className="flex items-center gap-2 text-zinc-300"><Lock className="h-5 w-5 text-emerald-400" /><h3 className="font-display text-lg font-semibold">Clôtures mensuelles</h3></div>
       <p className="max-w-3xl text-sm text-zinc-400">Clôturer un mois verrouille la période : plus aucune écriture ne peut y être saisie ou modifiée (ni dans les mois antérieurs). Utile pour figer une déclaration de TVA ou un arrêté mensuel. Seul le dernier mois clôturé peut être rouvert.</p>
 
@@ -133,5 +134,97 @@ export default function Clotures({ dossierId }: { dossierId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Gestion des exercices : créer un exercice (dont un N-1 pour une reprise) et
+// clôturer un exercice — la clôture génère le REPORT À NOUVEAU (soldes de bilan
+// + résultat en 12x) dans l'exercice suivant.
+function ExercicesPanel({ dossierId }: { dossierId: string }) {
+  const [fys, setFys] = useState<FiscalYear[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ label: '', startDate: '', endDate: '' });
+
+  const load = async () => { try { setFys(await api.fiscalYears(dossierId)); } catch (e: any) { setError(e.message); } };
+  useEffect(() => { load(); }, [dossierId]);
+
+  // Propose l'année précédant le plus ancien exercice existant.
+  const suggestPrev = () => {
+    const years = fys.map((f) => new Date(f.start_date).getFullYear());
+    const y = (years.length ? Math.min(...years) : new Date().getFullYear()) - 1;
+    setForm({ label: `Exercice ${y}`, startDate: `${y}-01-01`, endDate: `${y}-12-31` });
+    setCreating(true);
+  };
+
+  const create = async () => {
+    setBusy('new'); setError(null); setMsg(null);
+    try {
+      await api.createFiscalYear(dossierId, form.label.trim(), form.startDate, form.endDate);
+      setCreating(false); setForm({ label: '', startDate: '', endDate: '' }); await load();
+      setMsg('Exercice créé.');
+    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
+  const close = async (fy: FiscalYear) => {
+    if (!confirm(`Clôturer « ${fy.label} » ? Nova transfère le résultat en report à nouveau (12x) et génère les à-nouveaux dans l'exercice suivant. L'exercice devient non modifiable.`)) return;
+    setBusy(fy.id); setError(null); setMsg(null);
+    try {
+      const r = await api.closeExercise(dossierId, fy.id);
+      setMsg(`Exercice clôturé. Report à nouveau généré (résultat ${Math.round(r.resultat).toLocaleString('fr-FR')}).`);
+      await load();
+    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
+  return (
+    <section className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-zinc-300"><Calendar className="h-5 w-5 text-emerald-400" /><h3 className="font-display text-lg font-semibold">Exercices comptables</h3></div>
+        <div className="flex gap-2">
+          <button onClick={suggestPrev} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10">+ Exercice antérieur (N-1)</button>
+          <button onClick={() => { setForm({ label: '', startDate: '', endDate: '' }); setCreating((v) => !v); }} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/10">+ Nouvel exercice</button>
+        </div>
+      </div>
+
+      {creating && (
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-white/10 bg-zinc-900/40 p-3">
+          <div><label className="mb-1 block text-xs text-zinc-500">Libellé</label>
+            <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Exercice 2025" className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Début</label>
+            <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+          <div><label className="mb-1 block text-xs text-zinc-500">Fin</label>
+            <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+          <button onClick={create} disabled={busy === 'new' || !form.label.trim() || !form.startDate || !form.endDate} className="flex h-[38px] items-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy === 'new' && <Loader2 className="h-4 w-4 animate-spin" />} Créer</button>
+        </div>
+      )}
+
+      {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+      {msg && <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{msg}</p>}
+
+      <div className="overflow-hidden rounded-xl border border-white/10">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+            <th className="px-4 py-2 font-medium">Exercice</th><th className="px-4 py-2 font-medium">Période</th><th className="px-4 py-2 font-medium">Statut</th><th className="px-4 py-2"></th>
+          </tr></thead>
+          <tbody className="divide-y divide-white/5">
+            {fys.map((f) => (
+              <tr key={f.id} className="hover:bg-white/5">
+                <td className="px-4 py-2.5 text-zinc-200">{f.label}</td>
+                <td className="px-4 py-2.5 text-zinc-400">{String(f.start_date).slice(0, 10)} → {String(f.end_date).slice(0, 10)}</td>
+                <td className="px-4 py-2.5">{f.status === 'closed'
+                  ? <span className="rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2 py-0.5 text-xs text-zinc-400">Clôturé</span>
+                  : <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300">Ouvert</span>}</td>
+                <td className="px-4 py-2.5 text-right">
+                  {f.status !== 'closed' && <button onClick={() => close(f)} disabled={busy === f.id} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-300 hover:bg-amber-500/20 disabled:opacity-50">{busy === f.id ? '…' : 'Clôturer → report à nouveau'}</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-zinc-500">Pour une reprise : créez l'exercice antérieur (N-1), saisissez-y (ou importez) sa balance/grand livre, puis clôturez-le — le report à nouveau alimente automatiquement l'exercice courant.</p>
+    </section>
   );
 }
