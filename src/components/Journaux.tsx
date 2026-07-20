@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, FileSpreadsheet, Printer, Lock, CheckCircle2, AlertTriangle, Paperclip, FileDown } from 'lucide-react';
+import { Loader2, FileSpreadsheet, Printer, Lock, CheckCircle2, AlertTriangle, Paperclip, FileDown, RotateCcw } from 'lucide-react';
 import { api, fmtMoney, fetchDocumentUrl, downloadAuthed, type Journal, type FiscalYear, type JournalLine } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -20,7 +20,7 @@ async function openDocument(url: string) {
   catch { alert('Pièce jointe inaccessible.'); }
 }
 
-export default function Journaux({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+export default function Journaux({ dossierId, dossierName, currency, onCorrect }: { dossierId: string; dossierName: string; currency: string; onCorrect?: (seed: { description?: string; journalCode?: string; lines: { accountCode: string; debit?: number; credit?: number; label?: string }[] }) => void }) {
   const [journals, setJournals] = useState<Journal[]>([]);
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [journal, setJournal] = useState('');
@@ -52,7 +52,29 @@ export default function Journaux({ dossierId, dossierName, currency }: { dossier
   };
   useEffect(() => { loadStructures(); }, [dossierId]);
 
+  const [acting, setActing] = useState<string | null>(null);
   const load = async () => { setLoading(true); try { setLines(await api.journalEntries(dossierId, { journal: journal || undefined, fiscalYearId: fy || undefined })); } finally { setLoading(false); } };
+
+  // Extourne (contre-passation) : l'écriture d'origine reste, une écriture
+  // inverse est comptabilisée — conforme à l'immuabilité SYSCOHADA.
+  const reverse = async (e: any) => {
+    if (!confirm(`Extourner l'écriture ${e.piece_ref} ? Une écriture de contre-passation sera comptabilisée (l'originale reste inaltérée).`)) return;
+    setActing(e.entry_id); setErr(null); setMsg(null);
+    try { await api.reverse(e.entry_id); setMsg(`Écriture ${e.piece_ref} extournée.`); await load(); }
+    catch (err: any) { setErr(err.message); } finally { setActing(null); }
+  };
+  // Corriger = extourne + ressaisie pré-remplie (une nouvelle écriture corrigée).
+  const correct = async (e: any) => {
+    if (!confirm(`Corriger l'écriture ${e.piece_ref} ? Elle sera extournée, puis reprise dans la Saisie pour que vous la corrigiez et la validiez à nouveau.`)) return;
+    setActing(e.entry_id); setErr(null); setMsg(null);
+    try {
+      await api.reverse(e.entry_id);
+      onCorrect?.({
+        description: e.entry_description, journalCode: e.journal_code,
+        lines: (e.lines ?? []).map((l: any) => ({ accountCode: l.account_code, debit: l.debit || undefined, credit: l.credit || undefined, label: l.label })),
+      });
+    } catch (err: any) { setErr(err.message); setActing(null); }
+  };
   useEffect(() => { if (fy || journals.length) load(); }, [journal, fy]);
 
   const entries = group(lines);
@@ -158,6 +180,12 @@ export default function Journaux({ dossierId, dossierName, currency }: { dossier
                 <span className="font-mono text-emerald-400">{e.piece_ref}<span className="ml-3 font-sans text-zinc-400">{e.entry_date} · {e.entry_description}</span></span>
                 <span className="flex items-center gap-3">
                   {e.document_url && <button onClick={() => openDocument(e.document_url!)} title="Voir la pièce jointe" className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300"><Paperclip className="h-3.5 w-3.5" /> pièce</button>}
+                  {!/^extourne/i.test(String(e.entry_description ?? '')) && (
+                    <>
+                      {onCorrect && <button onClick={() => correct(e)} disabled={acting === e.entry_id} title="Extourner puis corriger" className="text-xs text-amber-400 hover:text-amber-300 disabled:opacity-40">corriger</button>}
+                      <button onClick={() => reverse(e)} disabled={acting === e.entry_id} title="Extourner (contre-passation)" className="flex items-center gap-1 text-xs text-zinc-400 hover:text-rose-400 disabled:opacity-40">{acting === e.entry_id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} extourner</button>
+                    </>
+                  )}
                   <span className="font-mono text-xs text-zinc-500">{e.journal_code}</span>
                 </span>
               </div>

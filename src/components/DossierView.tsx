@@ -4,7 +4,7 @@ import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, Sca
 import { api, fmtMoney, downloadAuthed, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
-import EntryForm from './EntryForm';
+import EntryForm, { type EntryFormInitial } from './EntryForm';
 import Capture from './Capture';
 import RulesTab from './RulesTab';
 import MobileMoney from './MobileMoney';
@@ -49,6 +49,9 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState(dossier.raison_sociale);
   const [savingName, setSavingName] = useState(false);
+  // Correction d'une écriture : après extourne, on pré-remplit la saisie.
+  const [editSeed, setEditSeed] = useState<EntryFormInitial | null>(null);
+  const [editSeedKey, setEditSeedKey] = useState(0);
 
   const saveName = async () => {
     const n = draftName.trim();
@@ -253,8 +256,12 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
                 currency={dossier.base_currency} onPosted={() => { /* la balance se recharge à l'ouverture de l'onglet */ }} />
             )}
             {tab === 'saisie' && (
-              <EntryForm dossierId={dossier.id} fiscalYears={fiscalYears} journals={journals}
-                currency={dossier.base_currency} onPosted={() => { /* la balance se recharge à l'ouverture de l'onglet */ }} />
+              <div key={editSeedKey}>
+                <EntryForm dossierId={dossier.id} fiscalYears={fiscalYears} journals={journals}
+                  initial={editSeed ?? undefined}
+                  banner={editSeed ? "Écriture d'origine extournée. Corrigez ci-dessous puis validez : une nouvelle écriture sera comptabilisée." : undefined}
+                  currency={dossier.base_currency} onPosted={() => { setEditSeed(null); /* la balance se recharge à l'ouverture de l'onglet */ }} />
+              </div>
             )}
             {tab === 'mobilemoney' && (
               <MobileMoney dossierId={dossier.id} fiscalYears={fiscalYears}
@@ -262,7 +269,8 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
             )}
             {tab === 'balance' && <BalanceTab dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'grandlivre' && <GeneralLedger dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
-            {tab === 'journaux' && <Journaux dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'journaux' && <Journaux dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency}
+              onCorrect={(seed) => { setEditSeed(seed); setEditSeedKey((k) => k + 1); setTab('saisie'); }} />}
             {tab === 'tiers' && <Tiers dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'immos' && <Immobilisations dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'banque' && <BankReconciliation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
