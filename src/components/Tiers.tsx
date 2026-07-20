@@ -238,9 +238,26 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [editEmail, setEditEmail] = useState('');
+  const [scheme, setScheme] = useState<'numerique' | 'alphanumerique'>('numerique');
 
   const load = async () => { setLoading(true); try { setRows(await api.counterparties(dossierId)); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, [dossierId]);
+  useEffect(() => { load(); api.tiersScheme(dossierId).then((s) => setScheme(s.scheme)).catch(() => {}); }, [dossierId]);
+
+  const changeScheme = async (s: 'numerique' | 'alphanumerique') => {
+    setScheme(s); setError(null);
+    try { await api.setTiersScheme(dossierId, s); } catch (e: any) { setError(e.message); }
+  };
+
+  // Aperçu du code auto selon le schéma (miroir de la génération serveur).
+  const COLL: Record<string, string> = { client: '411', fournisseur: '401', salarie: '421' };
+  const previewCode = () => {
+    const p = COLL[form.type] ?? 'TIER';
+    if (scheme === 'alphanumerique') {
+      const base = form.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'TIERS';
+      return `${p}${base}`;
+    }
+    return `${p}0001`;
+  };
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault(); if (!form.name.trim()) return;
@@ -260,14 +277,23 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
           </select></div>
         <div className="flex-1 min-w-[10rem]"><label className="mb-1 block text-xs text-zinc-500">Nom</label>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Raison sociale du tiers" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
-        <div className="w-28"><label className="mb-1 block text-xs text-zinc-500">Code aux.</label>
-          <input value={form.auxCode} onChange={(e) => setForm({ ...form, auxCode: e.target.value })} placeholder="auto" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
+        <div className="w-32"><label className="mb-1 block text-xs text-zinc-500">Code aux.</label>
+          <input value={form.auxCode} onChange={(e) => setForm({ ...form, auxCode: e.target.value })} placeholder={previewCode()} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
         <div className="w-32"><label className="mb-1 block text-xs text-zinc-500">Id. fiscal</label>
           <input value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} placeholder="IFU/NCC" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
         <div className="w-48"><label className="mb-1 block text-xs text-zinc-500">Email (relances)</label>
           <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="contact@client.ci" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
         <button type="submit" disabled={busy} className="flex h-[38px] items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Ajouter</button>
       </form>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+        <span>Numérotation automatique des tiers :</span>
+        <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5">
+          {([['numerique', 'Numérique · 4110001'], ['alphanumerique', 'Alphanumérique · 411SOTRA']] as const).map(([v, l]) => (
+            <button key={v} onClick={() => changeScheme(v)} className={cn('rounded-md px-2.5 py-1 font-medium transition-colors', scheme === v ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>{l}</button>
+          ))}
+        </div>
+        <span className="text-zinc-600">Laissez « Code aux. » vide pour l'appliquer. Les tiers existants ne changent pas.</span>
+      </div>
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : rows.length === 0 ? <p className="text-sm text-zinc-500">Aucun tiers. Ils se créent automatiquement à la saisie, ou ajoutez-les ici.</p> : (

@@ -37,6 +37,48 @@ export async function listCounterparties(c: Client, dossierId: string, type?: st
 
 const COLL: Record<string, string> = { client: '411', fournisseur: '401', salarie: '421' };
 
+// Schéma de code tiers du dossier (tolérant si la colonne n'est pas migrée).
+async function codeScheme(c: Client, dossierId: string): Promise<'numerique' | 'alphanumerique'> {
+  try {
+    const { rows } = await c.query('select tiers_code_scheme from dossiers where id=$1', [dossierId]);
+    return rows[0]?.tiers_code_scheme === 'alphanumerique' ? 'alphanumerique' : 'numerique';
+  } catch { return 'numerique'; }
+}
+
+// Génère le prochain code auxiliaire selon le schéma, en évitant les collisions.
+async function nextAuxCode(c: Client, dossierId: string, type: string, collCode: string | null, name?: string): Promise<string> {
+  const prefix = collCode ?? 'TIER';
+  const taken = async (code: string) => {
+    const { rows } = await c.query('select 1 from counterparties where dossier_id=$1 and aux_code=$2 limit 1', [dossierId, code]);
+    return !!rows[0];
+  };
+
+  if ((await codeScheme(c, dossierId)) === 'alphanumerique') {
+    // Collectif + radical alphanumérique tiré du nom (sans accents ni espaces).
+    const base = String(name ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'TIERS';
+    let code = prefix + base;
+    let n = 1;
+    while (await taken(code)) { n += 1; code = `${prefix}${base}${n}`; }
+    return code;
+  }
+
+  // Numérique : collectif + numéro séquentiel (comportement historique).
+  const { rows: cnt } = await c.query('select count(*) n from counterparties where dossier_id=$1 and type=$2', [dossierId, type]);
+  let seq = Number(cnt[0].n) + 1;
+  let code = prefix + String(seq).padStart(4, '0');
+  while (await taken(code)) { seq += 1; code = prefix + String(seq).padStart(4, '0'); }
+  return code;
+}
+
+export async function getTiersCodeScheme(c: Client, dossierId: string): Promise<'numerique' | 'alphanumerique'> {
+  return codeScheme(c, dossierId);
+}
+export async function setTiersCodeScheme(c: Client, dossierId: string, scheme: string): Promise<void> {
+  const s = scheme === 'alphanumerique' ? 'alphanumerique' : 'numerique';
+  await c.query('update dossiers set tiers_code_scheme=$2 where id=$1', [dossierId, s]);
+}
+
 export async function createCounterparty(
   c: Client, dossierId: string, input: { type: string; name: string; auxCode?: string; taxId?: string; email?: string },
 ): Promise<any> {
@@ -49,10 +91,7 @@ export async function createCounterparty(
     accId = rows[0]?.id ?? null;
   }
   let aux = input.auxCode?.trim();
-  if (!aux) {
-    const { rows: cnt } = await c.query('select count(*) n from counterparties where dossier_id=$1 and type=$2', [dossierId, type]);
-    aux = (collCode ?? 'TIER') + String(Number(cnt[0].n) + 1).padStart(4, '0');
-  }
+  if (!aux) aux = await nextAuxCode(c, dossierId, type, collCode, input.name);
   const { rows } = await c.query(
     'insert into counterparties(dossier_id, type, name, aux_code, tax_id, email, account_id) values ($1,$2,$3,$4,$5,$6,$7) returning id, type, name, aux_code, tax_id, email',
     [dossierId, type, input.name.trim(), aux, input.taxId ?? null, input.email?.trim() || null, accId],

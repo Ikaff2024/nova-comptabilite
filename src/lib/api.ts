@@ -520,6 +520,8 @@ export const api = {
     req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   counterparties: (dossierId: string, type?: string) =>
     req<Counterparty[]>(`/api/dossiers/${dossierId}/counterparties${type ? `?type=${type}` : ''}`),
+  tiersScheme: (dossierId: string) => req<{ scheme: 'numerique'|'alphanumerique' }>(`/api/dossiers/${dossierId}/tiers-scheme`),
+  setTiersScheme: (dossierId: string, scheme: string) => req<void>(`/api/dossiers/${dossierId}/tiers-scheme`, { method: 'PUT', body: JSON.stringify({ scheme }) }),
   createCounterparty: (dossierId: string, body: { type: string; name: string; auxCode?: string; taxId?: string; email?: string }) =>
     req<Counterparty>(`/api/dossiers/${dossierId}/counterparties`, { method: 'POST', body: JSON.stringify(body) }),
   updateCounterparty: (dossierId: string, cid: string, body: { name?: string; auxCode?: string; taxId?: string; email?: string }) =>

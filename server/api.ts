@@ -1090,6 +1090,16 @@ export function createApi() {
     const out = await withUser(userId, (c) => tiers.createCounterparty(c, req.params.id, req.body ?? {}));
     res.status(201).json(out);
   }));
+  // Schéma de numérotation des comptes tiers (numerique | alphanumerique).
+  app.get('/api/dossiers/:id/tiers-scheme', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json({ scheme: await withUser(userId, (c) => tiers.getTiersCodeScheme(c, req.params.id)) });
+  }));
+  app.put('/api/dossiers/:id/tiers-scheme', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => tiers.setTiersCodeScheme(c, req.params.id, String(req.body?.scheme ?? '')));
+    res.status(204).end();
+  }));
 
   app.patch('/api/dossiers/:id/counterparties/:cid', h(async (req, res) => {
     const userId = requireUser(req);
