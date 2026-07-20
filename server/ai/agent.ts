@@ -25,6 +25,7 @@ import * as tiers from '../domain/tiers.js';
 import * as bank from '../domain/bank.js';
 import * as payroll from '../domain/payroll.js';
 import * as payrollrh from '../domain/payrollrh.js';
+import * as leave from '../domain/leave.js';
 import * as reporting from '../domain/reporting.js';
 import * as activityreport from '../domain/activityreport.js';
 import * as recurring from '../domain/recurring.js';
@@ -319,6 +320,7 @@ const READ_TOOLS = [
   { name: 'livre_paie', description: 'Registre de paie d\'une période : par salarié (brut, net, coût employeur) et statut de comptabilisation. Fournir année et mois (mois 0-11, ou 1-12 : sois explicite).', input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: ['annee', 'mois'] } },
   { name: 'etat_rh', description: 'État RH courant : absences non payées enregistrées et avances/prêts en cours (avec restant dû).', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'analyse_rh', description: "Analyse RH (pilotage social) d'un mois : effectif, ancienneté moyenne, brut médian/moyen, masse salariale + variation vs mois précédent, taux de charges patronales, taux d'absentéisme, provision congés payés (estimation par salarié + total) et pyramide d'ancienneté. Pour un point RH / social. Fournir année et mois (1-12).", input_schema: { type: 'object', properties: { annee: { type: 'number' }, mois: { type: 'number', description: 'Mois en clair 1-12' } }, required: [] } },
+  { name: 'conges', description: "Congés : demandes (en attente, approuvées, refusées) et SOLDES par salarié (droit acquis à 2,2 j/mois, congés pris, demandes en attente, solde disponible). Pour « qui a des congés à valider », « combien de jours reste-t-il à X ». La validation d'une demande reste une action humaine dans l'onglet Paie & RH.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'alertes_rh', description: "Alertes légales RH : échéances contractuelles à surveiller — fins de CDD proches ou dépassées (à renouveler/requalifier/solder) et fins de période d'essai imminentes (à confirmer ou rompre). Pour « qu'est-ce qui arrive à échéance côté RH » ou une veille sociale.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'profil_entreprise', description: 'Identité fiscale et légale du dossier : forme juridique, régime fiscal, NCC/IFU, RCCM, banque/RIB. À citer dans les courriers/déclarations.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'echeances_fiscales', description: 'Prochaines échéances fiscales et sociales du dossier (TVA, impôts sur salaires/état 301, CNPS, DSF) dérivées du régime fiscal, avec leurs dates. Pour rappeler proactivement ce qui arrive à échéance.', input_schema: { type: 'object', properties: {}, required: [] } },
@@ -575,6 +577,10 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'etat_rh': { const abs = await payroll.listAbsences(c, dossierId); const adv = await payroll.listAdvances(c, dossierId); return { absences_non_payees: abs.filter((a: any) => !a.paye), avances_en_cours: adv.filter((a: any) => a.restant > 0) }; }
     case 'analyse_rh': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); const r: any = await payrollrh.rhAnalysis(c, dossierId, y, mo); return { ...r, provision: cap(r.provision ?? [], 40) }; }
     case 'alertes_rh': return await payrollrh.rhAlerts(c, dossierId);
+    case 'conges': {
+      const [demandes, soldes] = await Promise.all([leave.listRequests(c, dossierId), leave.balances(c, dossierId)]);
+      return { en_attente: demandes.filter((d) => d.statut === 'en_attente'), soldes: cap(soldes, 40) };
+    }
     case 'profil_entreprise': { const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]); const d: any = rows[0]?.j ?? {}; return { raison_sociale: d.raison_sociale, forme_juridique: d.forme_juridique ?? null, regime_fiscal: d.regime_fiscal ?? null, ncc_ifu: d.tax_id ?? null, rccm: d.rccm ?? null, banque: d.bank_name ?? null, rib: d.rib ?? null, pays: d.country ?? 'CI', systeme_comptable: d.accounting_system }; }
     case 'catalogue': {
       const { rows } = await c.query(

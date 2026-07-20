@@ -708,6 +708,12 @@ export const api = {
   postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
   payrollYear: (dossierId: string, year: number) => req<PayrollYear>(`/api/dossiers/${dossierId}/payroll/year?year=${year}`),
   distributePayslips: (dossierId: string, year: number, month: number) => req<{ enabled: boolean; period: string; sent: { nom: string; email: string }[]; skipped: { nom: string; raison: string }[] }>(`/api/dossiers/${dossierId}/payroll/distribute-payslips`, { method: 'POST', body: JSON.stringify({ year, month }) }),
+  leave: (dossierId: string) => req<{ demandes: LeaveRequest[]; soldes: LeaveBalance[] }>(`/api/dossiers/${dossierId}/payroll/leave`),
+  createLeave: (dossierId: string, body: { employeeId: string; type: string; dateDebut: string; dateFin: string; jours: number; motif?: string }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/payroll/leave`, { method: 'POST', body: JSON.stringify(body) }),
+  decideLeave: (dossierId: string, id: string, approve: boolean, note?: string) =>
+    req<{ statut: string }>(`/api/dossiers/${dossierId}/payroll/leave/${id}/decide`, { method: 'POST', body: JSON.stringify({ approve, note }) }),
+  cancelLeave: (dossierId: string, id: string) => req<void>(`/api/dossiers/${dossierId}/payroll/leave/${id}`, { method: 'DELETE' }),
   rhAlerts: (dossierId: string) => req<RhAlerts>(`/api/dossiers/${dossierId}/payroll/rh-alerts`),
   rhAnalysis: (dossierId: string, year: number, month: number) => req<RhAnalysis>(`/api/dossiers/${dossierId}/payroll/rh-analysis?year=${year}&month=${month}`),
   // Factures de vente récurrentes (abonnements)
@@ -779,3 +785,10 @@ export interface CabinetTriage {
   resume: { dossiers: number; critiques: number; aTraiter: number };
   parCategorie: { categorie: string; libelle: string; dossiers: number; points: number }[];
 }
+
+export interface LeaveRequest {
+  id: string; employee_id: string; matricule: string; nom: string; prenoms: string;
+  type: string; statut: string; date_debut: string; date_fin: string; jours: number;
+  motif: string | null; note: string | null; created_at: string; decided_at: string | null;
+}
+export interface LeaveBalance { employeeId: string; matricule: string; nom: string; poste: string; acquis: number; pris: number; enAttente: number; solde: number }

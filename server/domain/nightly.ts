@@ -2,6 +2,7 @@ import type { Client } from '../db.js';
 import { dossierAlerts } from './alerts.js';
 import { globalCoherence } from './coherence.js';
 import { rhAlerts } from './payrollrh.js';
+import { listRequests } from './leave.js';
 import { listAssets } from './assets.js';
 import { cashForecast } from './forecast.js';
 import { sendEmail, emailEnabled } from '../email/provider.js';
@@ -59,6 +60,12 @@ export async function computeDigest(c: Client, dossierId: string, fiscalYearId?:
   await safe(async () => {
     const rh: any = await rhAlerts(c, dossierId);
     for (const a of rh.alertes ?? []) push({ niveau: a.niveau, categorie: 'rh', titre: a.categorie, detail: a.message, echeance: a.date, onglet: 'paie' });
+  });
+
+  // 4b) Demandes de congés en attente de validation.
+  await safe(async () => {
+    const att = (await listRequests(c, dossierId, 'en_attente')) as any[];
+    if (att.length > 0) push({ niveau: 'moyenne', categorie: 'rh', titre: `${att.length} demande(s) de congés à valider`, detail: att.slice(0, 3).map((d) => `${d.nom} ${d.prenoms} (${d.jours} j)`).join(', '), onglet: 'paie' });
   });
 
   // 5) Point bas de trésorerie projeté.

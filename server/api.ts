@@ -16,6 +16,7 @@ import * as tts from './tts/provider.js';
 import * as mail from './email/provider.js';
 import * as payroll from './domain/payroll.js';
 import * as payrollrh from './domain/payrollrh.js';
+import * as leave from './domain/leave.js';
 import * as recinv from './domain/recurringinvoices.js';
 import * as watchdog from './ai/watchdog.js';
 import * as mm from './domain/mobilemoney.js';
@@ -1652,6 +1653,30 @@ export function createApi() {
     const month0 = req.query.month != null ? Math.max(0, Math.min(11, Number(req.query.month) - 1)) : now.getUTCMonth();
     res.json(await withUser(userId, (c) => payrollrh.rhAnalysis(c, req.params.id, year, month0)));
   }));
+  // --- Congés : demande → validation → solde ---------------------------------
+  app.get('/api/dossiers/:id/payroll/leave', h(async (req, res) => {
+    const userId = requireUser(req);
+    const statut = (req.query.statut as string) || undefined;
+    res.json(await withUser(userId, async (c) => ({
+      demandes: await leave.listRequests(c, req.params.id, statut),
+      soldes: await leave.balances(c, req.params.id),
+    })));
+  }));
+  app.post('/api/dossiers/:id/payroll/leave', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => leave.createRequest(c, req.params.id, req.body ?? {}, userId)));
+  }));
+  app.post('/api/dossiers/:id/payroll/leave/:rid/decide', h(async (req, res) => {
+    const userId = requireUser(req);
+    const approve = req.body?.approve === true;
+    res.json(await withUser(userId, (c) => leave.decideRequest(c, req.params.id, req.params.rid, approve, req.body?.note, userId)));
+  }));
+  app.delete('/api/dossiers/:id/payroll/leave/:rid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => leave.cancelRequest(c, req.params.id, req.params.rid));
+    res.status(204).end();
+  }));
+
   // Alertes légales RH (fin de CDD, fin de période d'essai).
   app.get('/api/dossiers/:id/payroll/rh-alerts', h(async (req, res) => {
     const userId = requireUser(req);

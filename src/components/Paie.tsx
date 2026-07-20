@@ -4,6 +4,7 @@ import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, ty
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
+import CongesPanel from './CongesPanel';
 
 const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
 const CATEGORIES = ['Ouvrier', 'Employe', 'Agent de Maitrise', 'Cadre'];
@@ -29,7 +30,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [busy, setBusy] = useState<string | null>(null);
   const [declReport, setDeclReport] = useState<ValidationReport | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [sub, setSub] = useState<'paie' | 'analyse' | 'pointage' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
+  const [sub, setSub] = useState<'paie' | 'analyse' | 'conges' | 'pointage' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
 
   // Formulaire salarié
   const [showForm, setShowForm] = useState(false);
@@ -182,7 +183,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
-        {([['paie', 'Bulletins & salariés'], ['analyse', 'Analyse RH'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte'], ['declarations', 'Déclarations']] as const).map(([k, label]) => (
+        {([['paie', 'Bulletins & salariés'], ['analyse', 'Analyse RH'], ['conges', 'Congés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte'], ['declarations', 'Déclarations']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setSub(k)}
             className={cn('rounded-lg px-3.5 py-1.5 font-medium transition-colors', sub === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
             {label}
@@ -314,6 +315,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       </>)}
 
       {sub === 'analyse' && <RhAnalysisPanel dossierId={dossierId} year={year} month={month} currency={currency} />}
+      {sub === 'conges' && <CongesPanel dossierId={dossierId} employees={employees} />}
       {sub === 'pointage' && <TimePanel dossierId={dossierId} employees={employees} />}
       {sub === 'absences' && <AbsencesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'avances' && <AdvancesPanel dossierId={dossierId} employees={employees} currency={currency} />}
