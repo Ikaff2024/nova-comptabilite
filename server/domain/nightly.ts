@@ -6,6 +6,7 @@ import { listRequests } from './leave.js';
 import { listAssets } from './assets.js';
 import { cashForecast } from './forecast.js';
 import { fiscalAdvisor } from './fiscaladvisor.js';
+import { behaviorSignals } from './behavior.js';
 import { sendEmail, emailEnabled } from '../email/provider.js';
 
 // ============================================================================
@@ -73,6 +74,12 @@ export async function computeDigest(c: Client, dossierId: string, fiscalYearId?:
   await safe(async () => {
     const fa: any = await fiscalAdvisor(c, dossierId, fiscalYearId);
     for (const co of fa.conseils ?? []) { if (co.niveau === 'info') continue; push({ niveau: co.niveau, categorie: 'fiscal', titre: co.titre, detail: co.detail, montant: co.montant, onglet: 'fiscalite' }); }
+  });
+
+  // 4d) Détection comportementale (écarts aux habitudes).
+  await safe(async () => {
+    const b: any = await behaviorSignals(c, dossierId);
+    for (const s of b.signaux ?? []) push({ niveau: s.niveau, categorie: 'habitude', titre: s.titre, detail: s.detail, onglet: 'saisie' });
   });
 
   // 5) Point bas de trésorerie projeté.
