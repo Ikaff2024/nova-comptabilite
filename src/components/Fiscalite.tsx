@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Receipt, FileCheck2, Printer, CheckCircle2, FileText, CalendarClock, Plus, Trash2, Sparkles, Calculator, AlertTriangle, ShieldCheck } from 'lucide-react';
-import { api, downloadAuthed, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate, type ValidationReport } from '../lib/api';
+import { api, downloadAuthed, fmtMoney, type VatDeclaration, type Obligation, type IsEstimate, type ValidationReport, type FiscalAdvice } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
@@ -219,6 +219,8 @@ export default function Fiscalite({ dossierId, dossierName, currency }: { dossie
 
       <IsEstimatePanel dossierId={dossierId} currency={currency} />
 
+      <FiscalAdvicePanel dossierId={dossierId} currency={currency} />
+
       <ObligationsPanel dossierId={dossierId} />
 
       <LiassePanel dossierId={dossierId} dossierName={dossierName} />
@@ -259,5 +261,42 @@ function Card({ label, value }: { label: string; value: string }) {
       <div className="text-sm text-zinc-400">{label}</div>
       <div className="mt-2 font-mono text-2xl font-bold text-zinc-100">{value}</div>
     </div>
+  );
+}
+
+// Assistant fiscal proactif : pistes de vigilance / optimisation, déterministes.
+// Présentées comme des pistes à valider — pas un conseil définitif.
+const FISCAL_TONE: Record<string, string> = {
+  haute: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
+  moyenne: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+  info: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+};
+
+function FiscalAdvicePanel({ dossierId, currency }: { dossierId: string; currency: string }) {
+  const [data, setData] = useState<FiscalAdvice | null>(null);
+  const [loading, setLoading] = useState(true);
+  const m = (n: number) => fmtMoney(n, currency);
+  useEffect(() => { let on = true; setLoading(true); api.fiscalAdvice(dossierId).then((d) => { if (on) setData(d); }).catch(() => { if (on) setData(null); }).finally(() => { if (on) setLoading(false); }); return () => { on = false; }; }, [dossierId]);
+
+  if (loading) return <div className="flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Analyse fiscale…</div>;
+  if (!data || data.conseils.length === 0) return null;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><Sparkles className="h-4 w-4 text-emerald-400" /> Assistant fiscal — pistes à examiner</div>
+      <div className="space-y-2">
+        {data.conseils.map((co, i) => (
+          <div key={i} className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium', FISCAL_TONE[co.niveau])}>{co.niveau === 'haute' ? 'Important' : co.niveau === 'moyenne' ? 'À examiner' : 'Info'}</span>
+              <span className="text-sm font-medium text-zinc-100">{co.titre}</span>
+              {co.montant != null && <span className="font-mono text-xs text-zinc-400">{m(co.montant)}</span>}
+            </div>
+            <p className="mt-1 text-xs text-zinc-400">{co.detail}</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-zinc-500">Pistes indicatives dérivées de votre comptabilité et de votre régime. À valider avec votre expert-comptable ou fiscaliste avant toute décision.</p>
+    </section>
   );
 }

@@ -5,6 +5,7 @@ import { rhAlerts } from './payrollrh.js';
 import { listRequests } from './leave.js';
 import { listAssets } from './assets.js';
 import { cashForecast } from './forecast.js';
+import { fiscalAdvisor } from './fiscaladvisor.js';
 import { sendEmail, emailEnabled } from '../email/provider.js';
 
 // ============================================================================
@@ -66,6 +67,12 @@ export async function computeDigest(c: Client, dossierId: string, fiscalYearId?:
   await safe(async () => {
     const att = (await listRequests(c, dossierId, 'en_attente')) as any[];
     if (att.length > 0) push({ niveau: 'moyenne', categorie: 'rh', titre: `${att.length} demande(s) de congés à valider`, detail: att.slice(0, 3).map((d) => `${d.nom} ${d.prenoms} (${d.jours} j)`).join(', '), onglet: 'paie' });
+  });
+
+  // 4c) Conseils fiscaux marquants (vigilance uniquement, pas d'info).
+  await safe(async () => {
+    const fa: any = await fiscalAdvisor(c, dossierId, fiscalYearId);
+    for (const co of fa.conseils ?? []) { if (co.niveau === 'info') continue; push({ niveau: co.niveau, categorie: 'fiscal', titre: co.titre, detail: co.detail, montant: co.montant, onglet: 'fiscalite' }); }
   });
 
   // 5) Point bas de trésorerie projeté.

@@ -28,6 +28,7 @@ import * as purchases from './domain/purchases.js';
 import * as catalog from './domain/catalog.js';
 import * as closures from './domain/closures.js';
 import * as tax from './domain/tax.js';
+import * as fiscaladvisor from './domain/fiscaladvisor.js';
 import * as importbalance from './domain/importbalance.js';
 import * as importledger from './domain/importledger.js';
 import * as assets from './domain/assets.js';
@@ -1353,6 +1354,12 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => tax.estimationIS(c, req.params.id, fy)));
+  }));
+  // Assistant fiscal proactif : pistes de vigilance / optimisation.
+  app.get('/api/dossiers/:id/fiscal-advice', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => fiscaladvisor.fiscalAdvisor(c, req.params.id, fy)));
   }));
 
   // Exports tableur (Excel/LibreOffice) : balance & grand livre en CSV.

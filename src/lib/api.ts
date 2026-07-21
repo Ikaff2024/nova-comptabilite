@@ -59,6 +59,8 @@ export interface Cabinet { id: string; name: string; country: string; base_curre
 export type CoherenceNiveau = 'haute' | 'moyenne' | 'info' | 'ok';
 export interface InterModuleCheck { module: string; regle: string; libelle: string; attendu: number; constate: number; ecart: number; niveau: CoherenceNiveau; explication: string; }
 export interface InterModuleReport { dossierId: string; devise: string; exercice: string | null; annee: number; resume: { haute: number; moyenne: number; info: number; ok: number; total: number }; niveauGlobal: CoherenceNiveau; controles: InterModuleCheck[]; }
+export interface FiscalConseil { niveau: 'haute'|'moyenne'|'info'; categorie: string; titre: string; detail: string; montant?: number }
+export interface FiscalAdvice { devise: string; conseils: FiscalConseil[] }
 export interface QualityAxis { key: string; label: string; score: number; weight: number; detail: string }
 export interface QualityScore { score: number; rating: 'A'|'B'|'C'|'D'; axes: QualityAxis[]; forces: string[]; faiblesses: string[]; }
 export interface SimulationResult { devise: string; equilibre: { debit: number; credit: number; ecart: number; equilibree: boolean }; deltaResultat: number; deltaTva: number; deltaTresorerie: number; deltaIsEstime: number; details: string[]; }
@@ -423,6 +425,7 @@ export const api = {
   setNightly: (dossierId: string, enabled: boolean) => req<void>(`/api/dossiers/${dossierId}/nightly`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
   runNightly: (dossierId: string, notify = false) =>
     req<{ resume: NightlyResume; items: NightlyItem[]; notified: string | null }>(`/api/dossiers/${dossierId}/nightly/run`, { method: 'POST', body: JSON.stringify({ notify }) }),
+  fiscalAdvice: (dossierId: string, fiscalYearId?: string) => req<FiscalAdvice>(`/api/dossiers/${dossierId}/fiscal-advice${fiscalYearId ? '?fiscalYearId=' + fiscalYearId : ''}`),
   qualityScore: (dossierId: string, fiscalYearId?: string) => req<QualityScore>(`/api/dossiers/${dossierId}/quality-score${fiscalYearId ? '?fiscalYearId=' + fiscalYearId : ''}`),
   coherence: (dossierId: string, fiscalYearId?: string) => req<InterModuleReport>(`/api/dossiers/${dossierId}/coherence${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   simulateEntry: (dossierId: string, lines: { accountCode: string; debit?: number; credit?: number }[]) => req<SimulationResult>(`/api/dossiers/${dossierId}/simulate-entry`, { method: 'POST', body: JSON.stringify({ lines }) }),
