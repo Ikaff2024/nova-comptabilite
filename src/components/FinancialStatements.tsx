@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react';
-import { api, downloadAuthed, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS } from '../lib/api';
+import { api, downloadAuthed, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS, currentFiscalYear } from '../lib/api';
 import { cn } from '../lib/utils';
 
 export default function FinancialStatements({
   dossierId, dossierName, fiscalYears, currency,
 }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
-  const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [cmp, setCmp] = useState<ComparativeFS | null>(null);
   const [loading, setLoading] = useState(true);
 

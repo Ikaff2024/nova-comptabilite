@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, ClipboardCheck, CheckCircle2, Circle, ShieldCheck, AlertTriangle, ChevronDown } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type RevisionReport, type RevisionAccount, type InterModuleReport, type CoherenceNiveau, type QualityScore } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type RevisionReport, type RevisionAccount, type InterModuleReport, type CoherenceNiveau, type QualityScore, currentFiscalYear } from '../lib/api';
 import { cn } from '../lib/utils';
 
 export default function Revision({ dossierId, currency, fiscalYears }: { dossierId: string; currency: string; fiscalYears: FiscalYear[] }) {
-  const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [data, setData] = useState<RevisionReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'todo' | 'reviewed'>('all');

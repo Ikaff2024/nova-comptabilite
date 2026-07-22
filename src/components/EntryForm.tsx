@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Loader2, CheckCircle2, Save, ShieldCheck, Activity } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport, type Account, type SimulationResult } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport, type Account, type SimulationResult, currentFiscalYear } from '../lib/api';
 import AqmReportCard from './AqmReportCard';
 
 const CHANNELS = [
@@ -24,7 +24,7 @@ export default function EntryForm({
   dossierId: string; fiscalYears: FiscalYear[]; journals: Journal[]; currency: string; onPosted: () => void;
   initial?: EntryFormInitial; banner?: React.ReactNode; documentUrl?: string;
 }) {
-  const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [journal, setJournal] = useState(
     (initial?.journalCode && journals.find((j) => j.code === initial.journalCode)?.id)
     || journals.find((j) => j.code === 'VE')?.id || journals[0]?.id || '',

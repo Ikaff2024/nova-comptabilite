@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Search, FileSpreadsheet, Printer } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type LedgerRow } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type LedgerRow, currentFiscalYear } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
@@ -25,7 +25,7 @@ function groupRows(rows: LedgerRow[]): Group[] {
 export default function GeneralLedger({
   dossierId, dossierName, fiscalYears, currency,
 }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
-  const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [account, setAccount] = useState('');
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(true);

@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, PieChart, Layers, ChevronRight, CalendarRange, Printer } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type AnalyticSection, type AnalyticReport, type AnalyticDetail, type AnalyticMonthly } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type AnalyticSection, type AnalyticReport, type AnalyticDetail, type AnalyticMonthly, currentFiscalYear } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
 export default function Analytique({ dossierId, currency, fiscalYears }: { dossierId: string; currency: string; fiscalYears: FiscalYear[] }) {
   const [sections, setSections] = useState<AnalyticSection[]>([]);
   const [report, setReport] = useState<AnalyticReport | null>(null);
-  const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [loading, setLoading] = useState(true);
   const [code, setCode] = useState('');
   const [label, setLabel] = useState('');

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Smartphone, ArrowDownLeft, ArrowUpRight, CheckCircle2, Download } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type MMProposal, type AnalyticSection } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type MMProposal, type AnalyticSection, currentFiscalYear } from '../lib/api';
 
 const PROVIDERS = [
   { v: 'wave', l: 'Wave' }, { v: 'om', l: 'Orange Money' }, { v: 'momo', l: 'MTN MoMo' }, { v: 'moov', l: 'Moov Money' },
@@ -18,7 +18,7 @@ export default function MobileMoney({
   const [content, setContent] = useState('');
   const [rows, setRows] = useState<Row[] | null>(null);
   const [treasury, setTreasury] = useState('521');
-  const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);

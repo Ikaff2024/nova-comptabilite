@@ -76,6 +76,16 @@ export interface Account {
   account_type: string; normal_side: string; is_collective: boolean; is_postable: boolean; is_active?: boolean;
 }
 export interface FiscalYear { id: string; label: string; start_date: string; end_date: string; status: string; }
+// Exercice par défaut pour la saisie : celui qui contient AUJOURD'HUI ; à défaut
+// le dernier exercice ouvert ; à défaut le plus récent. (Les exercices arrivent
+// triés du plus ancien au plus récent : ne jamais prendre [0] aveuglément.)
+export function currentFiscalYear(fys: FiscalYear[]): FiscalYear | undefined {
+  if (!fys.length) return undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  return fys.find((f) => f.start_date <= today && today <= f.end_date)
+    ?? [...fys].reverse().find((f) => f.status !== 'closed')
+    ?? fys[fys.length - 1];
+}
 export interface Journal { id: string; code: string; label: string; type: string; }
 export interface DashboardData {
   dossierCount: number; totalEntries: number; entriesThisMonth: number;

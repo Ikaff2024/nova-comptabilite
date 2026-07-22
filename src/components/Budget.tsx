@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Target, Plus, Trash2, FileSpreadsheet, Upload, Printer, CheckCircle2, TrendingUp, Gauge, Sparkles } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type BudgetReport, type RollingForecast } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type BudgetReport, type RollingForecast, currentFiscalYear } from '../lib/api';
 import BudgetCopilot from './BudgetCopilot';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -13,7 +13,7 @@ const SAMPLE_BUDGET = `Compte;Libellé;Montant
 706;Services vendus;8 000 000`;
 
 export default function Budget({ dossierId, dossierName, currency, fiscalYears }: { dossierId: string; dossierName: string; currency: string; fiscalYears: FiscalYear[] }) {
-  const [fy, setFy] = useState(fiscalYears[0]?.id ?? '');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [data, setData] = useState<BudgetReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [code, setCode] = useState('');
