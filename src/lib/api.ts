@@ -380,6 +380,13 @@ export interface Payslip {
   brut: number; net: number; cout: number; comptabilise: boolean; entryId: string | null; calculation: any;
 }
 export interface PayrollRunResult { count: number; totalBrut: number; totalNet: number; totalCoutEmployeur: number }
+export interface BaremePeriod {
+  year: number; month: number; label: string;
+  count: number; stale: number; versions: string[];
+  deltaIts: number; deltaNet: number; deltaCout: number;
+  comptabilise: boolean; closed: boolean; recalculable: boolean; blocage: string | null;
+}
+export interface BaremeAudit { currentVersion: string; periods: BaremePeriod[] }
 export const AGENT_WRITE_TOOLS = new Set(['preparer_facture_vente', 'preparer_facture_achat', 'lettrer_automatiquement', 'preparer_relance_client']);
 export const AGENT_MODE_LABELS: Record<AgentMode, string> = { readonly: 'Lecture seule', assist: 'Assisté (brouillons)', assist_plus: 'Assisté + actions' };
 export interface ProposedLine {
@@ -733,6 +740,7 @@ export const api = {
   deletePayrollEmployee: (dossierId: string, eid: string) => req<void>(`/api/dossiers/${dossierId}/payroll/employees/${eid}`, { method: 'DELETE' }),
   payrollPayslips: (dossierId: string, year: number, month: number) => req<Payslip[]>(`/api/dossiers/${dossierId}/payroll/payslips?year=${year}&month=${month}`),
   runPayroll: (dossierId: string, year: number, month: number) => req<PayrollRunResult>(`/api/dossiers/${dossierId}/payroll/run`, { method: 'POST', body: JSON.stringify({ year, month }) }),
+  baremeAudit: (dossierId: string) => req<BaremeAudit>(`/api/dossiers/${dossierId}/payroll/bareme-audit`),
   postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
   payrollYear: (dossierId: string, year: number) => req<PayrollYear>(`/api/dossiers/${dossierId}/payroll/year?year=${year}`),
   distributePayslips: (dossierId: string, year: number, month: number) => req<{ enabled: boolean; period: string; sent: { nom: string; email: string }[]; skipped: { nom: string; raison: string }[] }>(`/api/dossiers/${dossierId}/payroll/distribute-payslips`, { method: 'POST', body: JSON.stringify({ year, month }) }),

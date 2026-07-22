@@ -1732,6 +1732,11 @@ export function createApi() {
     const { year, month, varsMap } = req.body ?? {};
     res.json(await withUser(userId, (c) => payroll.runPayroll(c, req.params.id, Number(year), Number(month), varsMap ?? {})));
   }));
+  // Contrôle du barème : bulletins enregistrés avec un jeu de règles périmé.
+  app.get('/api/dossiers/:id/payroll/bareme-audit', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => payroll.baremeAudit(c, req.params.id)));
+  }));
   app.post('/api/dossiers/:id/payroll/post', h(async (req, res) => {
     const userId = requireUser(req);
     const { year, month, entryDate } = req.body ?? {};

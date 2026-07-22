@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock, Send, AlertTriangle } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis, type RhAlerts } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis, type RhAlerts, type BaremeAudit, type BaremePeriod } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
@@ -39,11 +39,22 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const setF = (p: Partial<PayrollEmployee>) => setForm((f) => ({ ...f, ...p }));
 
   const [closures, setClosures] = useState<{ year: number; month: number }[]>([]);
+  const [bareme, setBareme] = useState<BaremeAudit | null>(null);
   const loadEmployees = async () => { setLoading(true); try { setEmployees(await api.payrollEmployees(dossierId)); } finally { setLoading(false); } };
   const loadPayslips = async () => { try { setPayslips(await api.payrollPayslips(dossierId, year, month)); } catch { setPayslips([]); } };
   const loadClosures = async () => { try { const d = await api.closures(dossierId); setClosures(d.closures.map((x) => ({ year: x.year, month: x.month }))); } catch { setClosures([]); } };
-  useEffect(() => { loadEmployees(); loadClosures(); }, [dossierId]);
+  const loadBareme = async () => { try { setBareme(await api.baremeAudit(dossierId)); } catch { setBareme(null); } };
+  useEffect(() => { loadEmployees(); loadClosures(); loadBareme(); }, [dossierId]);
   useEffect(() => { loadPayslips(); }, [dossierId, year, month]);
+
+  // Recalcule une période au barème en vigueur (réutilise « Lancer la paie »,
+  // qui refuse déjà une période comptabilisée ou clôturée).
+  const recalcPeriod = async (p: BaremePeriod) => {
+    if (!confirm(`Recalculer les ${p.stale} bulletin(s) de ${p.label} au barème courant ?\n\nLes montants d'impôt et le net à payer vont changer.`)) return;
+    setBusy(`rc${p.year}-${p.month}`); setError(null);
+    try { await api.runPayroll(dossierId, p.year, p.month); await loadBareme(); await loadPayslips(); }
+    catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
 
   // Mois clôturé = ce mois (1-12) ou un mois antérieur est couvert par une clôture.
   const closedThrough = closures.reduce((max, c) => (c.year * 12 + c.month > max ? c.year * 12 + c.month : max), 0);
@@ -192,6 +203,61 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       </div>
 
       {sub === 'paie' && (<>
+      {/* --- Contrôle du barème : bulletins calculés avec un barème périmé --- */}
+      {bareme && bareme.periods.length > 0 && (
+        <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <div>
+            <div className="flex items-center gap-2 font-display text-lg font-semibold text-amber-200">
+              <AlertTriangle className="h-5 w-5 text-amber-400" /> Bulletins à recalculer
+            </div>
+            <p className="mt-1 text-sm text-zinc-400">
+              Ces bulletins ont été calculés avec un <strong>barème périmé</strong>. Le barème en vigueur est <strong className="font-mono text-amber-200">{bareme.currentVersion}</strong> (barème ITS officiel DGI).
+              Les écarts ci-dessous sont <em>indicatifs</em> : ils sont obtenus en recalculant avec la fiche salarié actuelle.
+            </p>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+                <th className="px-3 py-2 font-medium">Période</th>
+                <th className="px-3 py-2 font-medium">Bulletins</th>
+                <th className="px-3 py-2 text-right font-medium">Écart impôt</th>
+                <th className="px-3 py-2 text-right font-medium">Écart net</th>
+                <th className="px-3 py-2 text-right font-medium">Écart coût employeur</th>
+                <th className="px-3 py-2"></th>
+              </tr></thead>
+              <tbody className="divide-y divide-white/5">
+                {bareme.periods.map((p) => {
+                  const k = `rc${p.year}-${p.month}`;
+                  const delta = (n: number) => <span className={cn('font-mono', n > 0 ? 'text-amber-300' : n < 0 ? 'text-sky-300' : 'text-zinc-500')}>{n > 0 ? '+' : ''}{fmtMoney(n, currency)}</span>;
+                  return (
+                    <tr key={k} className="hover:bg-white/5">
+                      <td className="px-3 py-2.5 text-zinc-200">{p.label}</td>
+                      <td className="px-3 py-2.5 text-zinc-400">{p.stale} / {p.count} <span className="text-xs text-zinc-600">· {p.versions.join(', ')}</span></td>
+                      <td className="px-3 py-2.5 text-right">{delta(p.deltaIts)}</td>
+                      <td className="px-3 py-2.5 text-right">{delta(p.deltaNet)}</td>
+                      <td className="px-3 py-2.5 text-right">{delta(p.deltaCout)}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        {p.recalculable ? (
+                          <button onClick={() => recalcPeriod(p)} disabled={busy === k}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 hover:bg-amber-400 disabled:opacity-40">
+                            {busy === k ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Recalculer
+                          </button>
+                        ) : (
+                          <span className="text-xs text-zinc-500">{p.blocage}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Un écart d'impôt <strong>positif</strong> signifie que l'impôt retenu était <strong>sous-évalué</strong> : le net à payer baisse d'autant. Vérifiez avec le salarié et la DGI avant de rediffuser un bulletin déjà remis.
+          </p>
+        </section>
+      )}
+
       {/* --- Paie du mois --- */}
       <section className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -138,12 +138,15 @@ export async function runPayroll(
     // Les variables manuelles éventuelles priment sur le dérivé.
     const v = zeroVars(e.id, year, month, { ...derived, ...(varsMap[e.id] ?? {}) });
     const calc = calculatePayroll(toEmployee(e), v, 'CI');
+    // On horodate la VERSION du jeu de règles utilisé : c'est ce qui permet de
+    // repérer plus tard les bulletins calculés avec un barème périmé (baremeAudit).
+    const stored = { ...calc, ruleSetVersion: ruleSet.version };
     await c.query(
       `insert into payroll_payslips(dossier_id, employee_id, period_year, period_month, variables, calculation)
        values ($1,$2,$3,$4,$5,$6)
        on conflict (dossier_id, employee_id, period_year, period_month)
        do update set variables=$5, calculation=$6, entry_id=null, created_at=now()`,
-      [dossierId, e.id, year, month, JSON.stringify(v), JSON.stringify(calc)]);
+      [dossierId, e.id, year, month, JSON.stringify(v), JSON.stringify(stored)]);
     totalBrut += calc.salaireBrutTotal; totalNet += calc.salaireNetPaye; totalCout += calc.totalCoutEmployeur; count++;
   }
   return { count, totalBrut: Math.round(totalBrut), totalNet: Math.round(totalNet), totalCoutEmployeur: Math.round(totalCout) };
@@ -160,6 +163,75 @@ export async function listPayslips(c: Client, dossierId: string, year: number, m
     brut: r.calculation.salaireBrutTotal, net: r.calculation.salaireNetPaye, cout: r.calculation.totalCoutEmployeur,
     calculation: r.calculation, comptabilise: !!r.entry_id, entryId: r.entry_id,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Contrôle du barème : repère les bulletins déjà enregistrés qui ont été
+// calculés avec un jeu de règles PÉRIMÉ (ex. barème ITS d'avant la correction
+// DGI de 2024, qui sous-évaluait l'impôt). Lecture seule — ne réécrit rien.
+//
+// Deux signaux, volontairement distincts :
+//  • `stale` : la VERSION du barème enregistrée ≠ celle en vigueur pour la
+//    période. C'est le signal FIABLE (les bulletins antérieurs à l'horodatage
+//    n'ont pas de version : ils sont, de fait, périmés).
+//  • les écarts chiffrés : obtenus en RECALCULANT. Ils sont INDICATIFS, car ils
+//    utilisent la fiche salarié ACTUELLE — si un salaire a changé depuis, une
+//    part de l'écart vient de là, pas du barème.
+// ---------------------------------------------------------------------------
+export interface BaremePeriod {
+  year: number; month: number; label: string;
+  count: number; stale: number; versions: string[];
+  deltaIts: number; deltaNet: number; deltaCout: number;
+  comptabilise: boolean; closed: boolean; recalculable: boolean; blocage: string | null;
+}
+
+export async function baremeAudit(c: Client, dossierId: string): Promise<{ currentVersion: string; periods: BaremePeriod[] }> {
+  const { rows } = await c.query(
+    `select p.period_year, p.period_month, p.variables, p.calculation, p.entry_id, e.*
+       from payroll_payslips p join payroll_employees e on e.id = p.employee_id
+      where p.dossier_id = $1
+      order by p.period_year desc, p.period_month desc`, [dossierId]);
+
+  const byPeriod = new Map<string, any[]>();
+  for (const r of rows) {
+    const k = `${r.period_year}-${r.period_month}`;
+    (byPeriod.get(k) ?? byPeriod.set(k, []).get(k)!).push(r);
+  }
+
+  const periods: BaremePeriod[] = [];
+  for (const items of byPeriod.values()) {
+    const { period_year: year, period_month: month } = items[0];
+    const expected = resolveRuleSet(year, month, 'CI').version;
+    let stale = 0, deltaIts = 0, deltaNet = 0, deltaCout = 0;
+    const versions = new Set<string>();
+
+    for (const r of items) {
+      const stored = r.calculation ?? {};
+      const v: string = stored.ruleSetVersion ?? '(non horodaté)';
+      versions.add(v);
+      if (v === expected) continue;
+      stale++;
+      try {
+        const fresh = calculatePayroll(toEmployee(r), r.variables as MonthlyVariables, 'CI');
+        deltaIts += (fresh.itsSalarial ?? 0) - num(stored.itsSalarial);
+        deltaNet += (fresh.salaireNetPaye ?? 0) - num(stored.salaireNetPaye);
+        deltaCout += (fresh.totalCoutEmployeur ?? 0) - num(stored.totalCoutEmployeur);
+      } catch { /* un bulletin non recalculable ne doit pas casser l'audit */ }
+    }
+    if (stale === 0) continue; // période déjà au barème courant : on ne l'affiche pas
+
+    const comptabilise = items.some((r: any) => r.entry_id);
+    const closed = await isMonthClosed(c, dossierId, year, month);
+    periods.push({
+      year, month, label: monthLabel(year, month + 1),
+      count: items.length, stale, versions: [...versions],
+      deltaIts: Math.round(deltaIts), deltaNet: Math.round(deltaNet), deltaCout: Math.round(deltaCout),
+      comptabilise, closed, recalculable: !comptabilise && !closed,
+      blocage: comptabilise ? "Paie comptabilisée : contre-passez l'OD de paie avant de recalculer."
+        : closed ? 'Période clôturée : rouvrez-la dans Clôtures pour recalculer.' : null,
+    });
+  }
+  return { currentVersion: resolveRuleSet(new Date().getFullYear(), new Date().getMonth(), 'CI').version, periods };
 }
 
 // Vrai si les tables RH (absences/avances) sont présentes (migration 0046 appliquée).
