@@ -9,7 +9,7 @@ import type { PayrollResult } from './core/index.js';
 //
 //   Débit  661  Rémunérations directes (brut total)
 //   Débit  664  Charges sociales patronales (CNPS employeur)
-//   Débit  6413 Taxes sur salaires patronales (apprentissage + formation)
+//   Débit  6413 Taxes sur salaires patronales (TA + TFPC + CN + CE employeur)
 //   Crédit 422  Personnel, rémunérations dues (net à payer)
 //   Crédit 431  Sécurité sociale (CNPS salarial + patronal + CMU)
 //   Crédit 447  État, impôts retenus (ITS + CN + IGR + taxes patronales)
@@ -30,12 +30,21 @@ const r2 = (n: number) => Math.round(n);
 export function buildPayrollEntryLines(results: PayrollResult[], periodLabel: string): EntryLineInput[] {
   const sum = (f: (r: PayrollResult) => number) => r2(results.reduce((s, r) => s + (f(r) || 0), 0));
 
+  // Taxes sur salaires à la charge de l'EMPLOYEUR (réforme DGI 2024) :
+  // TA 0,4 % + TFPC 1,2 % + Contribution Nationale 1,2 % + Contribution
+  // Employeur (0 % local / 9,2 % expatrié). CE/CN sont optionnels dans
+  // PayrollResult (bulletins figés avant la réforme) → `?? 0`.
+  const taxesEmployeur = (r: PayrollResult) =>
+    r.taxeApprentissage + r.formationContinue + (r.contributionEmployeur ?? 0) + (r.contributionNationale ?? 0);
+
   const brut = sum((r) => r.salaireBrutTotal);
   const cnpsPat = sum((r) => r.cnpsFamille + r.cnpsAccident + r.cnpsRetraitePatronal);
-  const taxesPat = sum((r) => r.taxeApprentissage + r.formationContinue);
+  const taxesPat = sum(taxesEmployeur);
   const net = sum((r) => r.salaireNetPaye);
   const cnpsTotal = sum((r) => r.cnpsSalarial + r.cnpsFamille + r.cnpsAccident + r.cnpsRetraitePatronal + r.cmuSalarial);
-  const etatTotal = sum((r) => r.itsSalarial + r.cnSalarial + r.igrSalarial + r.taxeApprentissage + r.formationContinue);
+  // cnSalarial/igrSalarial valent 0 depuis la fusion IS+CN+IGR (ITS unifié) ;
+  // conservés pour les bulletins antérieurs à la réforme.
+  const etatTotal = sum((r) => r.itsSalarial + r.cnSalarial + r.igrSalarial + taxesEmployeur(r));
   const avances = sum((r) => r.acompte + r.remboursementAvance + r.retenuesDiverses);
 
   const lines: EntryLineInput[] = [];

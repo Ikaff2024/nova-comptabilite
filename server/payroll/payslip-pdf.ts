@@ -149,13 +149,24 @@ export async function renderPayslipPdf(input: PayslipPdfInput): Promise<Uint8Arr
   if (e.indemniteLogement > 0) row('Indemnité de logement', '—', '—', money(e.indemniteLogement), '—', '—');
   if (calc.transportExonere > 0) row('Transport (exonéré)', 'Max 30 000', '—', money(calc.transportExonere), '—', '—');
   if (calc.transportImposable > 0) row('Transport (imposable)', '—', '—', money(calc.transportImposable), '—', '—');
+  // Allocation spéciale de fonction : exonérée dans la limite de 10 % de la
+  // rémunération totale (art. 116-1° CGI), le surplus est imposable.
+  if (calc.indemniteFonctionExoneree > 0) row('Indemnité de fonction (exonérée)', 'Max 10 %', '—', money(calc.indemniteFonctionExoneree), '—', '—');
+  if (calc.indemniteFonctionImposable > 0) row('Indemnité de fonction (imposable)', '—', '—', money(calc.indemniteFonctionImposable), '—', '—');
   if (e.autresPrimes + v.primesExceptionnelles > 0) row('Autres primes', '—', '—', money(e.autresPrimes + v.primesExceptionnelles), '—', '—');
   row('Retraite CNPS (salarié)', money(calc.salaireBrutImposable), '6,3%', '—', money(calc.cnpsSalarial), `${money(calc.cnpsRetraitePatronal)}`);
   row('Impôt Unique sur Salaires (IUS)', money(calc.salaireBrutImposable), 'Barème', '—', money(calc.itsSalarial), '—');
   row('Couverture Maladie (CMU)', 'Forfait', '—', '—', money(calc.cmuSalarial), '—');
-  row('Prestations familiales', 'Max 70 000', '5,75%', '—', '—', money(calc.cnpsFamille));
-  row('Accident du travail', 'Max 70 000', '2%', '—', '—', money(calc.cnpsAccident));
-  row('Contribution Unique Employeurs (CUE)', money(calc.salaireBrutImposable), '1,2%', '—', '—', money(calc.taxeApprentissage));
+  row('Prestations familiales', 'Max 75 000', '5,75%', '—', '—', money(calc.cnpsFamille));
+  row('Accident du travail', 'Max 75 000', '2%', '—', '—', money(calc.cnpsAccident));
+  // Taxes sur salaires à la charge de l'employeur (réforme DGI 2024). La CUE
+  // n'existe plus : elle est remplacée par ce détail (TA + TFPC + CN + CE).
+  row("Taxe d'apprentissage (TA)", money(calc.salaireBrutImposable), '0,4%', '—', '—', money(calc.taxeApprentissage));
+  row('Formation continue (TFPC)', money(calc.salaireBrutImposable), '1,2%', '—', '—', money(calc.formationContinue));
+  if ((calc.contributionNationale ?? 0) > 0)
+    row('Contribution Nationale (CN)', money(calc.salaireBrutImposable), '1,2%', '—', '—', money(calc.contributionNationale ?? 0));
+  if ((calc.contributionEmployeur ?? 0) > 0)
+    row('Contribution Employeur (CE)', money(calc.salaireBrutImposable), '9,2%', '—', '—', money(calc.contributionEmployeur ?? 0));
   if (v.acompte > 0) row('Acompte', '—', '—', '—', money(v.acompte), '—', { bold: true });
   if (v.retenuesDiverses > 0) row('Retenues diverses', '—', '—', '—', money(v.retenuesDiverses), '—');
   if (calc.remboursementAvance > 0) row('Remboursement avance/prêt', '—', '—', '—', money(calc.remboursementAvance), '—');

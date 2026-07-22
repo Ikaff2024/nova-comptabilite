@@ -152,7 +152,31 @@ export function calculatePayroll(employee: Employee, variables: MonthlyVariables
 
   // 6. Gross Salary components
   const primesExceptionnelles = variables.primesExceptionnelles;
-  
+
+  // 6 bis. Allocation spéciale « frais inhérents à la fonction ou à l'emploi »
+  // (art. 116-1° CGI ; note DGI n° 054/MFB/DGI-DLCD du 08/07/2024).
+  // Exonérée « dans la limite du dixième de la rémunération totale, indemnités
+  // comprises, hors avantages en nature ». L'assiette des 10 % EXCLUT la prime
+  // légale de transport exonérée (et les avantages en nature, non gérés ici) :
+  // on la calcule donc sur la rémunération en numéraire, indemnité de fonction
+  // comprise, diminuée de la part de transport exonérée.
+  // ⚠️ Le plafond est une LIMITE, pas une formule : la note interdit de calculer
+  // ces allocations en appliquant un pourcentage au salaire, et exige des
+  // justificatifs. Le montant réellement alloué est donc saisi, puis écrêté ici.
+  const indemniteFonction = employee.indemniteFonction ?? 0;
+  const remunerationTotaleHorsAvantages =
+    effectiveBaseAndSursalaire +
+    totalOvertimePay +
+    seniorityBonus +
+    housingAllowance +
+    otherPrimes +
+    primesExceptionnelles +
+    transportImposable +
+    indemniteFonction;
+  const plafondAllocationSpeciale = remunerationTotaleHorsAvantages * rules.specialAllowanceExemptRate;
+  const indemniteFonctionExoneree = Math.round(Math.min(indemniteFonction, plafondAllocationSpeciale));
+  const indemniteFonctionImposable = Math.max(0, indemniteFonction - indemniteFonctionExoneree);
+
   // Total Gross Salary
   const salaireBrutTotal = Math.round(
     effectiveBaseAndSursalaire +
@@ -161,7 +185,8 @@ export function calculatePayroll(employee: Employee, variables: MonthlyVariables
     housingAllowance +
     otherPrimes +
     primesExceptionnelles +
-    transportAllowance
+    transportAllowance +
+    indemniteFonction
   );
 
   // Taxable Gross Salary
@@ -172,33 +197,44 @@ export function calculatePayroll(employee: Employee, variables: MonthlyVariables
     housingAllowance +
     otherPrimes +
     primesExceptionnelles +
-    transportImposable
+    transportImposable +
+    indemniteFonctionImposable
   );
 
   // 7. Social Contributions (Employee part)
-  // CNPS Employee rate (6,3 %) sous plafond retraite (3 375 000).
+  // Assiette CNPS : PLANCHER toutes branches (75 000 = SMIG) puis plafond de la
+  // branche. Communiqué CNPS suite au décret n° 2022-986 (en vigueur 01/01/2023).
+  // Le plancher fait que même un salaire partiel cotise sur au moins le SMIG.
   const cnpsCeiling = rules.cnps.ceiling;
-  const cnpsTaxableBase = Math.min(salaireBrutImposable, cnpsCeiling);
+  const cnpsFloor = rules.cnps.floor;
+  const cnpsTaxableBase = Math.min(Math.max(salaireBrutImposable, cnpsFloor), cnpsCeiling);
   const cnpsSalarial = Math.round(cnpsTaxableBase * rules.cnps.employeeRate);
 
   // 8. Fiscale Deductions (Taxes)
-  // --- IMPÔT UNIQUE SUR LES SALAIRES (IUS) (LOI DE FINANCES 2024) ---
-  // Remplace ITS/CN/IGR par un impôt progressif unique. Abattement pro appliqué
-  // à l'assiette (30 % → base = 70 %), puis barème progressif.
+  // --- IMPÔT SUR LES TRAITEMENTS ET SALAIRES (ITS unifié) — réforme 2024 ---
+  // L'ordonnance du 13/09/2023 (note DGI du 03/01/2024) fusionne IS + CN + IGR
+  // salarié en un prélèvement unique, SUPPRIME l'abattement forfaitaire, et
+  // remplace le quotient familial par une réduction d'impôt pour charges de
+  // famille (RICF) exprimée en MONTANT FIXE selon le nombre de parts.
+  // Le barème est celui du modèle officiel État 301 (onglet PARAMETRES).
   const baseIUS = salaireBrutImposable * (1 - rules.ius.abatementRate);
   const rawIUS = applyProgressive(baseIUS, rules.ius.brackets);
+  const iusBrut = Math.round(rawIUS);
 
-  // Réduction pour charges de famille : conjoint + enfants (plafonnés), plafond global.
-  const isMarried = employee.statutMatrimonial.startsWith('Marie');
-  const childrenCount = employee.nombreEnfants || 0;
-  const iusReductionPct =
-    (isMarried ? rules.ius.familySpouseReduction : 0) +
-    Math.min(rules.ius.familyChildCap, childrenCount) * rules.ius.familyChildReduction;
-  const finalReductionPct = Math.min(rules.ius.reductionCap, iusReductionPct);
-  const iusSalarial = Math.round(rawIUS * (1 - finalReductionPct));
+  // RICF : on retient le palier dont le nombre de parts est le plus élevé sans
+  // dépasser celui du salarié (les parts sont des multiples de 0,5, plafonnées).
+  const parts = Math.min(rules.ius.maxParts, employee.nombrePartsIGR || 1);
+  let ricf = 0;
+  for (const p of rules.ius.ricfByParts) {
+    if (parts >= p.parts) ricf = p.monthly;
+    else break;
+  }
+  // L'impôt ne peut pas devenir négatif : la RICF est écrêtée à l'impôt brut.
+  const iusReduction = Math.min(ricf, iusBrut);
+  const iusSalarial = iusBrut - iusReduction;
 
   // For backward compatibility and standard interface integrity:
-  // itsSalarial holds the new unified IUS value, while CN and IGR are 0.
+  // itsSalarial holds the new unified ITS value, while CN and IGR are 0.
   const itsSalarial = iusSalarial;
   const cnSalarial = 0;
   const igrSalarial = 0;
@@ -225,9 +261,11 @@ export function calculatePayroll(employee: Employee, variables: MonthlyVariables
   const salaireNetPaye = Math.max(0, salaireBrutTotal - totalRetenuesSalariales);
 
   // 11. Employer Social Charges
-  // Prestations familiales : familyRate (5,75 %) sous plafond familyCeiling (70 000).
+  // Prestations familiales + maternité (5,75 %) : plancher puis plafond des
+  // « autres branches ». Depuis 2023 plancher = plafond = 75 000, donc cette
+  // assiette vaut en pratique toujours 75 000.
   const familyCeiling = rules.cnps.familyCeiling;
-  const cnpsFamilyBase = Math.min(salaireBrutImposable, familyCeiling);
+  const cnpsFamilyBase = Math.min(Math.max(salaireBrutImposable, cnpsFloor), familyCeiling);
   const cnpsFamille = Math.round(cnpsFamilyBase * rules.cnps.familyRate);
 
   // Accident du travail : accidentRate (2 %) sous le même plafond.
@@ -236,19 +274,22 @@ export function calculatePayroll(employee: Employee, variables: MonthlyVariables
   // Retraite patronale : retirementEmployerRate (7,7 %) sous plafond retraite.
   const cnpsRetraitePatronal = Math.round(cnpsTaxableBase * rules.cnps.retirementEmployerRate);
 
-  // --- CONTRIBUTION UNIQUE DES EMPLOYEURS (CUE) (LOI DE FINANCES 2024) ---
-  // Remplace Taxe d'Apprentissage + Formation Continue par un taux unique (1,2 %).
-  const cuePatronal = Math.round(salaireBrutImposable * rules.cueRate);
-
-  // For backward compatibility and standard interface integrity:
-  // taxeApprentissage holds the unified CUE value, while formationContinue is 0.
-  const taxeApprentissage = cuePatronal;
-  const formationContinue = 0;
+  // --- IMPÔTS & TAXES EMPLOYEUR (DGI) — formulaire officiel FUDP, §03.2/03.4 ---
+  // Tous sur le revenu brut imposable. La Contribution Employeur (CE) dépend du
+  // statut : personnel LOCAL exonéré (0), personnel EXPATRIÉ 9,2 %.
+  const et = rules.employerTaxes;
+  const isExpat = employee.localExpatrie === 'E';
+  const contributionEmployeur = Math.round(salaireBrutImposable * (isExpat ? et.ceRateExpat : et.ceRateLocal));
+  const contributionNationale = Math.round(salaireBrutImposable * et.cnRate);
+  const taxeApprentissage = Math.round(salaireBrutImposable * et.apprenticeshipRate); // TA 0,4 %
+  const formationContinue = Math.round(salaireBrutImposable * et.trainingRate); // TFPC 1,2 %
 
   const totalChargesPatronales = Math.round(
     cnpsFamille +
     cnpsAccident +
     cnpsRetraitePatronal +
+    contributionEmployeur +
+    contributionNationale +
     taxeApprentissage +
     formationContinue
   );
@@ -266,12 +307,17 @@ export function calculatePayroll(employee: Employee, variables: MonthlyVariables
     autresPrimes: otherPrimes,
     transportExonere,
     transportImposable,
+    indemniteFonction,
+    indemniteFonctionExoneree,
+    indemniteFonctionImposable,
     
     salaireBrutTotal,
     salaireBrutImposable,
 
     cnpsSalarial,
     itsSalarial,
+    iusBrut,
+    iusReduction,
     cnSalarial,
     igrSalarial,
     cmuSalarial,
@@ -287,6 +333,8 @@ export function calculatePayroll(employee: Employee, variables: MonthlyVariables
     cnpsRetraitePatronal,
     taxeApprentissage,
     formationContinue,
+    contributionEmployeur,
+    contributionNationale,
     totalChargesPatronales,
 
     totalCoutEmployeur,

@@ -35,27 +35,56 @@ export interface PayrollRuleSet {
   overtimeThresholds: { weeklyNormalHours: number; firstTierHours: number };
   seniority: { thresholdYears: number; startPct: number; incrementPct: number; capPct: number };
   transportExemptCap: number; // exonération transport (30 000)
+  // Allocations spéciales couvrant les frais inhérents à la fonction ou à l'emploi
+  // (art. 116-1° CGI ; note de service DGI n° 054/MFB/DGI-DLCD du 08/07/2024) :
+  // exonérées « dans la limite du dixième de la rémunération totale, indemnités
+  // comprises, hors avantages en nature ». Sont EXCLUS de cette assiette : la
+  // prime légale de transport exonérée, les indemnités à caractère familial et
+  // les avantages en nature.
+  specialAllowanceExemptRate: number; // 0,10
 
+  // Assiettes CNPS — communiqué officiel CNPS (décret n° 2022-986 du 21/12/2022,
+  // SMIG porté à 75 000), en vigueur au 01/01/2023.
   cnps: {
-    ceiling: number; // plafond retraite (3 375 000)
+    floor: number; // plancher TOUTES BRANCHES confondues (75 000)
+    ceiling: number; // plafond branche retraite (3 375 000 = 45 × SMIG)
     employeeRate: number; // 6,3 %
-    familyCeiling: number; // plafond prestations familiales / accident (70 000)
-    familyRate: number; // 5,75 %
-    accidentRate: number; // 2 %
+    // Plafond des AUTRES branches (maternité, prestations familiales, AT/MP).
+    // Égal au plancher depuis 2023 → l'assiette de ces branches vaut toujours
+    // exactement 75 000.
+    familyCeiling: number;
+    familyRate: number; // 5,75 % = prestations familiales 5 % + maternité 0,75 %
+    accidentRate: number; // AT/MP : 2 % à 5 % selon le secteur (notifié par la CNPS)
     retirementEmployerRate: number; // 7,7 %
   };
 
   ius: {
-    abatementRate: number; // abattement pro (0,30 → base = 70 %)
+    // Abattement forfaitaire sur l'assiette. SUPPRIMÉ par la réforme 2024 (0) :
+    // le barème s'applique directement au revenu brut imposable (art. 118 CGI).
+    abatementRate: number;
     brackets: TaxBracket[];
-    familySpouseReduction: number; // 10 % conjoint
-    familyChildReduction: number; // 10 % / enfant
-    familyChildCap: number; // nb d'enfants pris en compte (4)
-    reductionCap: number; // plafond de réduction (0,50)
+    // Réduction d'Impôt pour Charges de Famille (RICF) : montant FIXE mensuel
+    // selon le nombre de parts — elle a remplacé le quotient familial. Ce n'est
+    // PAS un pourcentage de l'impôt.
+    ricfByParts: { parts: number; monthly: number }[];
+    maxParts: number; // plafond légal (5 parts)
   };
 
   cmuFlat: number; // CMU forfaitaire (1 000)
-  cueRate: number; // Contribution Unique des Employeurs (1,2 %)
+
+  // Impôts et taxes sur salaires À LA CHARGE DE L'EMPLOYEUR (DGI), en TAUX
+  // EFFECTIFS sur le revenu brut imposable. Source : formulaire officiel de
+  // déclaration DGI (FUDP), section 03.2 + 03.4 — les taux « d'usage » y
+  // intègrent déjà l'abattement de 20 % (ex. CN = 1,5 % × 0,8 = 1,2 %).
+  //   Total personnel LOCAL     = 2,8 % (CE 0 + CN 1,2 + TA 0,4 + TFPC 1,2)
+  //   Total personnel EXPATRIÉ  = 12 %  (CE 9,2 + CN 1,2 + TA 0,4 + TFPC 1,2)
+  employerTaxes: {
+    ceRateLocal: number;      // Contribution Employeur — personnel local (0)
+    ceRateExpat: number;      // Contribution Employeur — personnel expatrié (9,2 %)
+    cnRate: number;           // Contribution Nationale (1,2 %)
+    apprenticeshipRate: number; // Taxe d'apprentissage — TA (0,4 %)
+    trainingRate: number;     // Taxe additionnelle formation continue — TFPC (1,2 %)
+  };
 
   // Solde de tout compte (rupture de contrat). Barèmes ATTESTÉS par le porteur
   // du produit (Code du travail 2015-532, décret 96-201). Les conventions
@@ -74,11 +103,14 @@ export interface PayrollRuleSet {
 
 // --- Côte d'Ivoire — réforme IUS/CUE (loi de finances 2024) ------------------
 const CI_2024: PayrollRuleSet = {
-  version: 'CI-2024.1',
+  version: 'CI-2024.2',
   country: 'CI',
-  label: 'Côte d’Ivoire — Réforme IUS/CUE (Loi de finances 2024)',
+  label: 'Côte d’Ivoire — ITS unifié (réforme 2024), barème officiel DGI',
   effectiveFrom: '2024-01-01',
-  source: 'Loi de finances 2024 ; CNPS ; CMU',
+  source:
+    "Ordonnance du 13/09/2023 ; note DGI du 03/01/2024 (fusion IS+CN+IGR, "
+    + "suppression de l'abattement, RICF par parts) ; barème repris de l'onglet "
+    + 'PARAMETRES du modèle officiel État 301 (edi-annexe-ETAT301.xlsm) ; CNPS ; CMU',
 
   absenceDivisor: 30,
   hourlyDivisor: 173.33,
@@ -86,33 +118,56 @@ const CI_2024: PayrollRuleSet = {
   overtimeThresholds: { weeklyNormalHours: 40, firstTierHours: 8 },
   seniority: { thresholdYears: 2, startPct: 2, incrementPct: 1, capPct: 25 },
   transportExemptCap: 30000,
+  specialAllowanceExemptRate: 0.1,
 
   cnps: {
+    floor: 75000,
     ceiling: 3375000,
     employeeRate: 0.063,
-    familyCeiling: 70000,
+    familyCeiling: 75000,
     familyRate: 0.0575,
     accidentRate: 0.02,
     retirementEmployerRate: 0.077,
   },
 
   ius: {
-    abatementRate: 0.3,
+    // Réforme 2024 : plus d'abattement, le barème porte sur le brut imposable.
+    abatementRate: 0,
+    // Barème progressif MENSUEL officiel. `base` = impôt cumulé au seuil bas,
+    // recalculé par tranche : 0 ; 165 000×16 % ; +560 000×21 % ; +1 600 000×24 % ;
+    // +5 600 000×28 %.
     brackets: [
       { lower: 0, rate: 0, base: 0 },
-      { lower: 75000, rate: 0.15, base: 0 },
-      { lower: 240000, rate: 0.2, base: 24750 },
-      { lower: 800000, rate: 0.25, base: 136750 },
-      { lower: 2400000, rate: 0.35, base: 536750 },
+      { lower: 75000, rate: 0.16, base: 0 },
+      { lower: 240000, rate: 0.21, base: 26400 },
+      { lower: 800000, rate: 0.24, base: 144000 },
+      { lower: 2400000, rate: 0.28, base: 528000 },
+      { lower: 8000000, rate: 0.32, base: 2096000 },
     ],
-    familySpouseReduction: 0.1,
-    familyChildReduction: 0.1,
-    familyChildCap: 4,
-    reductionCap: 0.5,
+    // RICF mensuelle par nombre de parts (barème DGI). Progression linéaire de
+    // 11 000 F par part entière, mais on encode le tableau officiel tel quel.
+    ricfByParts: [
+      { parts: 1, monthly: 0 },
+      { parts: 1.5, monthly: 5500 },
+      { parts: 2, monthly: 11000 },
+      { parts: 2.5, monthly: 16500 },
+      { parts: 3, monthly: 22000 },
+      { parts: 3.5, monthly: 27500 },
+      { parts: 4, monthly: 33000 },
+      { parts: 4.5, monthly: 38500 },
+      { parts: 5, monthly: 44000 },
+    ],
+    maxParts: 5,
   },
 
   cmuFlat: 1000,
-  cueRate: 0.012,
+  employerTaxes: {
+    ceRateLocal: 0,       // personnel local : CE exonérée
+    ceRateExpat: 0.092,   // personnel expatrié : 11,5 % × 0,8
+    cnRate: 0.012,        // 1,5 % × 0,8
+    apprenticeshipRate: 0.004, // TA 0,4 %
+    trainingRate: 0.012,  // TFPC 1,2 %
+  },
 
   stc: {
     referenceMonths: 12,
@@ -146,8 +201,10 @@ const SN_2024_PLACEHOLDER: PayrollRuleSet = {
   overtimeThresholds: { weeklyNormalHours: 40, firstTierHours: 8 },
   seniority: { thresholdYears: 2, startPct: 2, incrementPct: 1, capPct: 25 },
   transportExemptCap: 30000,
+  specialAllowanceExemptRate: 0.1,
 
   cnps: {
+    floor: 0, // à attester
     ceiling: 3600000,
     employeeRate: 0.056, // IPRES RG (placeholder)
     familyCeiling: 63000,
@@ -157,21 +214,19 @@ const SN_2024_PLACEHOLDER: PayrollRuleSet = {
   },
 
   ius: {
-    abatementRate: 0, // le Sénégal n'a pas l'abattement 30% ivoirien
+    abatementRate: 0,
     brackets: [
       { lower: 0, rate: 0, base: 0 },
       { lower: 50000, rate: 0.2, base: 0 },
       { lower: 250000, rate: 0.3, base: 40000 },
       { lower: 750000, rate: 0.4, base: 190000 },
     ],
-    familySpouseReduction: 0,
-    familyChildReduction: 0,
-    familyChildCap: 0,
-    reductionCap: 0,
+    ricfByParts: [{ parts: 1, monthly: 0 }], // placeholder : RICF à attester
+    maxParts: 5,
   },
 
   cmuFlat: 0,
-  cueRate: 0.03, // CFCE (placeholder)
+  employerTaxes: { ceRateLocal: 0, ceRateExpat: 0, cnRate: 0, apprenticeshipRate: 0, trainingRate: 0.03 }, // placeholder CFCE, à attester
 
   stc: CI_2024.stc, // placeholder : réutilise la structure CI en attendant l'attestation
 };

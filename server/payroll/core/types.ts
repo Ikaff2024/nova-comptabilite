@@ -26,6 +26,10 @@ export interface Employee {
   indemniteTransport: number; // Tax-exempt up to 30,000 FCFA
   indemniteLogement: number;
   autresPrimes: number;
+  // Allocation spéciale couvrant les frais inhérents à la fonction ou à l'emploi
+  // (indemnité de fonction / de représentation, frais d'emploi). Exonérée dans la
+  // limite de 10 % de la rémunération totale — art. 116-1° CGI. Voir engine.ts.
+  indemniteFonction?: number;
   email?: string;
   telephone?: string;
   // Volet contractuel (optionnels : rétro-compatibles avec les fiches existantes).
@@ -38,7 +42,23 @@ export interface Employee {
   banque?: string;
   mobileMoneyNumero?: string;
   mobileMoneyOperateur?: string; // Orange | MTN | Moov | Wave
+  // Hiérarchie : responsable direct (organigramme + workflow d'approbation congés).
+  managerId?: string;
+  // --- Informations déclaratives officielles (CNPS, État 301) ---
+  // Optionnelles : les fiches existantes restent valides, l'export signale les
+  // manques. Codes imposés par les formulaires DGI/CNPS.
+  numeroCnps?: string;              // immatriculation CNPS DU SALARIÉ
+  sexe?: 'M' | 'F';
+  nationalite?: NationaliteCode;
+  localExpatrie?: 'L' | 'E';
+  codeEmploi?: CodeEmploi;          // à défaut : dérivé de la catégorie
 }
+
+/** Nationalité au sens de l'État 301 (DGI). */
+export type NationaliteCode = 'I' | 'AA' | 'F' | 'SL' | 'A';
+
+/** Code emploi au sens de l'État 301 (DGI). */
+export type CodeEmploi = 'DR' | 'CS' | 'AM' | 'CM' | 'EQ' | 'EN' | 'OQ' | 'ON' | 'A';
 
 export interface MonthlyVariables {
   employeeId: string;
@@ -67,6 +87,11 @@ export interface PayrollResult {
   autresPrimes: number;
   transportExonere: number; // up to 30000
   transportImposable: number; // portion above 30000
+  // Allocation spéciale (art. 116-1° CGI) : part exonérée plafonnée à 10 % de la
+  // rémunération totale hors avantages en nature, le surplus étant imposable.
+  indemniteFonction: number;
+  indemniteFonctionExoneree: number;
+  indemniteFonctionImposable: number;
 
   salaireBrutTotal: number;
   salaireBrutImposable: number; // base for taxes
@@ -74,6 +99,11 @@ export interface PayrollResult {
   // Employee Deductions
   cnpsSalarial: number; // 6.3%, capped at 3,375,000 FCFA (retirement)
   itsSalarial: number;  // 1.2% of Brut Imposable
+  // Détail IUS pour l'État 301 (déclare l'impôt BRUT et la réduction pour
+  // charges de famille séparément). Optionnels : absents des bulletins figés
+  // avant leur introduction — l'export retombe alors sur itsSalarial.
+  iusBrut?: number;
+  iusReduction?: number;
   cnSalarial: number;   // Progressive Contribution Nationale
   igrSalarial: number;  // Impôt Général sur le Revenu
   cmuSalarial: number;  // 1000 FCFA per month per person
@@ -89,8 +119,11 @@ export interface PayrollResult {
   cnpsFamille: number; // 5.75% up to 70k ceiling
   cnpsAccident: number; // 2% up to 70k ceiling
   cnpsRetraitePatronal: number; // 7.7% up to 3,375,000 ceiling
-  taxeApprentissage: number; // 0.4%
-  formationContinue: number; // 1.2%
+  taxeApprentissage: number; // TA 0,4 %
+  formationContinue: number; // TFPC 1,2 %
+  // Contributions employeur DGI (réforme 2024). CE = 0 (local) / 9,2 % (expatrié).
+  contributionEmployeur?: number;
+  contributionNationale?: number; // CN 1,2 %
   totalChargesPatronales: number;
 
   totalCoutEmployeur: number; // Gross Total + Employer Charges
