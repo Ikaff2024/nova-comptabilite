@@ -46,10 +46,16 @@ export default function EntryForm({
   const [accts, setAccts] = useState<Account[]>([]);
   const [acOpen, setAcOpen] = useState<number | null>(null); // ligne dont le menu est ouvert
   useEffect(() => { api.accounts(dossierId).then(setAccts).catch(() => {}); }, [dossierId]);
+  // Recherche par code (préfixe) OU par libellé (contient), accents/casse ignorés :
+  // taper « banque » ou « 521 » remonte le compte. Les correspondances de code
+  // d'abord, puis celles de libellé.
+  const norm = (s: string) => (s ?? '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
   const suggest = (v: string): Account[] => {
-    const q = (v ?? '').trim();
+    const q = norm(v.trim());
     if (!q) return [];
-    return accts.filter((a) => a.account_code.startsWith(q)).slice(0, 8);
+    const byCode = accts.filter((a) => a.account_code.startsWith(q));
+    const byLabel = accts.filter((a) => !a.account_code.startsWith(q) && norm(a.label).includes(q));
+    return [...byCode, ...byLabel].slice(0, 8);
   };
   const [templates, setTemplates] = useState<EntryTemplate[]>([]);
   const loadTemplates = () => api.entryTemplates(dossierId).then(setTemplates).catch(() => {});
