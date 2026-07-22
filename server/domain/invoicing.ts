@@ -13,9 +13,10 @@ export interface InvoiceLineInput {
   description: string; quantity: number; unitPrice: number; vatRate: number; accountCode?: string; analyticAxis?: string;
 }
 export type DocType = 'invoice' | 'quote' | 'credit_note';
+export type InvoiceTemplate = 'standard' | 'goods' | 'services';
 export interface CreateInvoiceInput {
   clientName: string; counterpartyId?: string; invoiceDate: string; dueDate?: string;
-  currency?: string; notes?: string; docType?: DocType; lines: InvoiceLineInput[];
+  currency?: string; notes?: string; docType?: DocType; template?: InvoiceTemplate; lines: InvoiceLineInput[];
 }
 const PREFIX: Record<DocType, string> = { invoice: 'FV', quote: 'DEV', credit_note: 'AV' };
 const DOC_LABEL: Record<DocType, string> = { invoice: 'Facture', quote: 'Devis', credit_note: 'Avoir' };
@@ -58,7 +59,7 @@ export async function getInvoice(c: Client, dossierId: string, id: string): Prom
   const { rows } = await c.query(
     `select id, number, client_name, counterparty_id, to_char(invoice_date,'YYYY-MM-DD') as invoice_date,
             to_char(due_date,'YYYY-MM-DD') as due_date, status, doc_type, source_document_id, currency,
-            total_ht, total_tva, total_ttc, entry_id, fne_status, fne_reference, fne_qr, notes
+            total_ht, total_tva, total_ttc, entry_id, fne_status, fne_reference, fne_qr, notes, template
        from invoices where dossier_id=$1 and id=$2`, [dossierId, id]);
   if (!rows[0]) throw new Error('Document introuvable');
   const { rows: lines } = await c.query(
@@ -78,10 +79,10 @@ export async function createInvoice(c: Client, dossierId: string, input: CreateI
   const totalHt = lines.reduce((s, l) => s + l.amount_ht, 0);
   const totalTva = lines.reduce((s, l) => s + l.amount_tva, 0);
   const { rows } = await c.query(
-    `insert into invoices(dossier_id, client_name, counterparty_id, invoice_date, due_date, currency, notes, doc_type, total_ht, total_tva, total_ttc)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+    `insert into invoices(dossier_id, client_name, counterparty_id, invoice_date, due_date, currency, notes, doc_type, template, total_ht, total_tva, total_ttc)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
     [dossierId, input.clientName.trim(), input.counterpartyId ?? null, input.invoiceDate, input.dueDate ?? null,
-     input.currency ?? 'XOF', input.notes ?? null, input.docType ?? 'invoice', totalHt, totalTva, totalHt + totalTva],
+     input.currency ?? 'XOF', input.notes ?? null, input.docType ?? 'invoice', input.template ?? 'standard', totalHt, totalTva, totalHt + totalTva],
   );
   const id = rows[0].id;
   for (const l of lines) {
@@ -161,6 +162,7 @@ export async function convertQuote(c: Client, dossierId: string, quoteId: string
   const { id } = await createInvoice(c, dossierId, {
     clientName: q.client_name, counterpartyId: q.counterparty_id ?? undefined,
     invoiceDate: new Date().toISOString().slice(0, 10), currency: q.currency, notes: q.notes ?? undefined, docType: 'invoice',
+    template: q.template ?? 'standard',
     lines: q.lines.map((l: any) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unit_price, vatRate: l.vat_rate, accountCode: l.account_code, analyticAxis: l.analytic_axis ?? undefined })),
   });
   await c.query('update invoices set source_document_id=$3 where dossier_id=$1 and id=$2', [dossierId, id, quoteId]);
@@ -176,6 +178,7 @@ export async function creditNoteFromInvoice(c: Client, dossierId: string, invoic
   const { id } = await createInvoice(c, dossierId, {
     clientName: inv.client_name, counterpartyId: inv.counterparty_id ?? undefined,
     invoiceDate: new Date().toISOString().slice(0, 10), currency: inv.currency, docType: 'credit_note',
+    template: inv.template ?? 'standard',
     notes: `Avoir sur facture ${inv.number}`,
     lines: inv.lines.map((l: any) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unit_price, vatRate: l.vat_rate, accountCode: l.account_code, analyticAxis: l.analytic_axis ?? undefined })),
   });

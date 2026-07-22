@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Plus, Trash2, FileCheck2, Send, Printer, ShieldCheck, ArrowRightLeft, Undo2, FileClock, ReceiptText } from 'lucide-react';
-import { api, fmtMoney, type Invoice, type InvoiceLine, type AnalyticSection, type CatalogItem, type ValidationReport } from '../lib/api';
+import { api, fmtMoney, type Invoice, type InvoiceLine, type InvoiceTemplate, type AnalyticSection, type CatalogItem, type ValidationReport } from '../lib/api';
 import { printDocument, printHtml, nowStamp } from '../lib/export';
 import { invoiceDocumentHtml } from '../lib/invoiceDoc';
 import { cn } from '../lib/utils';
@@ -52,6 +52,7 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   const [client, setClient] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [due, setDue] = useState('');
+  const [template, setTemplate] = useState<InvoiceTemplate>('standard');
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [checking, setChecking] = useState(false);
@@ -64,7 +65,7 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
     if (!client.trim()) { setError('Client requis'); return; }
     setBusy('create');
     try {
-      await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code, analytic_axis: l.analytic_axis || undefined })) });
+      await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, template, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code, analytic_axis: l.analytic_axis || undefined })) });
       setCreating(false); setClient(''); setDue(''); setLines([blankLine()]); setReport(null); await load();
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
@@ -115,6 +116,26 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
             <div className="sm:col-span-1"><label className="mb-1 block text-xs text-zinc-500">Client</label><input value={client} onChange={(e) => setClient(e.target.value)} placeholder="Raison sociale" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
             <div><label className="mb-1 block text-xs text-zinc-500">{docType === 'quote' ? 'Valable jusqu\'au' : 'Échéance'}</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">Modèle de document (mise en forme à l'impression)</label>
+            <div className="inline-flex flex-wrap gap-1.5">
+              {([
+                { v: 'standard', l: 'Standard' },
+                { v: 'goods', l: 'Vente de biens' },
+                { v: 'services', l: 'Prestation de services' },
+              ] as { v: InvoiceTemplate; l: string }[]).map((o) => (
+                <button key={o.v} type="button" onClick={() => setTemplate(o.v)}
+                  className={cn('rounded-lg border px-3 py-1.5 text-sm transition-colors', template === o.v ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-300' : 'border-white/10 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200')}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-zinc-600">
+              {template === 'goods' ? 'Ajoute les modalités de livraison et les conditions de vente (réserve de propriété, garantie).'
+                : template === 'services' ? 'Ajoute les modalités d\'exécution et les conditions de prestation (propriété des livrables, révisions).'
+                : 'Gabarit générique sarcelle.'}
+            </p>
           </div>
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase text-zinc-500"><tr><th className="pb-1 pr-2">Désignation</th><th className="pb-1 px-2">Compte</th>{sections.length > 0 && <th className="pb-1 px-2">Analytique</th>}<th className="pb-1 px-2 text-right">Qté</th><th className="pb-1 px-2 text-right">P.U. HT</th><th className="pb-1 px-2 text-right">TVA</th><th className="pb-1 px-2 text-right">HT</th><th></th></tr></thead>

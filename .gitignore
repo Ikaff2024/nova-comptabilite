@@ -9,3 +9,6 @@ coverage/
 
 # Code de référence externe (analyse/portage, non buildé, non versionné)
 reference/
+
+# Fichiers de travail temporaires
+scratchpad/

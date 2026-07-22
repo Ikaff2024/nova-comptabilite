@@ -248,7 +248,8 @@ export interface Invoice {
   total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string; source_document_id?: string | null;
 }
 export interface InvoiceLine { id?: string; line_no?: number; description: string; quantity: number; unit_price: number; vat_rate: number; account_code: string; analytic_axis?: string | null; amount_ht?: number; amount_tva?: number; }
-export interface InvoiceDetail extends Invoice { counterparty_id: string | null; due_date: string | null; entry_id: string | null; fne_qr: string | null; notes: string | null; lines: InvoiceLine[]; }
+export type InvoiceTemplate = 'standard' | 'goods' | 'services';
+export interface InvoiceDetail extends Invoice { counterparty_id: string | null; due_date: string | null; entry_id: string | null; fne_qr: string | null; notes: string | null; template?: InvoiceTemplate; lines: InvoiceLine[]; }
 export interface Purchase {
   id: string; supplier_name: string; supplier_ref: string | null; invoice_date: string; due_date: string | null;
   status: string; total_ht: number; total_tva: number; total_ttc: number; currency: string; entry_id: string | null; payment_entry_id: string | null;
@@ -614,7 +615,7 @@ export const api = {
     req<{ entryId: string; vnc: number; plusValue: number; salePrice: number }>(`/api/dossiers/${dossierId}/assets/${aid}/dispose`, { method: 'POST', body: JSON.stringify(body) }),
   invoices: (dossierId: string, docType?: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices?docType=${docType || 'invoice'}${status ? `&status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
-  createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; docType?: string; lines: InvoiceLine[] }) =>
+  createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; docType?: string; template?: InvoiceTemplate; lines: InvoiceLine[] }) =>
     req<{ id: string }>(`/api/dossiers/${dossierId}/invoices`, { method: 'POST', body: JSON.stringify(body) }),
   convertQuote: (dossierId: string, iid: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/convert`, { method: 'POST', body: '{}' }),
   creditNoteFromInvoice: (dossierId: string, iid: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/credit-note`, { method: 'POST', body: '{}' }),
