@@ -116,6 +116,13 @@ export interface OpenDossierInput {
   instantiateChart?: boolean;
 }
 
+// Suppression complète d'un dossier (irréversible). L'autorisation (owner/associé
+// du cabinet ou admin plateforme) et le démontage ordonné sont portés par la
+// fonction SECURITY DEFINER dossier_delete (migration 0068).
+export async function deleteDossier(c: Client, dossierId: string): Promise<void> {
+  await c.query('select dossier_delete($1)', [dossierId]);
+}
+
 export async function openDossier(c: Client, input: OpenDossierInput): Promise<{ id: string; accounts: number }> {
   const { rows } = await c.query(
     `insert into dossiers(cabinet_id, raison_sociale, country, base_currency, accounting_system, tax_id, rccm)

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Gauge, TrendingUp, Banknote, CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, Send, Check, X, HandCoins } from 'lucide-react';
+import { Loader2, Gauge, TrendingUp, Banknote, CheckCircle2, XCircle, ArrowUpRight, ArrowDownRight, Send, Check, X, HandCoins, PenLine } from 'lucide-react';
 import { api, fmtMoney, downloadAuthed, type FiscalYear, type CreditScore, type FinancingRequest, type FinancingBrief, type FinancingReadiness } from '../lib/api';
 import { cn } from '../lib/utils';
 
@@ -18,6 +18,28 @@ export default function Scoring({ dossierId, currency, fiscalYears }: { dossierI
   if (!data) return null;
   const color = RATING_COLOR[data.rating] ?? '#a1a1aa';
   const circ = 2 * Math.PI * 52;
+
+  // Dossier vide : pas de score calculable — on l'affiche explicitement plutôt
+  // qu'un « faux score » identique pour toutes les entreprises sans écriture.
+  if (data.insufficientData) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-zinc-300"><Gauge className="h-4 w-4 text-emerald-400" /> Santé financière & financement</div>
+          <select value={fy} onChange={(e) => setFy(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
+            {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-6 py-12 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/5 text-zinc-400"><PenLine className="h-6 w-6" /></div>
+          <div className="text-lg font-semibold text-zinc-100">Score non calculable</div>
+          <p className="max-w-md text-sm text-zinc-400">{data.financing.note}</p>
+          <p className="max-w-md text-xs text-zinc-500">Le score évalue rentabilité, autonomie financière, trésorerie, recouvrement et croissance — à partir de la comptabilité. Saisissez ou importez vos premières écritures pour l'activer.</p>
+        </div>
+        <BankDossierPanel dossierId={dossierId} fy={fy} currency={currency} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

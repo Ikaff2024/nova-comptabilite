@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Building2, CheckCircle2, Save } from 'lucide-react';
+import { Loader2, Building2, CheckCircle2, Save, Trash2, AlertTriangle } from 'lucide-react';
 import { api, type DossierProfile } from '../lib/api';
 
 // Fiche d'identité de l'entreprise : coordonnées, identifiants légaux et
@@ -25,12 +25,16 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-export default function FicheEntreprise({ dossierId, onRenamed }: { dossierId: string; onRenamed?: (name: string) => void }) {
+export default function FicheEntreprise({ dossierId, dossierName, onRenamed, onDeleted }: { dossierId: string; dossierName?: string; onRenamed?: (name: string) => void; onDeleted?: () => void }) {
   const [p, setP] = useState<DossierProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [dangerOpen, setDangerOpen] = useState(false);
+  const [confirmName, setConfirmName] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [delError, setDelError] = useState<string | null>(null);
 
   useEffect(() => {
     let on = true;
@@ -56,6 +60,14 @@ export default function FicheEntreprise({ dossierId, onRenamed }: { dossierId: s
       setP(r.profile); setSaved(true);
       onRenamed?.(r.raison_sociale);
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const refName = (dossierName ?? p?.raisonSociale ?? '').trim();
+  const del = async () => {
+    if (confirmName.trim() !== refName) { setDelError('Le nom saisi ne correspond pas.'); return; }
+    setDeleting(true); setDelError(null);
+    try { await api.deleteDossier(dossierId); onDeleted?.(); }
+    catch (e: any) { setDelError(e.message); setDeleting(false); }
   };
 
   if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement de la fiche…</div>;
@@ -114,6 +126,34 @@ export default function FicheEntreprise({ dossierId, onRenamed }: { dossierId: s
         </button>
         {saved && <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> Fiche enregistrée</span>}
       </div>
+
+      <section className="space-y-3 rounded-2xl border border-rose-500/25 bg-rose-500/5 p-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-rose-300"><AlertTriangle className="h-4 w-4" /> Zone de danger</div>
+        <p className="text-xs text-zinc-400">
+          Supprimer ce dossier efface <strong>définitivement</strong> toute sa comptabilité : écritures, factures, tiers, immobilisations, paie, budgets…
+          Action <strong>irréversible</strong>, réservée au propriétaire ou à un associé du cabinet.
+        </p>
+        {!dangerOpen ? (
+          <button onClick={() => { setDangerOpen(true); setConfirmName(''); setDelError(null); }}
+            className="flex items-center gap-2 rounded-lg border border-rose-500/40 px-4 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/10">
+            <Trash2 className="h-4 w-4" /> Supprimer ce dossier
+          </button>
+        ) : (
+          <div className="space-y-3 rounded-lg border border-rose-500/30 bg-zinc-900/50 p-3">
+            <p className="text-sm text-zinc-300">Pour confirmer, saisissez le nom exact du dossier : <strong className="text-rose-300">{refName}</strong></p>
+            <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={refName}
+              className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-rose-500/50" />
+            {delError && <p className="text-sm text-rose-400">{delError}</p>}
+            <div className="flex items-center gap-3">
+              <button onClick={del} disabled={deleting || confirmName.trim() !== refName}
+                className="flex items-center gap-2 rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-rose-400 disabled:opacity-40">
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Supprimer définitivement
+              </button>
+              <button onClick={() => setDangerOpen(false)} disabled={deleting} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

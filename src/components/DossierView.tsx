@@ -283,7 +283,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
             {tab === 'scoring' && <Scoring dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
             {tab === 'fiscalite' && <Fiscalite dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'regles' && <RulesTab dossierId={dossier.id} />}
-            {tab === 'identite' && <FicheEntreprise dossierId={dossier.id} onRenamed={(n) => { setName(n); dossier.raison_sociale = n; }} />}
+            {tab === 'identite' && <FicheEntreprise dossierId={dossier.id} dossierName={name} onRenamed={(n) => { setName(n); dossier.raison_sociale = n; }} onDeleted={onBack} />}
             {tab === 'plan' && <PlanTab dossierId={dossier.id} />}
             {tab === 'import' && <div className="space-y-6"><ImportBalance dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} /><ImportLedger dossierId={dossier.id} fiscalYears={fiscalYears} /></div>}
             {tab === 'recurrences' && <Recurring dossierId={dossier.id} currency={dossier.base_currency} journals={journals} />}

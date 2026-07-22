@@ -472,6 +472,12 @@ export function createApi() {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => dossierprofile.getProfile(c, req.params.id)));
   }));
+  // Suppression complète d'un dossier (irréversible) — owner/associé ou admin.
+  app.delete('/api/dossiers/:id', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => acc.deleteDossier(c, req.params.id));
+    res.json({ ok: true });
+  }));
   // PATCH accepte soit le simple renommage (raisonSociale/name), soit la fiche.
   app.patch('/api/dossiers/:id', h(async (req, res) => {
     const userId = requireUser(req);

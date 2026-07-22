@@ -288,7 +288,7 @@ export interface FinancingRequest {
   disbursedAmount: number; repaidAmount: number; outstanding: number; requestedAt: string; disbursedAt: string | null;
 }
 export interface CreditScore {
-  score: number; rating: string;
+  score: number; rating: string; insufficientData?: boolean;
   axes: { key: string; label: string; score: number; weight: number }[];
   strengths: string[]; weaknesses: string[];
   financing: { eligible: boolean; amount: number; note: string };
@@ -483,6 +483,7 @@ export const api = {
     req<{ ok: boolean; raison_sociale: string }>(`/api/dossiers/${dossierId}`, { method: 'PATCH', body: JSON.stringify({ raisonSociale }) }),
   createDossier: (input: { cabinetId: string; raisonSociale: string; country: string; accountingSystem?: string; taxId?: string; rccm?: string }) =>
     req<{ id: string; accounts: number }>('/api/dossiers', { method: 'POST', body: JSON.stringify(input) }),
+  deleteDossier: (dossierId: string) => req<{ ok: boolean }>(`/api/dossiers/${dossierId}`, { method: 'DELETE' }),
   accounts: (dossierId: string, q?: string, all?: boolean) =>
     req<Account[]>(`/api/dossiers/${dossierId}/accounts?${q ? `q=${encodeURIComponent(q)}&` : ''}${all ? 'all=1' : ''}`),
   createAccount: (dossierId: string, body: { accountCode: string; label: string; isCollective?: boolean }) =>

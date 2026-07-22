@@ -18,6 +18,24 @@ export async function creditScore(c: Client, dossierId: string, fiscalYearId?: s
        join entries e on e.id=l.entry_id and e.status='posted'
        join accounts a on a.id=l.account_id
       where l.dossier_id=$1 group by a.account_code, a.class_no`, [dossierId]);
+  // Aucune écriture validée → le score n'est pas calculable. On évite le « faux
+  // score » (les axes retombaient sur des valeurs neutres par défaut, donnant
+  // ~38/D à tout dossier vide). On renvoie un état explicite « à compléter ».
+  if (bal.length === 0) {
+    const axes = [
+      { key: 'rentabilite', label: 'Rentabilité', score: 0, weight: 0.30 },
+      { key: 'solvabilite', label: 'Autonomie financière', score: 0, weight: 0.20 },
+      { key: 'tresorerie', label: 'Trésorerie', score: 0, weight: 0.20 },
+      { key: 'recouvrement', label: 'Recouvrement clients', score: 0, weight: 0.15 },
+      { key: 'croissance', label: 'Croissance du CA', score: 0, weight: 0.15 },
+    ];
+    return {
+      insufficientData: true, score: 0, rating: 'N.A.', axes, strengths: [], weaknesses: [],
+      financing: { eligible: false, amount: 0, note: 'Aucune écriture comptable validée : le score de santé financière se calcule dès les premières saisies.' },
+      metrics: { tresorerie: 0, resultat: 0, ca: 0, caMensuel: 0, creances: 0, capitauxPropres: 0, dettesFin: 0, overdue90: 0 },
+    };
+  }
+
   const cls = (n: number) => bal.filter((r: any) => r.class_no === n).reduce((s: number, r: any) => s + Number(r.bal), 0);
   const tresorerie = cls(5);
   const creances = bal.filter((r: any) => r.account_code.startsWith('41') && Number(r.bal) > 0).reduce((s: number, r: any) => s + Number(r.bal), 0);
