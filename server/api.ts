@@ -22,6 +22,7 @@ import * as watchdog from './ai/watchdog.js';
 import * as mm from './domain/mobilemoney.js';
 import * as lettrage from './domain/lettrage.js';
 import * as bank from './domain/bank.js';
+import * as aistatement from './ai/statement.js';
 import * as tiers from './domain/tiers.js';
 import * as invoicing from './domain/invoicing.js';
 import * as purchases from './domain/purchases.js';
@@ -1244,6 +1245,16 @@ export function createApi() {
     const { account, csv } = req.body ?? {};
     if (!account || !csv) { const e: any = new Error('account et csv requis'); e.status = 400; throw e; }
     res.json(await withUser(userId, (c) => bank.matchStatement(c, req.params.id, account, String(csv))));
+  }));
+  // Scan d'un relevé bancaire (PDF/photo) -> extraction IA -> CSV pour le
+  // rapprochement. On ne comptabilise rien : l'utilisateur vérifie puis apparie.
+  app.post('/api/dossiers/:id/reconciliation/scan', h(async (req, res) => {
+    requireUser(req);
+    const { mimeType, dataBase64 } = req.body ?? {};
+    if (!dataBase64) { const e: any = new Error('Fichier requis (dataBase64).'); e.status = 400; throw e; }
+    if (!aistatement.statementExtractionAvailable()) { const e: any = new Error('Extraction IA non configurée (ANTHROPIC_API_KEY / OPENROUTER_API_KEY).'); e.status = 400; throw e; }
+    const ext = await aistatement.extractStatement({ mimeType: String(mimeType ?? 'application/pdf'), dataBase64: String(dataBase64) });
+    res.json({ ...ext, csv: aistatement.statementToCsv(ext) });
   }));
   app.post('/api/dossiers/:id/reconciliation/apply', h(async (req, res) => {
     const userId = requireUser(req);

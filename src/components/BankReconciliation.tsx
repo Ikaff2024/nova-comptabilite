@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Landmark, CheckCircle2, AlertTriangle, Printer, Upload, Wand2, FileSpreadsheet, Plus } from 'lucide-react';
+import { Loader2, Landmark, CheckCircle2, AlertTriangle, Printer, Upload, Wand2, FileSpreadsheet, Plus, ScanLine } from 'lucide-react';
 import { api, fmtMoney, downloadAuthed, type BankAccount, type ReconMove, type StatementMatch, type AnalyticSection } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
@@ -58,6 +58,25 @@ export default function BankReconciliation({ dossierId, dossierName, currency }:
   };
   const onFile = (f: File) => { const r = new FileReader(); r.onload = () => { setCsv(String(r.result ?? '')); setMatch(null); }; r.readAsText(f, 'utf-8'); };
 
+  // Scan d'un relevé PDF/photo : l'IA extrait les opérations, on remplit le CSV
+  // (revu/éditable) et on signale le contrôle de bouclage du solde.
+  const scanRef = useRef<HTMLInputElement>(null);
+  const onScan = (f: File) => {
+    setImpBusy(true); setImpMsg(null); setMatch(null);
+    const r = new FileReader();
+    r.onload = async () => {
+      try {
+        const b64 = String(r.result ?? '').split(',')[1] ?? '';
+        const ext = await api.scanStatement(dossierId, f.type || 'application/pdf', b64);
+        setCsv(ext.csv);
+        const parts = [`${ext.transactions.length} opération(s) extraite(s)`];
+        if (ext.boucle.verifiable) parts.push(ext.boucle.ok ? 'solde vérifié ✓' : `solde NON bouclé (écart ${ext.boucle.ecart})`);
+        setImpMsg([parts.join(' · '), ...ext.warnings].join(' — ') + '. Vérifiez les lignes, puis « Analyser le relevé ».');
+      } catch (e: any) { setImpMsg(e.message); } finally { setImpBusy(false); }
+    };
+    r.readAsDataURL(f);
+  };
+
   const toggle = async (id: string, next: boolean) => {
     setMoves((ms) => ms.map((m) => (m.entry_line_id === id ? { ...m, pointed: next } : m)));
     try { await api.point(dossierId, id, next); await loadAccounts(); }
@@ -106,10 +125,12 @@ export default function BankReconciliation({ dossierId, dossierName, currency }:
       {showImport && (
         <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm text-zinc-300">Relevé bancaire (CSV : Date ; Libellé ; Débit ; Crédit) — rapprochement assisté sur <span className="font-mono text-zinc-400">{account}</span></div>
+            <div className="text-sm text-zinc-300">Relevé bancaire — scannez un <strong>PDF/photo</strong>, ou collez le CSV (Date ; Libellé ; Débit ; Crédit) — rapprochement assisté sur <span className="font-mono text-zinc-400">{account}</span></div>
             <div className="flex gap-2">
+              <button onClick={() => scanRef.current?.click()} className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20"><ScanLine className="h-3.5 w-3.5" /> Scanner (PDF/photo)</button>
+              <input ref={scanRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && onScan(e.target.files[0])} />
               <button onClick={() => { setCsv(SAMPLE_STATEMENT); setMatch(null); }} className="text-xs text-zinc-400 hover:text-emerald-400">Exemple</button>
-              <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400"><FileSpreadsheet className="h-3.5 w-3.5" /> Fichier…</button>
+              <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400"><FileSpreadsheet className="h-3.5 w-3.5" /> CSV…</button>
               <input ref={fileRef} type="file" accept=".csv,.txt,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
             </div>
           </div>

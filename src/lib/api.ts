@@ -553,6 +553,7 @@ export const api = {
     req<ReconView>(`/api/dossiers/${dossierId}/reconciliation?account=${encodeURIComponent(account)}`),
   point: (dossierId: string, entryLineId: string, pointed: boolean) =>
     req<void>(`/api/dossiers/${dossierId}/reconciliation/point`, { method: 'POST', body: JSON.stringify({ entryLineId, pointed }) }),
+  scanStatement: (dossierId: string, mimeType: string, dataBase64: string) => req<{ transactions: {date:string;label:string;debit:number;credit:number}[]; openingBalance: number|null; closingBalance: number|null; confidence: number; boucle: { verifiable: boolean; ok: boolean; ecart: number }; warnings: string[]; csv: string }>(`/api/dossiers/${dossierId}/reconciliation/scan`, { method: 'POST', body: JSON.stringify({ mimeType, dataBase64 }) }),
   matchStatement: (dossierId: string, account: string, csv: string) =>
     req<StatementMatch>(`/api/dossiers/${dossierId}/reconciliation/match`, { method: 'POST', body: JSON.stringify({ account, csv }) }),
   applyPointings: (dossierId: string, entryLineIds: string[]) =>
