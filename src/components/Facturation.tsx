@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Plus, Trash2, FileCheck2, Send, Printer, ShieldCheck, ArrowRightLeft, Undo2, FileClock, ReceiptText } from 'lucide-react';
 import { api, fmtMoney, type Invoice, type InvoiceLine, type AnalyticSection, type CatalogItem, type ValidationReport } from '../lib/api';
-import { printDocument, nowStamp } from '../lib/export';
+import { printDocument, printHtml, nowStamp } from '../lib/export';
+import { invoiceDocumentHtml } from '../lib/invoiceDoc';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
 
@@ -85,23 +86,13 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   };
 
   const printDoc = async (id: string) => {
-    const inv = await api.invoice(dossierId, id);
-    const m = (n: number) => fmtMoney(n, currency);
-    const head = inv.doc_type === 'quote' ? 'DEVIS' : inv.doc_type === 'credit_note' ? 'AVOIR' : 'FACTURE';
-    const body = `
-      <table style="margin-bottom:12px"><tbody>
-        <tr><td><b>${head} ${inv.number ?? '(brouillon)'}</b></td><td class="n">Date : ${inv.invoice_date}</td></tr>
-        <tr><td>Émetteur : ${dossierName}</td><td class="n">${inv.due_date ? (inv.doc_type === 'quote' ? 'Valable jusqu\'au : ' : 'Échéance : ') + inv.due_date : ''}</td></tr>
-        <tr><td>Client : ${(inv.client_name ?? '').replace(/[&<>]/g, '')}</td><td class="n">${inv.fne_reference ? 'FNE : ' + inv.fne_reference : ''}</td></tr>
-      </tbody></table>
-      <table><thead><tr><th>Désignation</th><th class="n">Qté</th><th class="n">P.U. HT</th><th class="n">TVA</th><th class="n">Montant HT</th></tr></thead><tbody>
-      ${inv.lines.map((l) => `<tr><td>${(l.description ?? '').replace(/[&<>]/g, '')}</td><td class="n">${l.quantity}</td><td class="n">${m(l.unit_price)}</td><td class="n">${Math.round(l.vat_rate * 100)}%</td><td class="n">${m(l.amount_ht ?? 0)}</td></tr>`).join('')}
-      <tr class="tot"><td colspan="4">Total HT</td><td class="n">${m(inv.total_ht)}</td></tr>
-      <tr class="tot"><td colspan="4">TVA</td><td class="n">${m(inv.total_tva)}</td></tr>
-      <tr class="tot"><td colspan="4">Total TTC${inv.doc_type === 'credit_note' ? ' (à déduire)' : ''}</td><td class="n">${m(inv.total_ttc)}</td></tr>
-      </tbody></table>
-      ${inv.fne_reference ? `<p style="margin-top:12px"><b>Facture Normalisée Électronique</b> — Réf. ${inv.fne_reference}</p>` : ''}`;
-    printDocument(`${head} ${inv.number ?? ''} — ${dossierName}`, `édité le ${nowStamp()}`, body);
+    // Document soigné : on récupère l'identité de l'entreprise (fiche entreprise)
+    // pour l'en-tête ; en cas d'échec, un profil minimal suffit au rendu.
+    const [inv, co] = await Promise.all([
+      api.invoice(dossierId, id),
+      api.dossierProfile(dossierId).catch(() => ({ raisonSociale: dossierName } as any)),
+    ]);
+    printHtml(invoiceDocumentHtml(inv, co, currency));
   };
 
   return (
