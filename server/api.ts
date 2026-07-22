@@ -139,7 +139,8 @@ export function createApi() {
              (select count(*) from information_schema.tables  where table_schema='public' and table_name='period_closures') > 0 as period_closures,
              (select count(*) from information_schema.tables  where table_schema='public' and table_name='decision_ledger') > 0 as decision_ledger,
              (select count(*) from information_schema.columns where table_schema='public' and table_name='invoices' and column_name='template') > 0 as invoice_template,
-             (to_regprocedure('public.dossier_delete(uuid)') is not null) as dossier_delete`);
+             (to_regprocedure('public.dossier_delete(uuid)') is not null) as dossier_delete,
+             (select count(*) from information_schema.columns where table_schema='public' and table_name='payroll_employees' and column_name='numero_cnps') > 0 as payroll_declaratif`);
         schema = rows[0] ?? {};
       } catch { /* diagnostic best-effort */ }
       res.json({ ok: true, db: true, ...base, schema });
