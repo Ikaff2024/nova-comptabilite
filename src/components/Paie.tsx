@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock, Send, AlertTriangle } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis, type RhAlerts, type BaremeAudit, type BaremePeriod } from '../lib/api';
-import { printDocument, nowStamp } from '../lib/export';
+import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis, type RhAlerts, type BaremeAudit, type BaremePeriod, type OfficialExport } from '../lib/api';
+import { printDocument, nowStamp, downloadCsv } from '../lib/export';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
 import CongesPanel from './CongesPanel';
@@ -74,7 +74,8 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
     try {
       const body = { ...form, nombreEnfants: Number(form.nombreEnfants) || 0, nombrePartsIGR: Number(form.nombrePartsIGR) || 1,
         salaireBase: Number(form.salaireBase) || 0, sursalaire: Number(form.sursalaire) || 0,
-        indemniteTransport: Number(form.indemniteTransport) || 0, indemniteLogement: Number(form.indemniteLogement) || 0, autresPrimes: Number(form.autresPrimes) || 0 };
+        indemniteTransport: Number(form.indemniteTransport) || 0, indemniteLogement: Number(form.indemniteLogement) || 0, autresPrimes: Number(form.autresPrimes) || 0,
+        indemniteFonction: Number(form.indemniteFonction) || 0 };
       if (editingId) await api.updatePayrollEmployee(dossierId, editingId, body);
       else await api.createPayrollEmployee(dossierId, body);
       setShowForm(false); setEditingId(null); setForm(emptyForm()); await loadEmployees();
@@ -349,6 +350,35 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
             <div><label className="mb-1 block text-xs text-zinc-500">Sursalaire</label><input type="number" value={form.sursalaire ?? 0} onChange={(e) => setF({ sursalaire: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Ind. transport</label><input type="number" value={form.indemniteTransport ?? 0} onChange={(e) => setF({ indemniteTransport: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Ind. logement</label><input type="number" value={form.indemniteLogement ?? 0} onChange={(e) => setF({ indemniteLogement: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">Ind. fonction <span className="text-zinc-600">exonérée à 10 %</span></label><input type="number" value={form.indemniteFonction ?? 0} onChange={(e) => setF({ indemniteFonction: Number(e.target.value) })} className={cn(inputCls, 'font-mono')} /></div>
+
+            {/* Informations déclaratives officielles (CNPS nominatif, État 301, FUDP). */}
+            <div className="sm:col-span-2 lg:col-span-4 mt-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Déclaratif officiel (CNPS / DGI)</div>
+            <div><label className="mb-1 block text-xs text-zinc-500">N° CNPS <span className="text-zinc-600">du salarié</span></label><input value={form.numeroCnps ?? ''} onChange={(e) => setF({ numeroCnps: e.target.value })} className={cn(inputCls, 'font-mono')} /></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">Sexe</label>
+              <select value={form.sexe ?? ''} onChange={(e) => setF({ sexe: e.target.value })} className={inputCls}>
+                <option value="">— non précisé —</option><option value="M">Masculin</option><option value="F">Féminin</option>
+              </select></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">Nationalité</label>
+              <select value={form.nationalite ?? ''} onChange={(e) => setF({ nationalite: e.target.value })} className={inputCls}>
+                <option value="">— non précisée —</option>
+                <option value="I">Ivoirienne</option><option value="AA">Autre pays d'Afrique</option>
+                <option value="F">France</option><option value="SL">Hors Afrique et France</option><option value="A">Autre</option>
+              </select></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">Local / Expatrié <span className="text-zinc-600">pilote la CE</span></label>
+              <select value={form.localExpatrie ?? ''} onChange={(e) => setF({ localExpatrie: e.target.value })} className={inputCls}>
+                <option value="">— non précisé —</option><option value="L">Local (CE 0 %)</option><option value="E">Expatrié (CE 9,2 %)</option>
+              </select></div>
+            <div><label className="mb-1 block text-xs text-zinc-500">Code emploi <span className="text-zinc-600">sinon déduit</span></label>
+              <select value={form.codeEmploi ?? ''} onChange={(e) => setF({ codeEmploi: e.target.value })} className={inputCls}>
+                <option value="">— déduit de la catégorie —</option>
+                <option value="DR">DR — Direction</option><option value="CS">CS — Cadre supérieur</option>
+                <option value="AM">AM — Agent de maîtrise</option><option value="CM">CM — Cadre moyen</option>
+                <option value="EQ">EQ — Employé qualifié</option><option value="EN">EN — Employé non qualifié</option>
+                <option value="OQ">OQ — Ouvrier qualifié</option><option value="ON">ON — Ouvrier non qualifié</option>
+                <option value="A">A — Autre</option>
+              </select></div>
+
             <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2">
               <button onClick={() => { setShowForm(false); setEditingId(null); }} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
               <button onClick={submitEmployee} disabled={busy === 'emp' || !form.matricule || !form.nom || !form.prenoms} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">{busy === 'emp' && <Loader2 className="h-4 w-4 animate-spin" />} {editingId ? 'Enregistrer' : 'Ajouter'}</button>
@@ -760,6 +790,17 @@ function DeclarationsPanel({ dossierId, dossierName, currency }: { dossierId: st
   const load = async () => { setLoading(true); try { setData(await api.payrollYear(dossierId, year)); } finally { setLoading(false); } };
   useEffect(() => { load(); }, [dossierId, year]);
 
+  // Exports aux modèles officiels (CNPS / FUDP mensuels, État 301 annuel).
+  const [expKind, setExpKind] = useState<'cnps' | 'fudp' | 'etat301'>('cnps');
+  const [expMonth, setExpMonth] = useState(new Date().getUTCMonth());
+  const [exp, setExp] = useState<OfficialExport | null>(null);
+  const [expBusy, setExpBusy] = useState(false);
+  const genExport = async () => {
+    setExpBusy(true); setErr(null); setExp(null);
+    try { setExp(await api.officialExport(dossierId, expKind, year, expKind === 'etat301' ? undefined : expMonth)); }
+    catch (e: any) { setErr(e.message); } finally { setExpBusy(false); }
+  };
+
   const downloadEtat301 = async () => {
     setErr(null);
     try { await downloadAuthed(`/api/dossiers/${dossierId}/payroll/etat-annuel?year=${year}`, `etat-301-salaires-${year}.pdf`); }
@@ -833,6 +874,72 @@ function DeclarationsPanel({ dossierId, dossierName, currency }: { dossierId: st
             <button onClick={downloadEtat301} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileText className="h-4 w-4" /> État 301 (PDF)</button>
           </div>
           {err && <p className="text-sm text-rose-400">{err}</p>}
+
+          {/* --- Exports aux modèles officiels (à coller dans le formulaire) --- */}
+          <section className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-medium text-zinc-200"><FileText className="h-4 w-4 text-emerald-400" /> Exports aux modèles officiels</div>
+              <p className="mt-1 text-xs text-zinc-500">
+                Produit les colonnes <strong>exactement</strong> dans l'ordre attendu par le formulaire officiel. Téléchargez, ouvrez dans Excel, copiez le bloc de données, collez-le à l'emplacement indiqué, puis générez le XML avec la macro du formulaire.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className="mb-1 block text-xs text-zinc-500">Modèle</label>
+                <select value={expKind} onChange={(e) => { setExpKind(e.target.value as any); setExp(null); }} className={cn(inputCls, 'w-auto')}>
+                  <option value="cnps">CNPS — cotisation nominative (mensuel)</option>
+                  <option value="fudp">FUDP — détail ITS (mensuel)</option>
+                  <option value="etat301">État 301 — salaires (annuel {year})</option>
+                </select>
+              </div>
+              {expKind !== 'etat301' && (
+                <div>
+                  <label className="mb-1 block text-xs text-zinc-500">Mois</label>
+                  <select value={expMonth} onChange={(e) => { setExpMonth(Number(e.target.value)); setExp(null); }} className={cn(inputCls, 'w-auto')}>
+                    {MONTHS.map((mo, i) => <option key={i} value={i}>{mo}</option>)}
+                  </select>
+                </div>
+              )}
+              <button onClick={genExport} disabled={expBusy}
+                className="flex h-[38px] items-center gap-2 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40">
+                {expBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Générer
+              </button>
+              {exp && exp.rows.length > 0 && (
+                <button onClick={() => downloadCsv(exp.filename, [exp.headers, ...exp.rows])}
+                  className="flex h-[38px] items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 text-sm text-zinc-200 hover:bg-white/10">
+                  <Banknote className="h-4 w-4" /> Télécharger ({exp.rows.length} ligne{exp.rows.length > 1 ? 's' : ''})
+                </button>
+              )}
+            </div>
+
+            {exp && (<>
+              <div className="rounded-lg border border-sky-500/25 bg-sky-500/5 px-3 py-2 text-xs text-sky-200">
+                Collage : onglet <strong>{exp.paste.sheet}</strong>, cellule <strong className="font-mono">{exp.paste.cell}</strong> (les en-têtes du modèle sont en ligne {exp.paste.headerRow} — <strong>ne collez pas la ligne d'en-tête</strong>).
+              </div>
+              {exp.warnings.length > 0 && (
+                <div className="space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                  {exp.warnings.map((w, i) => (
+                    <p key={i} className="flex items-start gap-1.5 text-xs text-amber-300"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {w}</p>
+                  ))}
+                </div>
+              )}
+              {exp.rows.length > 0 && (
+                <div className="overflow-x-auto rounded-xl border border-white/10">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-white/10 bg-white/5 uppercase text-zinc-400"><tr>
+                      {exp.headers.map((hd, i) => <th key={i} className="whitespace-nowrap px-2 py-1.5 font-medium">{hd}</th>)}
+                    </tr></thead>
+                    <tbody className="divide-y divide-white/5">
+                      {exp.rows.slice(0, 5).map((r, i) => (
+                        <tr key={i}>{r.map((cell, j) => <td key={j} className="whitespace-nowrap px-2 py-1.5 font-mono text-zinc-300">{String(cell)}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {exp.rows.length > 5 && <p className="px-2 py-1.5 text-xs text-zinc-500">… et {exp.rows.length - 5} ligne(s) de plus dans le fichier.</p>}
+                </div>
+              )}
+            </>)}
+          </section>
 
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
             <table className="w-full text-left text-sm">

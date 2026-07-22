@@ -374,6 +374,10 @@ export interface PayrollEmployee {
   dateEmbauche: string; dateNaissance?: string;
   salaireBase: number; sursalaire: number; indemniteTransport: number; indemniteLogement: number; autresPrimes: number;
   email?: string; telephone?: string; actif: boolean;
+  // Allocation spéciale de fonction (exonérée à 10 %, art. 116-1° CGI).
+  indemniteFonction?: number;
+  // Champs déclaratifs officiels (CNPS nominatif, État 301, FUDP).
+  numeroCnps?: string; sexe?: string; nationalite?: string; localExpatrie?: string; codeEmploi?: string;
 }
 export interface Payslip {
   id: string; employeeId: string; matricule: string; nom: string; prenoms: string;
@@ -387,6 +391,10 @@ export interface BaremePeriod {
   comptabilise: boolean; closed: boolean; recalculable: boolean; blocage: string | null;
 }
 export interface BaremeAudit { currentVersion: string; periods: BaremePeriod[] }
+export interface OfficialExport {
+  kind: string; filename: string; headers: string[]; rows: (string | number)[][];
+  warnings: string[]; paste: { sheet: string; cell: string; headerRow: number };
+}
 export const AGENT_WRITE_TOOLS = new Set(['preparer_facture_vente', 'preparer_facture_achat', 'lettrer_automatiquement', 'preparer_relance_client']);
 export const AGENT_MODE_LABELS: Record<AgentMode, string> = { readonly: 'Lecture seule', assist: 'Assisté (brouillons)', assist_plus: 'Assisté + actions' };
 export interface ProposedLine {
@@ -741,6 +749,8 @@ export const api = {
   payrollPayslips: (dossierId: string, year: number, month: number) => req<Payslip[]>(`/api/dossiers/${dossierId}/payroll/payslips?year=${year}&month=${month}`),
   runPayroll: (dossierId: string, year: number, month: number) => req<PayrollRunResult>(`/api/dossiers/${dossierId}/payroll/run`, { method: 'POST', body: JSON.stringify({ year, month }) }),
   baremeAudit: (dossierId: string) => req<BaremeAudit>(`/api/dossiers/${dossierId}/payroll/bareme-audit`),
+  officialExport: (dossierId: string, kind: 'cnps' | 'etat301' | 'fudp', year: number, month?: number) =>
+    req<OfficialExport>(`/api/dossiers/${dossierId}/payroll/official-export?kind=${kind}&year=${year}${month != null ? `&month=${month}` : ''}`),
   postPayroll: (dossierId: string, year: number, month: number, entryDate?: string) => req<{ entryId: string; totalBrut: number; totalNet: number; totalCoutEmployeur: number }>(`/api/dossiers/${dossierId}/payroll/post`, { method: 'POST', body: JSON.stringify({ year, month, entryDate }) }),
   payrollYear: (dossierId: string, year: number) => req<PayrollYear>(`/api/dossiers/${dossierId}/payroll/year?year=${year}`),
   distributePayslips: (dossierId: string, year: number, month: number) => req<{ enabled: boolean; period: string; sent: { nom: string; email: string }[]; skipped: { nom: string; raison: string }[] }>(`/api/dossiers/${dossierId}/payroll/distribute-payslips`, { method: 'POST', body: JSON.stringify({ year, month }) }),

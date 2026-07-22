@@ -1732,6 +1732,14 @@ export function createApi() {
     const { year, month, varsMap } = req.body ?? {};
     res.json(await withUser(userId, (c) => payroll.runPayroll(c, req.params.id, Number(year), Number(month), varsMap ?? {})));
   }));
+  // Exports aux modèles officiels : CNPS nominatif, État 301, FUDP (détail ITS).
+  app.get('/api/dossiers/:id/payroll/official-export', h(async (req, res) => {
+    const userId = requireUser(req);
+    const kind = String(req.query.kind ?? 'cnps') as 'cnps' | 'etat301' | 'fudp';
+    if (!['cnps', 'etat301', 'fudp'].includes(kind)) { const e: any = new Error('Export inconnu.'); e.status = 400; throw e; }
+    const year = Number(req.query.year), month = req.query.month != null ? Number(req.query.month) : undefined;
+    res.json(await withUser(userId, (c) => payroll.officialExport(c, req.params.id, kind, year, month)));
+  }));
   // Contrôle du barème : bulletins enregistrés avec un jeu de règles périmé.
   app.get('/api/dossiers/:id/payroll/bareme-audit', h(async (req, res) => {
     const userId = requireUser(req);

@@ -1,6 +1,7 @@
 import type { Client } from '../db.js';
 import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, computeSTC, referenceSalaryFromPayslips, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry, type STCInput } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
+import { buildCnpsTable, buildEtat301Table, buildFudpItsTable, officialFilename, type ExportTable, type SlipRow } from '../payroll/official-exports.js';
 import { tablePdf, sectionsPdf, letterPdf } from '../documents/pdf.js';
 import { renderPayslipPdf } from '../payroll/payslip-pdf.js';
 import { isMonthClosed, monthLabel } from './closures.js';
@@ -29,6 +30,11 @@ function toEmployee(r: any): Employee {
     conventionCollective: r.convention_collective ?? undefined, modePaiement: r.mode_paiement ?? undefined,
     rib: r.rib ?? undefined, banque: r.banque ?? undefined,
     mobileMoneyNumero: r.mobile_money_numero ?? undefined, mobileMoneyOperateur: r.mobile_money_operateur ?? undefined,
+    indemniteFonction: num(r.indemnite_fonction),
+    // Champs déclaratifs officiels (CNPS, État 301) — optionnels.
+    numeroCnps: r.numero_cnps ?? undefined, sexe: r.sexe ?? undefined,
+    nationalite: r.nationalite ?? undefined, localExpatrie: r.local_expatrie ?? undefined,
+    codeEmploi: r.code_emploi ?? undefined,
   };
 }
 const iso = (d: any) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d ?? '').slice(0, 10));
@@ -36,7 +42,8 @@ const iso = (d: any) => (d instanceof Date ? d.toISOString().slice(0, 10) : Stri
 const COLS = ['matricule', 'nom', 'prenoms', 'date_naissance', 'date_embauche', 'poste', 'categorie', 'statut_matrimonial',
   'nombre_enfants', 'nombre_parts_igr', 'salaire_base', 'sursalaire', 'indemnite_transport', 'indemnite_logement',
   'autres_primes', 'email', 'telephone', 'type_contrat', 'date_fin_contrat', 'convention_collective', 'mode_paiement',
-  'rib', 'banque', 'mobile_money_numero', 'mobile_money_operateur', 'actif'];
+  'rib', 'banque', 'mobile_money_numero', 'mobile_money_operateur', 'actif',
+  'indemnite_fonction', 'numero_cnps', 'sexe', 'nationalite', 'local_expatrie', 'code_emploi'];
 const CAMEL: Record<string, string> = {
   matricule: 'matricule', nom: 'nom', prenoms: 'prenoms', date_naissance: 'dateNaissance', date_embauche: 'dateEmbauche',
   poste: 'poste', categorie: 'categorie', statut_matrimonial: 'statutMatrimonial', nombre_enfants: 'nombreEnfants',
@@ -45,6 +52,8 @@ const CAMEL: Record<string, string> = {
   email: 'email', telephone: 'telephone', type_contrat: 'typeContrat', date_fin_contrat: 'dateFinContrat',
   convention_collective: 'conventionCollective', mode_paiement: 'modePaiement', rib: 'rib', banque: 'banque',
   mobile_money_numero: 'mobileMoneyNumero', mobile_money_operateur: 'mobileMoneyOperateur', actif: 'actif',
+  indemnite_fonction: 'indemniteFonction', numero_cnps: 'numeroCnps', sexe: 'sexe',
+  nationalite: 'nationalite', local_expatrie: 'localExpatrie', code_emploi: 'codeEmploi',
 };
 
 // Lignes DB -> types du moteur (camelCase).
@@ -232,6 +241,38 @@ export async function baremeAudit(c: Client, dossierId: string): Promise<{ curre
     });
   }
   return { currentVersion: resolveRuleSet(new Date().getFullYear(), new Date().getMonth(), 'CI').version, periods };
+}
+
+// ---------------------------------------------------------------------------
+// Exports aux modèles officiels (CNPS nominatif, État 301 annuel, FUDP mensuel).
+// Retourne le tableau prêt à coller dans le formulaire officiel + les anomalies
+// à corriger avant dépôt. Lecture seule.
+// ---------------------------------------------------------------------------
+export async function officialExport(
+  c: Client, dossierId: string, kind: 'cnps' | 'etat301' | 'fudp', year: number, month?: number,
+): Promise<ExportTable & { filename: string; kind: string }> {
+  const { rows: emps } = await c.query('select * from payroll_employees where dossier_id=$1', [dossierId]);
+  const employees = emps.map(toEmployee);
+
+  // L'État 301 cumule l'année ; CNPS et FUDP ne portent que sur un mois.
+  const params: any[] = [dossierId, year];
+  let where = 'dossier_id=$1 and period_year=$2';
+  if (kind !== 'etat301') { params.push(month); where += ' and period_month=$3'; }
+  const { rows: slipRows } = await c.query(
+    `select employee_id, period_year, period_month, calculation from payroll_payslips where ${where}`, params);
+  const slips: SlipRow[] = slipRows.map((r: any) => ({
+    employeeId: r.employee_id, year: Number(r.period_year), month: Number(r.period_month), calculation: r.calculation,
+  }));
+
+  const m = Number(month ?? 0);
+  const table = kind === 'cnps' ? buildCnpsTable(employees, slips, year, m)
+    : kind === 'etat301' ? buildEtat301Table(employees, slips, year)
+      : buildFudpItsTable(employees, slips, year, m);
+
+  const file = kind === 'cnps' ? officialFilename('CNPS', year, m)
+    : kind === 'etat301' ? officialFilename('ETAT301', year)
+      : officialFilename('FUDP_ITS', year, m);
+  return { ...table, filename: file, kind };
 }
 
 // Vrai si les tables RH (absences/avances) sont présentes (migration 0046 appliquée).
