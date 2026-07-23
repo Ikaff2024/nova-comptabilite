@@ -9,6 +9,7 @@ import * as agent from './ai/agent.js';
 import * as whatsapp from './whatsapp/provider.js';
 import * as waHandler from './whatsapp/handler.js';
 import * as walinks from './domain/whatsapp.js';
+import * as storage from './storage/provider.js';
 import * as telegram from './telegram/provider.js';
 import * as tgHandler from './telegram/handler.js';
 import * as tglinks from './domain/telegram.js';
@@ -127,7 +128,7 @@ export function createApi() {
 
   app.get('/api/health', async (_req, res) => {
     const commit = (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT ?? '').slice(0, 7) || null;
-    const base = { agent: agent.agentEnabled(), tts: tts.ttsEnabled(), ttsProviders: tts.providersAvailable(), ttsForced: process.env.TTS_FORCE_PROVIDER || null, telegram: telegram.telegramEnabled(), email: mail.emailEnabled(), commit, service: 'nova-comptabilite-api' };
+    const base = { agent: agent.agentEnabled(), tts: tts.ttsEnabled(), ttsProviders: tts.providersAvailable(), ttsForced: process.env.TTS_FORCE_PROVIDER || null, telegram: telegram.telegramEnabled(), email: mail.emailEnabled(), storage: storage.storageMode(), commit, service: 'nova-comptabilite-api' };
     try {
       await pool.query('select 1');
       // Diagnostic de schéma : confirme l'application des migrations récentes.

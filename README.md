@@ -6,10 +6,25 @@ Comptabilité SYSCOHADA en automatique, réconciliation Mobile Money native, et 
 
 ## Différenciateurs
 
-- **IA-native** — capture d'une pièce (photo/PDF) → écriture SYSCOHADA proposée, ancrée sur le plan comptable réel du dossier, calibrée par les règles du cabinet et l'apprentissage des validations.
-- **Mobile Money first** — import de relevés Wave / Orange Money / MTN / Moov → écritures pré-catégorisées, réconciliées, dédupliquées.
-- **Conformité SYSCOHADA** — plan comptable révisé (1330 comptes), balance, compte de résultat, Soldes Intermédiaires de Gestion, bilan, export PDF.
-- **Vue cabinet** — tableau de bord portefeuille (dossiers, résultats, alertes, % d'écritures auto-codées).
+- **IA-native** — capture d'une ou **plusieurs pièces** (photo/PDF) en lot → écriture SYSCOHADA proposée, ancrée sur le plan comptable réel du dossier, calibrée par les règles du cabinet et l'apprentissage des validations. L'humain valide, ne saisit pas.
+- **Mobile Money first** — import de relevés Wave / Orange Money / MTN / Moov → écritures pré-catégorisées, réconciliées, dédupliquées. Scan de relevés bancaires (PDF/photo) inclus.
+- **Conformité SYSCOHADA** — plan comptable révisé (codes jusqu'à 8 chiffres), balance, compte de résultat, Soldes Intermédiaires de Gestion, bilan, révision, export PDF/CSV.
+- **Fiscalité branchée (Côte d'Ivoire)** — facture normalisée électronique (FNE), calendrier et obligations fiscales.
+- **Vue cabinet** — tableau de bord portefeuille (dossiers, résultats, alertes, % d'écritures auto-codées), coûts IA par client, console éditeur plateforme.
+- **Lexa** — assistant IA conversationnel par entreprise, en lecture des données du dossier.
+
+## Modules
+
+| Domaine | Couverture |
+|---|---|
+| **Saisie** | Capture IA par lot · Mobile Money · saisie manuelle (typeahead code **ou** libellé) · import balance / grand livre |
+| **Facturation** | Factures / devis / avoirs · certification FNE · **modèles de document** (vente de biens / prestation / standard) · récurrences & abonnements · catalogue |
+| **Achats** | Factures fournisseurs · tiers & relances |
+| **États** | Grand livre · journaux · balance · compte de résultat · SIG · bilan · révision · analytique · budget / prévisionnel · immobilisations |
+| **Paie & RH** | Moteur ivoirien **CI-2024.2** (barème ITS officiel DGI) · bulletins · déclarations CNPS/DGI · **exports aux modèles officiels** (CNPS nominatif, État 301, FUDP) · solde de tout compte · congés · pointage · absences · avances |
+| **Financement** | Score de santé financière · dossier de financement bancaire · finance embarquée (avance de trésorerie) |
+| **Pièces** | Conservation des justificatifs (base ou Cloudflare R2), rattachés aux écritures — **sans durée de rétention** (conformité OHADA : 10 ans) |
+| **Plateforme** | Multi-tenant (cabinet **ou** entreprise directe) · isolation RLS · clôtures · fiche entreprise · suppression de dossier |
 
 ## Architecture
 
@@ -44,14 +59,22 @@ npm run dev    # Front http://localhost:3000
 
 ```
 server/            API Express + domaine comptable
-  domain/          ledger, mobile money, utilisateurs
+  domain/          ledger, facturation, achats, paie, score, clôtures…
   ai/              extraction IA (Claude/Gemini + mode démo)
+  payroll/         moteur de paie (portage IvoirePaie) + pont comptable + exports officiels
   mobilemoney/     parseur de relevés
+  storage/         conservation des pièces (base ou Cloudflare R2)
 src/               front React
 supabase/migrations/  schéma versionné (tenancy, ledger, intégrité, RLS, seed SYSCOHADA)
-docs/              plan stratégique, guide dev
+docs/              plan stratégique, guide dev, déploiement
 ```
+
+Les migrations SQL s'appliquent **au démarrage** du conteneur (via `MIGRATION_DATABASE_URL`) : tout changement de schéma passe par une nouvelle migration `supabase/migrations/`.
+
+## Conservation des pièces justificatives
+
+Chaque justificatif capturé est stocké et rattaché à son écriture. Deux modes selon l'environnement (variables `R2_*`) : **base** (octets en base, défaut) ou **Cloudflare R2** (recommandé en production). **Aucune purge ni durée de rétention** côté application — les pièces sont conservées indéfiniment, ce qui correspond à l'obligation OHADA (10 ans). Une pièce n'est supprimée qu'en cascade, avec son dossier.
 
 ## Statut
 
-MVP fonctionnel de bout en bout. Voir [docs/PLAN-MISE-EN-OEUVRE.md](docs/PLAN-MISE-EN-OEUVRE.md) pour la vision et la roadmap.
+Fonctionnel de bout en bout, en phase de test. Voir [docs/PLAN-MISE-EN-OEUVRE.md](docs/PLAN-MISE-EN-OEUVRE.md) pour la vision et la roadmap.
