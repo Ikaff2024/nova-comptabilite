@@ -75,6 +75,8 @@ Les migrations SQL s'appliquent **au démarrage** du conteneur (via `MIGRATION_D
 
 Chaque justificatif capturé est stocké et rattaché à son écriture. Deux modes selon l'environnement (variables `R2_*`) : **base** (octets en base, défaut) ou **Cloudflare R2** (recommandé en production). **Aucune purge ni durée de rétention** côté application — les pièces sont conservées indéfiniment, ce qui correspond à l'obligation OHADA (10 ans). Une pièce n'est supprimée qu'en cascade, avec son dossier.
 
+Passage en R2 : voir le runbook [docs/STOCKAGE-R2.md](docs/STOCKAGE-R2.md).
+
 ## Statut
 
 Fonctionnel de bout en bout, en phase de test. Voir [docs/PLAN-MISE-EN-OEUVRE.md](docs/PLAN-MISE-EN-OEUVRE.md) pour la vision et la roadmap.
