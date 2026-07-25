@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown, Lock, ScrollText } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, currentFiscalYear, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import EntryForm, { type EntryFormInitial } from './EntryForm';
@@ -267,7 +267,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
               <MobileMoney dossierId={dossier.id} fiscalYears={fiscalYears}
                 currency={dossier.base_currency} onImported={() => { /* balance se recharge à l'ouverture */ }} />
             )}
-            {tab === 'balance' && <BalanceTab dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'balance' && <BalanceTab dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'grandlivre' && <GeneralLedger dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'journaux' && <Journaux dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency}
               onCorrect={(seed) => { setEditSeed(seed); setEditSeedKey((k) => k + 1); setTab('saisie'); }} />}
@@ -299,14 +299,45 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
   );
 }
 
-function BalanceTab({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+// La balance est TOUJOURS celle d'un exercice : sans filtre, les à-nouveaux d'un
+// exercice s'ajoutent aux mouvements de l'exercice précédent (double emploi) et
+// les soldes de bilan sont faux. On sélectionne donc un exercice, par défaut le
+// courant, comme le grand livre et les états financiers.
+function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [rows, setRows] = useState<BalanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<6 | 8>(6);
-  useEffect(() => { (async () => { setLoading(true); try { setRows(await api.trialBalance(dossierId)); } finally { setLoading(false); } })(); }, [dossierId]);
+  useEffect(() => { setFy((f) => f || currentFiscalYear(fiscalYears)?.id || ''); }, [fiscalYears]);
+  useEffect(() => {
+    (async () => { setLoading(true); try { setRows(await api.trialBalance(dossierId, fy || undefined)); } finally { setLoading(false); } })();
+  }, [dossierId, fy]);
+
+  const fyLabel = fiscalYears.find((f) => f.id === fy)?.label ?? '';
+  const fySelect = fiscalYears.length > 0 && (
+    <select value={fy} onChange={(e) => setFy(e.target.value)}
+      className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
+      {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+    </select>
+  );
 
   if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul de la balance…</div>;
-  if (rows.length === 0) return <p className="text-zinc-400">Aucun mouvement comptabilisé pour l'instant.</p>;
+  if (rows.length === 0) return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm text-zinc-400">Balance générale des comptes</p>
+        {fySelect}
+      </div>
+      <p className="text-zinc-400">Aucun mouvement comptabilisé sur {fyLabel ? `l'exercice « ${fyLabel} »` : 'cet exercice'}.</p>
+    </div>
+  );
+
+  // Repère de reprise : aucun à-nouveau alors que l'exercice précédent n'est pas
+  // clôturé = les soldes de bilan de l'exercice précédent ne sont pas repris
+  // (les comptes de bilan repartent à zéro sur la période affichée).
+  const fyIndex = fiscalYears.findIndex((f) => f.id === fy);
+  const prevFy = fyIndex > 0 ? fiscalYears[fyIndex - 1] : undefined;
+  const noOpening = !!prevFy && prevFy.status !== 'closed' && rows.every((r) => r.open_debit === 0 && r.open_credit === 0);
 
   const md = (n: number) => (n ? fmtMoney(n, currency) : '—');
   // valeurs numériques par ligne selon le format
@@ -327,19 +358,22 @@ function BalanceTab({ dossierId, dossierName, currency }: { dossierId: string; d
     const out: (string | number)[][] = [['Compte', 'Intitulé', ...subHeaders]];
     for (const r of rows) out.push([r.account_code, r.account_label, ...vals(r)]);
     out.push(['', 'TOTAUX', ...totals]);
-    downloadCsv(`balance-${mode}col_${dossierName}`.replace(/\s+/g, '-'), out);
+    downloadCsv(`balance-${mode}col_${dossierName}_${fyLabel}`.replace(/\s+/g, '-'), out);
   };
   const exportPdf = () => {
     const head = `<tr><th>Compte</th><th>Intitulé</th>${subHeaders.map((s) => `<th class="n">${s}</th>`).join('')}</tr>`;
     const body = rows.map((r) => `<tr><td>${r.account_code}</td><td>${(r.account_label ?? '').replace(/[&<>]/g, '')}</td>${vals(r).map((x) => `<td class="n">${x ? fmtMoney(x, currency) : ''}</td>`).join('')}</tr>`).join('');
     const tot = `<tr class="tot"><td colspan="2">Totaux</td>${totals.map((t) => `<td class="n">${fmtMoney(t, currency)}</td>`).join('')}</tr>`;
-    printDocument(`Balance à ${mode} colonnes — ${dossierName}`, `devise ${currency} · édité le ${nowStamp()}`, `<table><thead>${head}</thead><tbody>${body}${tot}</tbody></table>`);
+    printDocument(`Balance à ${mode} colonnes — ${dossierName}`, `${fyLabel ? `${fyLabel} · ` : ''}devise ${currency} · édité le ${nowStamp()}`, `<table><thead>${head}</thead><tbody>${body}${tot}</tbody></table>`);
   };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-zinc-400">Balance générale des comptes</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-zinc-400">Balance générale des comptes</p>
+          {fySelect}
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
           <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
@@ -353,6 +387,13 @@ function BalanceTab({ dossierId, dossierName, currency }: { dossierId: string; d
           </div>
         </div>
       </div>
+
+      {noOpening && (
+        <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">
+          Aucun à-nouveau sur cet exercice : les soldes de bilan de l'exercice précédent ne sont pas repris.
+          Clôturez « {prevFy?.label} » (onglet Clôtures) pour générer les à-nouveaux.
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
         <table className="w-full text-left text-sm">
