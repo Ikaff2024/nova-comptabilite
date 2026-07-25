@@ -40,6 +40,7 @@ export interface LigneEtat {
 }
 
 export interface CompteNonAffecte { compte: string; intitule: string; solde: number; etat: 'bilan' | 'resultat' }
+export interface CompteAVentiler { compte: string; intitule: string; solde: number; impute: string; partageAvec: string[] }
 
 export interface EtatsOfficiels {
   exercice: { id: string; label: string } | null;
@@ -51,9 +52,14 @@ export interface EtatsOfficiels {
     resultat: { parLesPostes: number; parLaBalance: number; ecart: number; ok: boolean };
   };
   comptesNonAffectes: CompteNonAffecte[];
+  // Comptes que l'ouvrage marque « pour partie » : ils alimentent deux postes
+  // sans que le partage soit déductible du seul numéro de compte. Ils sont
+  // imputés en entier au premier poste — sinon ils seraient déduits deux fois
+  // et le bilan ne s'équilibrerait plus — et signalés pour reventilation.
+  aVentiler: CompteAVentiler[];
 }
 
-interface SoldeCompte { code: string; label: string; solde: number } // solde = débit − crédit
+export interface SoldeCompte { code: string; label: string; solde: number } // solde = débit − crédit
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const proche = (a: number, b: number) => Math.abs(a - b) < 0.5; // tolérance d'arrondi au franc
@@ -62,14 +68,15 @@ const proche = (a: number, b: number) => Math.abs(a - b) < 0.5; // tolérance d'
 // `sens` filtre les comptes selon leur position : certains postes ne retiennent
 // que les soldes créditeurs (un 44 débiteur est une créance, il va à l'actif).
 function sommeSoldes(
-  comptes: SoldeCompte[], expressions: string[] | undefined, sens?: 'debiteur' | 'crediteur',
+  comptes: SoldeCompte[], expressions: string[] | undefined,
+  sens?: 'debiteur' | 'crediteur', pris?: Set<string>,
 ): number {
   if (!expressions?.length) return 0;
   let t = 0;
   for (const c of comptes) {
     if (sens === 'crediteur' && c.solde > 0) continue;
     if (sens === 'debiteur' && c.solde < 0) continue;
-    if (expressions.some((e) => matchExpression(c.code, e))) t += c.solde;
+    if (expressions.some((e) => matchExpression(c.code, e))) { t += c.solde; pris?.add(c.code); }
   }
   return t;
 }
@@ -102,24 +109,53 @@ export async function etatsOfficiels(
   const comptes: SoldeCompte[] = rows.map((r: any) => ({
     code: r.account_code, label: r.account_label ?? '', solde: Number(r.balance),
   }));
-
   const { rows: fy } = await c.query(
     'select id, label from fiscal_years where dossier_id=$1 and ($2::uuid is null or id=$2::uuid) order by start_date desc limit 1',
     [dossierId, fiscalYearId ?? null],
   );
+  return {
+    ...calculerEtats(comptes),
+    exercice: fy[0] ? { id: fy[0].id, label: fy[0].label } : null,
+  };
+}
 
+// Cœur du calcul, sans base de données : une balance en entrée, les états en
+// sortie. Isolé pour être éprouvé compte par compte — on injecte un solde sur
+// CHAQUE compte du plan et on vérifie que le bilan s'équilibre encore. C'est
+// ce test-là qui attrape un compte capté d'un côté et pas de l'autre, ce
+// qu'aucun contrôle sur les totaux ne peut voir.
+export function calculerEtats(comptes: SoldeCompte[]): EtatsOfficiels {
   // Résultat de l'exercice tel que la balance le donne : produits − charges,
   // classe 8 (H.A.O.) comprise. Sert de contrôle, et de repli pour le poste CJ
   // tant que l'exercice n'est pas clôturé (la classe 13 est alors vide).
   const resultatBalance = r2(-comptes.filter((x) => '678'.includes(x.code[0])).reduce((s, x) => s + x.solde, 0));
 
   // --- Bilan actif : brut − amortissements = net ---
+  // Un compte marqué « pour partie » par l'ouvrage (2818p, 2919p…) figure dans
+  // la colonne amortissements de DEUX postes. Le déduire des deux le compterait
+  // en double et déséquilibrerait le bilan : on ne l'impute qu'une fois.
+  const pris = new Set<string>();
+  const dejaImpute = new Set<string>();
+  const aVentiler: CompteAVentiler[] = [];
   const valActif = new Map<string, number>();
   const bilanActif: LigneEtat[] = BILAN_ACTIF.map((p) => {
     if (p.nature !== 'poste') return { ref: p.ref, libelle: p.libelle, nature: p.nature, note: p.note };
     const sens = p.note?.startsWith('Soldes débiteurs') ? 'debiteur' : undefined;
-    const brut = r2(sommeSoldes(comptes, p.brut, sens));
-    const amort = r2(-sommeSoldes(comptes, p.amort));
+    const brut = r2(sommeSoldes(comptes, p.brut, sens, pris));
+    let amort = 0;
+    for (const x of comptes) {
+      if (!(p.amort ?? []).some((e) => matchExpression(x.code, e))) continue;
+      if (dejaImpute.has(x.code)) continue;
+      dejaImpute.add(x.code); pris.add(x.code);
+      amort += -x.solde;
+      const autres = BILAN_ACTIF
+        .filter((q) => q.ref !== p.ref && (q.amort ?? []).some((e) => matchExpression(x.code, e)))
+        .map((q) => q.ref);
+      if (autres.length && x.solde !== 0) {
+        aVentiler.push({ compte: x.code, intitule: x.label, solde: r2(-x.solde), impute: p.ref, partageAvec: autres });
+      }
+    }
+    amort = r2(amort);
     const net = r2(brut - amort);
     valActif.set(p.ref, net);
     return { ref: p.ref, libelle: p.libelle, nature: p.nature, brut, amort, net, note: p.note };
@@ -135,7 +171,7 @@ export async function etatsOfficiels(
   const valPassif = new Map<string, number>();
   const bilanPassif: LigneEtat[] = BILAN_PASSIF.map((p) => {
     if (p.nature !== 'poste') return { ref: p.ref, libelle: p.libelle, nature: p.nature, note: p.note };
-    let montant = r2(-sommeSoldes(comptes, p.comptes, p.crediteur ? 'crediteur' : undefined));
+    let montant = r2(-sommeSoldes(comptes, p.comptes, p.crediteur ? 'crediteur' : undefined, pris));
     // Exercice non clôturé : la classe 13 est vide, le résultat vient des
     // classes 6/7/8 — sans quoi le bilan ne pourrait pas s'équilibrer.
     if (p.ref === 'CJ' && montant === 0) montant = resultatBalance;
@@ -153,7 +189,7 @@ export async function etatsOfficiels(
   const valCR = new Map<string, number>();
   const compteResultat: LigneEtat[] = COMPTE_DE_RESULTAT.map((p) => {
     if (p.nature !== 'poste') return { ref: p.ref, libelle: p.libelle, nature: p.nature, note: p.note };
-    const montant = r2(-sommeSoldes(comptes, p.comptes));
+    const montant = r2(-sommeSoldes(comptes, p.comptes, undefined, pris));
     valCR.set(p.ref, montant);
     return { ref: p.ref, libelle: p.libelle, nature: p.nature, montant, note: p.note };
   });
@@ -164,15 +200,18 @@ export async function etatsOfficiels(
     valCR.set(l.ref, l.montant);
   }
 
-  // --- Comptes qui ne tombent dans aucun poste : leur solde s'évaporerait ---
-  const affecte = (code: string, table: PosteEtat[]) => table.some((p) =>
-    [...(p.brut ?? []), ...(p.amort ?? []), ...(p.comptes ?? [])].some((e) => matchExpression(code, e)));
+  // --- Soldes qui n'ont été pris par AUCUN poste : ils s'évaporeraient ---
+  // On se fonde sur ce qui a réellement été compté, pas sur ce qui est listé :
+  // un compte cité par un poste mais écarté par son filtre de sens (un crédit
+  // de trésorerie devenu débiteur, par exemple) tomberait sinon dans l'angle
+  // mort — présent au référentiel, absent de l'état.
   const comptesNonAffectes: CompteNonAffecte[] = [];
   for (const x of comptes) {
-    if (x.solde === 0) continue;
-    const bilan = '12345'.includes(x.code[0]);
-    const ok = bilan ? (affecte(x.code, BILAN_ACTIF) || affecte(x.code, BILAN_PASSIF)) : affecte(x.code, COMPTE_DE_RESULTAT);
-    if (!ok) comptesNonAffectes.push({ compte: x.code, intitule: x.label, solde: r2(x.solde), etat: bilan ? 'bilan' : 'resultat' });
+    if (x.solde === 0 || pris.has(x.code)) continue;
+    comptesNonAffectes.push({
+      compte: x.code, intitule: x.label, solde: r2(x.solde),
+      etat: '12345'.includes(x.code[0]) ? 'bilan' : 'resultat',
+    });
   }
 
   const totalActif = valActif.get('BZ') ?? 0;
@@ -180,8 +219,8 @@ export async function etatsOfficiels(
   const resultatPostes = valCR.get('XI') ?? 0;
 
   return {
-    exercice: fy[0] ? { id: fy[0].id, label: fy[0].label } : null,
-    bilanActif, bilanPassif, compteResultat,
+    exercice: null,
+    bilanActif, bilanPassif, compteResultat, aVentiler,
     controles: {
       equilibreBilan: { actif: totalActif, passif: totalPassif, ecart: r2(totalActif - totalPassif), ok: proche(totalActif, totalPassif) },
       resultat: { parLesPostes: resultatPostes, parLaBalance: resultatBalance, ecart: r2(resultatPostes - resultatBalance), ok: proche(resultatPostes, resultatBalance) },

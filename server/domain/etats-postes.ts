@@ -101,7 +101,11 @@ export const BILAN_ACTIF: PosteEtat[] = [
   { ref: 'BH', libelle: 'Fournisseurs avances versées', nature: 'poste', brut: ['409'], amort: ['490'] },
   { ref: 'BI', libelle: 'Clients', nature: 'poste', brut: ['41 (sauf 419)'], amort: ['491'] },
   { ref: 'BJ', libelle: 'Autres créances', nature: 'poste',
-    brut: ['185', '42', '43', '44', '45', '46', '47 (sauf 478)'],
+    // L'ouvrage écrit « 47 (sauf 478) » : il s'appuie sur le fait qu'un écart de
+    // conversion-passif est créditeur par nature, donc écarté par le filtre de
+    // sens. On exclut aussi 479 explicitement — il appartient au poste DV, et
+    // s'il ressortait débiteur il serait compté des deux côtés du bilan.
+    brut: ['185', '42', '43', '44', '45', '46', '47 (sauf 478 et 479)'],
     amort: ['492', '493', '494', '495', '496', '497'],
     note: 'Soldes débiteurs uniquement.' },
   { ref: 'BK', libelle: 'TOTAL ACTIF CIRCULANT', nature: 'total', formule: 'somme BA à BJ' },
