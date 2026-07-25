@@ -91,7 +91,7 @@ export const BILAN_ACTIF: PosteEtat[] = [
   { ref: 'AQ', libelle: 'IMMOBILISATIONS FINANCIERES', nature: 'rubrique' },
   { ref: 'AR', libelle: 'Titres de participation', nature: 'poste', brut: ['26'], amort: ['296'] },
   { ref: 'AS', libelle: 'Autres immobilisations financières', nature: 'poste', brut: ['27'], amort: ['297'] },
-  { ref: 'AZ', libelle: 'TOTAL ACTIF IMMOBILISE', nature: 'total' },
+  { ref: 'AZ', libelle: 'TOTAL ACTIF IMMOBILISE', nature: 'total', formule: 'somme AD à AS' },
 
   { ref: 'BA', libelle: 'ACTIF CIRCULANT HAO', nature: 'poste', brut: ['485', '488'], amort: ['498'] },
   { ref: 'BB', libelle: 'STOCKS ET ENCOURS', nature: 'poste',
@@ -104,17 +104,17 @@ export const BILAN_ACTIF: PosteEtat[] = [
     brut: ['185', '42', '43', '44', '45', '46', '47 (sauf 478)'],
     amort: ['492', '493', '494', '495', '496', '497'],
     note: 'Soldes débiteurs uniquement.' },
-  { ref: 'BK', libelle: 'TOTAL ACTIF CIRCULANT', nature: 'total' },
+  { ref: 'BK', libelle: 'TOTAL ACTIF CIRCULANT', nature: 'total', formule: 'somme BA à BJ' },
 
   { ref: 'BQ', libelle: 'Titres de placement', nature: 'poste', brut: ['50'], amort: ['590'] },
   { ref: 'BR', libelle: 'Valeurs à encaisser', nature: 'poste', brut: ['51'], amort: ['591'] },
   { ref: 'BS', libelle: 'Banques, chèques postaux, caisse et assimilés', nature: 'poste',
     brut: ['52', '53', '54', '55', '57', '581', '582'], amort: ['592', '593', '594'],
     note: 'Soldes débiteurs uniquement.' },
-  { ref: 'BT', libelle: 'TOTAL TRESORERIE ACTIF', nature: 'total' },
+  { ref: 'BT', libelle: 'TOTAL TRESORERIE ACTIF', nature: 'total', formule: 'somme BQ à BS' },
 
   { ref: 'BU', libelle: 'Ecart de conversion-Actif', nature: 'poste', brut: ['478'] },
-  { ref: 'BZ', libelle: 'TOTAL GENERAL', nature: 'total' },
+  { ref: 'BZ', libelle: 'TOTAL GENERAL', nature: 'total', formule: 'AZ + BK + BT + BU' },
 ];
 
 // --- BILAN PASSIF (Le Praticien p. 886) --------------------------------------

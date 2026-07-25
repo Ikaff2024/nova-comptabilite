@@ -9,6 +9,7 @@ import * as relances from './domain/relances.js';
 import * as purchases from './domain/purchases.js';
 import * as clotureworks from './domain/clotureworks.js';
 import * as accdocs from './documents/accounting-docs.js';
+import * as officiels from './domain/etats-officiels.js';
 
 // ============================================================================
 // Scénario « deux exercices + clôture ». Verrouille l'invariant qui régit tous
@@ -191,6 +192,32 @@ async function main() {
   const alpha26b = aux26b.find((r: any) => r.id === client.id);
   check('après lettrage · encours Alpha = 700 000', alpha26b?.open_balance === 700000, `(${alpha26b?.open_balance})`);
   check('après lettrage · solde exercice Alpha = 700 000', alpha26b?.balance === 700000, `(${alpha26b?.balance})`);
+
+  // ---------------- États financiers au format officiel ----------------
+  // Deux égalités rendent le calcul auto-vérifiant : le bilan doit s'équilibrer,
+  // et le résultat obtenu par les postes doit retomber sur celui de la balance.
+  const eo: any = await withUser(u, (c) => officiels.etatsOfficiels(c, d.id, fy26));
+  const P = (t: any[], ref: string) => t.find((l: any) => l.ref === ref);
+  check('officiel · bilan équilibré (BZ = DZ)', eo.controles.equilibreBilan.ok,
+    `(actif ${eo.controles.equilibreBilan.actif} / passif ${eo.controles.equilibreBilan.passif})`);
+  check('officiel · résultat recoupé (XI = balance)', eo.controles.resultat.ok,
+    `(postes ${eo.controles.resultat.parLesPostes} / balance ${eo.controles.resultat.parLaBalance})`);
+  check('officiel · aucun compte non affecté', eo.comptesNonAffectes.length === 0,
+    `(${eo.comptesNonAffectes.map((x: any) => x.compte).join(',') || 'aucun'})`);
+  check('officiel · BI Clients = 700 000', P(eo.bilanActif, 'BI')?.net === 700000, `(${P(eo.bilanActif, 'BI')?.net})`);
+  check('officiel · DJ Fournisseurs = 400 000', P(eo.bilanPassif, 'DJ')?.montant === 400000, `(${P(eo.bilanPassif, 'DJ')?.montant})`);
+  check('officiel · TA Ventes de marchandises = 500 000', P(eo.compteResultat, 'TA')?.montant === 500000, `(${P(eo.compteResultat, 'TA')?.montant})`);
+  check('officiel · XA marge commerciale = 500 000', P(eo.compteResultat, 'XA')?.montant === 500000, `(${P(eo.compteResultat, 'XA')?.montant})`);
+  check('officiel · XI résultat net = 500 000', P(eo.compteResultat, 'XI')?.montant === 500000, `(${P(eo.compteResultat, 'XI')?.montant})`);
+
+  // Écart de contrôle : la présentation actuelle de Nova vs le format officiel.
+  const fsN: any = await withUser(u, (c) => acc.financialStatements(c, d.id, fy26));
+  check('écart · même résultat dans les deux présentations',
+    Math.abs(fsN.incomeStatement.resultatNet - (P(eo.compteResultat, 'XI')?.montant ?? 0)) < 0.5,
+    `(actuel ${fsN.incomeStatement.resultatNet} / officiel ${P(eo.compteResultat, 'XI')?.montant})`);
+  check('écart · même total de bilan',
+    Math.abs(fsN.balanceSheet.totalActif - (P(eo.bilanActif, 'BZ')?.net ?? 0)) < 0.5,
+    `(actuel ${fsN.balanceSheet.totalActif} / officiel ${P(eo.bilanActif, 'BZ')?.net})`);
 
   console.log(`\n${passed} PASS / ${failed} FAIL`);
   await closePool();
