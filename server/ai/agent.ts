@@ -248,7 +248,8 @@ RÈGLES ABSOLUES :
 8. IDENTITÉ FISCALE : tu connais la forme juridique, le régime fiscal, le NCC/IFU, le RCCM et la banque du dossier (voir contexte). Raisonne selon le régime (ex. n'évoque la TVA à collecter que si l'entreprise y est assujettie ; sous l'impôt synthétique, il n'y a pas de TVA), rappelle les obligations et échéances pertinentes, et cite ces références (NCC, RCCM…) quand c'est utile (déclarations, courriers officiels).
 9. REPORTING MENSUEL : pour un « point du mois » / « reporting », appuie-toi sur « analyse_mensuelle » (résultat vs M-1, cumul, ratios, principales charges) — c'est plus riche qu'une simple lecture. Commente en pilotage : ce qui bouge et pourquoi (postes de charges/produits qui varient), les ratios, la trésorerie, puis des recommandations concrètes. Si on te le demande, tu peux joindre le « rapport_mensuel » en PDF par email.
 10. CONTRÔLE QUALITÉ (AQM) : dès que tu PROPOSES ou que tu ÉVALUES une écriture ou une facture, appelle d'abord « valider_ecriture » / « valider_facture ». Tiens compte du verdict : ne propose jamais ce qui est FAIL (corrige d'abord), et signale explicitement les points de VIGILANCE (WARNING). Ton niveau de confiance (score) est affiché à l'utilisateur — c'est un gage de fiabilité, pas un aveu de doute.
-11. « COMMENT FAIRE DANS NOVA » : pour toute question sur l'UTILISATION du logiciel (où trouver un écran, quelle est la marche à suivre, à quoi sert un module), appelle « guide_nova » et réponds À PARTIR DU TEXTE RENVOYÉ, en citant la fiche (ex. « voir la fiche 28 · Achats »). N'INVENTE JAMAIS un chemin de menu, un bouton ou une option : si l'outil ne renvoie rien d'utile, dis simplement que tu ne trouves pas la marche à suivre dans le guide et propose la piste la plus proche. C'est la même exigence que pour les chiffres : aucune affirmation sans source. N'appelle pas cet outil pour une question de DONNÉES (« quel est mon résultat ») — là, ce sont les outils comptables.
+11. CHOIX DES COMPTES — JAMAIS DE MÉMOIRE : n'écris jamais un code de compte sans l'avoir vu dans le plan du dossier. Dès que tu prépares une écriture, une facture ou que tu conseilles une imputation, appelle « plan_comptable » avec la nature de l'opération (ex. « carburant », « honoraires », « téléphone ») et prends le compte dont l'INTITULÉ colle le mieux. Les intitulés SYSCOHADA font foi et diffèrent du plan comptable français (ex. en SYSCOHADA les télécommunications ne sont PAS en 626). Si le compte adéquat n'existe pas au plan du dossier, dis-le et propose de le créer plutôt que d'en inventer un.
+12. « COMMENT FAIRE DANS NOVA » : pour toute question sur l'UTILISATION du logiciel (où trouver un écran, quelle est la marche à suivre, à quoi sert un module), appelle « guide_nova » et réponds À PARTIR DU TEXTE RENVOYÉ, en citant la fiche (ex. « voir la fiche 28 · Achats »). N'INVENTE JAMAIS un chemin de menu, un bouton ou une option : si l'outil ne renvoie rien d'utile, dis simplement que tu ne trouves pas la marche à suivre dans le guide et propose la piste la plus proche. C'est la même exigence que pour les chiffres : aucune affirmation sans source. N'appelle pas cet outil pour une question de DONNÉES (« quel est mon résultat ») — là, ce sont les outils comptables.
 
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
 
@@ -300,6 +301,7 @@ const READ_TOOLS = [
   { name: 'alertes', description: 'Points d\'attention priorisés du dossier (trésorerie négative, créances anciennes, TVA à payer, écritures en brouillon, échéances fiscales/sociales imminentes). À utiliser quand on te demande « qu\'est-ce qui nécessite mon attention ? », « quoi de neuf ? », pour un point du mois, ou de façon proactive.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'balance_generale', description: 'Balance générale (par compte : à-nouveaux, mouvements, soldes). Pour analyser les soldes de comptes.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'grand_livre', description: 'Détail des écritures d\'un compte donné (grand livre). Fournir le code du compte.', input_schema: { type: 'object', properties: { compte: { type: 'string', description: 'Code du compte SYSCOHADA, ex. 411, 521, 601' } }, required: ['compte'] } },
+  { name: 'plan_comptable', description: "Plan comptable DU DOSSIER (SYSCOHADA révisé) : cherche les comptes dont le code ou l'intitulé correspond à une recherche. APPELLE-LE AVANT de proposer une écriture, une facture ou une imputation quand tu n'es pas certain du compte — n'écris jamais un code de mémoire. Recherche par nature d'opération (« carburant », « honoraires », « téléphone ») ou par code (« 62 »). Les intitulés SYSCOHADA font foi et diffèrent du plan français. Si rien ne correspond, dis-le et propose de créer le compte — n'invente pas de code. Le résultat indique aussi si le compte est mouvementable (imputable) et s'il est collectif (tiers obligatoire).", input_schema: { type: 'object', properties: { recherche: { type: 'string', description: "Nature de l'opération ou fragment de code/intitulé, ex. « carburant », « 401 », « transport »" }, classe: { type: 'number', description: 'Restreindre à une classe 1-9 (optionnel)' } }, required: ['recherche'] } },
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'ratios_financiers', description: 'Analyse financière : ratios de liquidité, autonomie/endettement, rentabilité et marges, + grandes masses (BFR, fonds de roulement, trésorerie nette). Pour un diagnostic financier ou du conseil sur la structure et la performance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controles_coherence', description: 'Contrôles de cohérence comptable (révision automatisée) : détecte les soldes anormaux au sens SYSCOHADA (fournisseur 401 débiteur, client 411 créditeur, caisse négative, comptes d\'attente 47 non soldés, TVA inversée…). Pour un contrôle qualité / une révision avant clôture.', input_schema: { type: 'object', properties: {}, required: [] } },
@@ -544,6 +546,25 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'alertes': return await alerts.dossierAlerts(c, dossierId, fy);
     case 'balance_generale': return cap(await acc.trialBalance(c, dossierId, fy), 120);
     case 'grand_livre': return cap(await acc.generalLedger(c, dossierId, { fiscalYearId: fy, accountCode: String(input?.compte ?? '') }), 100);
+    case 'plan_comptable': {
+      // Ancrage : Lexa ne doit citer que des comptes réellement au plan du
+      // dossier (mêmes garde-fous que la capture IA, cf. ai/provider.ts).
+      const q = String(input?.recherche ?? '').trim();
+      if (!q) return { error: 'Précise ce que tu cherches (nature de l\'opération ou code).' };
+      const classe = Number(input?.classe);
+      const rows = await acc.listAccounts(c, dossierId, {
+        search: q, classNo: Number.isFinite(classe) && classe >= 1 && classe <= 9 ? classe : undefined,
+      });
+      const comptes = rows.map((a: any) => ({
+        compte: a.account_code, intitule: a.label, classe: a.class_no,
+        sens_habituel: a.normal_side === 'credit' ? 'créditeur' : 'débiteur',
+        imputable: a.is_postable !== false, collectif: !!a.is_collective,
+      }));
+      if (!comptes.length) {
+        return { comptes: [], nombre: 0, note: `Aucun compte du plan de ce dossier ne correspond à « ${q} ». Ne devine pas de code : reformule la recherche, ou propose de créer le compte (onglet Plan comptable).` };
+      }
+      return { comptes: cap(comptes, 40), nombre: comptes.length };
+    }
     case 'etats_financiers': return await acc.financialStatements(c, dossierId, fy);
     case 'ratios_financiers': return await ratios.financialRatios(c, dossierId, fy);
     case 'controles_coherence': return await controls.coherenceChecks(c, dossierId, fy);

@@ -1,7 +1,13 @@
 import fs from 'node:fs';
 
-const SRC = 'c:/Users/YEO ISSA/nova-comptabilité/plan_comptable_OHADA_valide.txt';
-const OUT = 'c:/Users/YEO ISSA/nova-comptabilité/supabase/migrations/20260629000006_seed_syscohada.sql';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SRC = path.join(ROOT, 'plan_comptable_OHADA_valide.txt');
+const OUT = path.join(ROOT, 'supabase/migrations/20260629000006_seed_syscohada.sql');
+// Rattrapage des intitulés pour les bases déjà migrées (le seed ne rejoue pas).
+const OUT_RELABEL = path.join(ROOT, 'supabase/migrations/20260725000070_chart_labels.sql');
 
 const lines = fs.readFileSync(SRC, 'utf8').split(/\r?\n/);
 
@@ -84,13 +90,55 @@ function parentCode(a) {
   return null;
 }
 
-// nettoyage des marqueurs de notes de bas de page issus du PDF, ex " ([1])"
-const cleanLabel = s => s.replace(/\s*\(\[\d+\]\)/g, '').trim();
-const esc = s => cleanLabel(s).replace(/'/g, "''");
+// --- Intitulés ----------------------------------------------------------------
+// Le fichier source reproduit la mise en page du Journal Officiel : il en reste
+// (a) des renvois de notes de bas de page — « ([1]) », « [(2)] », « (1) » — et
+// (b) des intitulés de subdivision qui ne se lisent qu'accolés à leur parent
+// (« dans la Région » sous 601 ACHATS DE MARCHANDISES, « sur emprunts
+// obligataires » sous 166). La casse fait foi dans le document : MAJUSCULES =
+// compte de regroupement, minuscule initiale = subdivision dépendante.
+// Ces intitulés partent tels quels dans le prompt de la capture IA, dans la
+// balance, le grand livre et les états : on les nettoie et on les qualifie.
+
+// Ancien nettoyage (ce qui est aujourd'hui en base) — sert à cibler la migration
+// de mise à jour sans écraser un intitulé retouché par un cabinet.
+const legacyLabel = s => s.replace(/\s*\(\[\d+\]\)/g, '').trim();
+
+// Renvois de notes sous toutes leurs formes OCR, y compris en milieu de chaîne
+// (« ASSOCIÉS [(1)], COMPTES COURANTS »).
+const stripNotes = s => s
+  .replace(/\s*\(\[\d+\]\)/g, '')
+  .replace(/\s*\[\(\d+\)\]/g, '')
+  .replace(/\s+\(\d{1,2}\)/g, '')
+  .replace(/\s{2,}/g, ' ')
+  .replace(/\s+([,;])/g, '$1')
+  .trim();
+
+const byCode = new Map(accounts.map(a => [a.code, a]));
+const startsLower = s => { const m = s.match(/\p{L}/u); return !!m && m[0] === m[0].toLowerCase(); };
+
+// Intitulé qualifié : « PARENT — subdivision ». Remonte tant que le parent est
+// lui-même une subdivision dépendante.
+function qualifiedLabel(a, seen = new Set()) {
+  const own = stripNotes(a.label);
+  if (!startsLower(own) || seen.has(a.code)) return own;
+  seen.add(a.code);
+  const pc = parentCode(a);
+  const parent = pc ? byCode.get(pc) : null;
+  if (!parent) return own;
+  return `${qualifiedLabel(parent, seen)} — ${own}`;
+}
+
+const esc = s => s.replace(/'/g, "''");
+
+// (code, intitulé actuel en base, nouvel intitulé) pour ceux qui changent.
+const relabelled = accounts
+  .map(a => ({ code: a.code, before: legacyLabel(a.label), after: qualifiedLabel(a) }))
+  .filter(x => x.before !== x.after);
 
 const valueRows = accounts.map(a => {
   const pc = parentCode(a);
-  return `  ('${a.code}','${esc(a.label)}',${a.classNo},'${accountType(a)}','${normalSide(a)}',${pc ? `'${pc}'` : 'NULL'},${isCollective(a)})`;
+  return `  ('${a.code}','${esc(qualifiedLabel(a))}',${a.classNo},'${accountType(a)}','${normalSide(a)}',${pc ? `'${pc}'` : 'NULL'},${isCollective(a)})`;
 });
 
 const header = `-- =============================================================================
@@ -142,6 +190,41 @@ end $$;
 
 fs.writeFileSync(OUT, header + fn, 'utf8');
 
+// --- Migration de rattrapage des intitulés ------------------------------------
+// Le seed 0006 ne rejoue pas sur une base déjà migrée : les dossiers existants
+// gardent les anciens intitulés. On génère donc une migration qui les reprend,
+// gabarit ET dossiers, en ne touchant QUE les intitulés restés à leur valeur
+// d'origine (un intitulé retouché par un cabinet est préservé).
+const relabelSql = `-- =============================================================================
+-- Nova Comptabilité — ${OUT_RELABEL.match(/(\d{14})/)?.[1] ?? ''} : intitulés du plan SYSCOHADA — nettoyage et qualification
+-- =============================================================================
+-- GÉNÉRÉ par scripts/gen_seed.mjs (ne pas éditer à la main).
+-- Reprend ${relabelled.length} intitulés : suppression des renvois de notes de bas de page
+-- du Journal Officiel (« ([1]) », « [(2)] »…) et qualification des subdivisions
+-- qui ne se lisent pas seules (« dans la Région » -> « ACHATS DE MARCHANDISES —
+-- dans la Région »). Ces intitulés alimentent le prompt de la capture IA, la
+-- balance, le grand livre et les états : leur clarté est fonctionnelle.
+-- Un intitulé modifié par un cabinet n'est pas écrasé (jointure sur l'ancienne
+-- valeur exacte).
+-- =============================================================================
+
+-- Une seule instruction (CTE modifiante) : pas de table temporaire, donc
+-- indépendant du lanceur de migrations (psql en autocommit comme scripts/migrate.mjs).
+with relabel(code, before_label, after_label) as (values
+${relabelled.map((x, i) => `  (${i === 0 ? "'" + x.code + "'::text,'" + esc(x.before) + "'::text,'" + esc(x.after) + "'::text" : `'${x.code}','${esc(x.before)}','${esc(x.after)}'`})`).join(',\n')}
+),
+maj_gabarit as (
+  update chart_template_accounts ta set label = r.after_label
+    from relabel r
+   where ta.account_code = r.code and ta.label = r.before_label
+  returning 1
+)
+update accounts a set label = r.after_label
+  from relabel r
+ where a.account_code = r.code and a.label = r.before_label;
+`;
+fs.writeFileSync(OUT_RELABEL, relabelSql, 'utf8');
+
 // petit rapport
 const byClass = {};
 for (const a of accounts) byClass[a.classNo] = (byClass[a.classNo] || 0) + 1;
@@ -149,3 +232,5 @@ console.log('Comptes parsés :', accounts.length);
 console.log('Par classe :', JSON.stringify(byClass));
 console.log('Collectifs :', accounts.filter(isCollective).length);
 console.log('Sans parent (racines) :', accounts.filter(a => !parentCode(a)).length);
+console.log('Intitulés repris :', relabelled.length);
+for (const x of relabelled.slice(0, 8)) console.log(`   ${x.code} : « ${x.before} » -> « ${x.after} »`);
