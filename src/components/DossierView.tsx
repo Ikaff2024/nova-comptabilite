@@ -244,7 +244,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
             </div>
 
           <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="min-w-0">
-            {tab === 'synthese' && <DossierDashboard dossierId={dossier.id} currency={dossier.base_currency} onNavigate={(t) => setTab(t as Tab)} />}
+            {tab === 'synthese' && <DossierDashboard dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} onNavigate={(t) => setTab(t as Tab)} />}
             {tab === 'facturation' && <Facturation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'achats' && <Achats dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'catalogue' && <Catalogue dossierId={dossier.id} currency={dossier.base_currency} />}
@@ -271,7 +271,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
             {tab === 'grandlivre' && <GeneralLedger dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'journaux' && <Journaux dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency}
               onCorrect={(seed) => { setEditSeed(seed); setEditSeedKey((k) => k + 1); setTab('saisie'); }} />}
-            {tab === 'tiers' && <Tiers dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
+            {tab === 'tiers' && <Tiers dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}
             {tab === 'immos' && <Immobilisations dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'banque' && <BankReconciliation dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'etats' && <FinancialStatements dossierId={dossier.id} dossierName={dossier.raison_sociale} fiscalYears={fiscalYears} currency={dossier.base_currency} />}

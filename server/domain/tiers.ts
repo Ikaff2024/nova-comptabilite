@@ -1,5 +1,6 @@
 import type { Client } from '../db.js';
 import { tablePdf, letterPdf } from '../documents/pdf.js';
+import { carryForwardFiscalYears, NOT_CARRY_FORWARD } from './carryforward.js';
 
 // ============================================================================
 // Comptabilité auxiliaire : plan des tiers, balance tiers, grand livre tiers.
@@ -117,16 +118,38 @@ export async function deleteCounterparty(c: Client, dossierId: string, id: strin
   await c.query('delete from counterparties where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 
-// Balance auxiliaire : un solde par tiers.
-export async function auxiliaryBalance(c: Client, dossierId: string, type?: string): Promise<any[]> {
+// Balance auxiliaire : un solde par tiers, dans les DEUX lectures que tient un
+// comptable, côte à côte (cf. domain/carryforward.ts) :
+//   • le solde de l'EXERCICE (à-nouveaux + mouvements) — c'est lui qui justifie
+//     le compte collectif 401/411 de la balance générale du même exercice ;
+//   • l'ENCOURS non lettré, toutes périodes, qui suit la vie des pièces
+//     (facture impayée) sans se réinitialiser au 1er janvier.
+// Les deux se recoupent quand tout est lettré ; l'écart, c'est ce qui reste dû.
+export async function auxiliaryBalance(
+  c: Client, dossierId: string, opts: { type?: string; fiscalYearId?: string } = {},
+): Promise<any[]> {
   const params: any[] = [dossierId];
   let where = 'cp.dossier_id = $1';
-  if (type) { params.push(type); where += ` and cp.type = $${params.length}`; }
+  if (opts.type) { params.push(opts.type); where += ` and cp.type = $${params.length}`; }
+
+  params.push(opts.fiscalYearId ?? null);
+  const fyP = params.length;
+  params.push(await carryForwardFiscalYears(c, dossierId));
+  const cfP = params.length;
+
+  // Écritures retenues pour la lecture « exercice » (toutes si aucun exercice
+  // n'est demandé) et pour la lecture « encours » (hors à-nouveaux de report).
+  const inFy = `e.id is not null and ($${fyP}::uuid is null or e.fiscal_year_id = $${fyP}::uuid)`;
+  const isOpen = `e.id is not null and ${NOT_CARRY_FORWARD(cfP)}
+                  and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)`;
+
   const { rows } = await c.query(
     `select cp.id, cp.aux_code, cp.name, cp.type, coalesce(a.account_code, '') as collective,
-            coalesce(sum(l.amount_debit)  filter (where e.id is not null), 0) as debit,
-            coalesce(sum(l.amount_credit) filter (where e.id is not null), 0) as credit,
-            coalesce(sum(l.amount_debit - l.amount_credit) filter (where e.id is not null), 0) as balance
+            coalesce(sum(l.amount_debit)  filter (where ${inFy}), 0) as debit,
+            coalesce(sum(l.amount_credit) filter (where ${inFy}), 0) as credit,
+            coalesce(sum(l.amount_debit - l.amount_credit) filter (where ${inFy}), 0) as balance,
+            coalesce(sum(l.amount_debit - l.amount_credit) filter (where ${isOpen}), 0) as open_balance,
+            count(*) filter (where ${isOpen} and l.amount_debit <> l.amount_credit) as open_count
        from counterparties cp
        left join entry_lines l on l.counterparty_id = cp.id
        left join entries e on e.id = l.entry_id and e.status = 'posted'
@@ -139,11 +162,29 @@ export async function auxiliaryBalance(c: Client, dossierId: string, type?: stri
   return rows.map((r: any) => ({
     id: r.id, aux_code: r.aux_code, name: r.name, type: r.type, collective: r.collective,
     debit: Number(r.debit), credit: Number(r.credit), balance: Number(r.balance),
+    open_balance: Number(r.open_balance), open_count: Number(r.open_count),
   }));
 }
 
 // Grand livre auxiliaire : mouvements d'un tiers.
-export async function auxiliaryLedger(c: Client, dossierId: string, counterpartyId: string): Promise<any[]> {
+// `fiscalYearId` : lecture par exercice (à-nouveaux compris).
+// `cumulative`  : lecture toutes périodes — écarte alors les à-nouveaux de
+//                 report, qui rejoueraient les pièces des exercices clos.
+// `openOnly`    : ne garde que les postes non lettrés (ce qui reste dû).
+export async function auxiliaryLedger(
+  c: Client, dossierId: string, counterpartyId: string,
+  opts: { fiscalYearId?: string; cumulative?: boolean; openOnly?: boolean } = {},
+): Promise<any[]> {
+  const params: any[] = [dossierId, counterpartyId];
+  let where = 'l.dossier_id = $1 and l.counterparty_id = $2';
+  if (opts.fiscalYearId) { params.push(opts.fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
+  if (opts.cumulative || opts.openOnly) {
+    params.push(await carryForwardFiscalYears(c, dossierId));
+    where += ` and ${NOT_CARRY_FORWARD(params.length)}`;
+  }
+  if (opts.openOnly) {
+    where += ' and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)';
+  }
   const { rows } = await c.query(
     `select to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, j.code as journal_code, e.piece_ref,
             a.account_code, coalesce(l.label, e.description) as label,
@@ -152,9 +193,9 @@ export async function auxiliaryLedger(c: Client, dossierId: string, counterparty
        join entries e on e.id = l.entry_id and e.status = 'posted'
        join journals j on j.id = e.journal_id
        join accounts a on a.id = l.account_id
-      where l.dossier_id = $1 and l.counterparty_id = $2
+      where ${where}
       order by e.entry_date, e.created_at`,
-    [dossierId, counterpartyId],
+    params,
   );
   return rows.map((r: any) => ({ ...r, debit: Number(r.debit), credit: Number(r.credit) }));
 }
@@ -162,10 +203,13 @@ export async function auxiliaryLedger(c: Client, dossierId: string, counterparty
 // Grand livre auxiliaire complet : tous les mouvements de tous les tiers, triés
 // par nature puis par tiers puis par date. Sert à justifier les comptes collectifs
 // (411 / 401) ligne à ligne.
-export async function allTiersLedger(c: Client, dossierId: string, type?: string): Promise<any[]> {
+export async function allTiersLedger(
+  c: Client, dossierId: string, opts: { type?: string; fiscalYearId?: string } = {},
+): Promise<any[]> {
   const params: any[] = [dossierId];
   let where = 'l.dossier_id = $1';
-  if (type) { params.push(type); where += ` and cp.type = $${params.length}`; }
+  if (opts.type) { params.push(opts.type); where += ` and cp.type = $${params.length}`; }
+  if (opts.fiscalYearId) { params.push(opts.fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
   const { rows } = await c.query(
     `select cp.aux_code, cp.name as tiers_name, cp.type as tiers_type,
             to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, j.code as journal_code, e.piece_ref,
@@ -189,7 +233,9 @@ export async function tiersStatement(c: Client, dossierId: string, counterpartyI
   const { rows: cp } = await c.query(
     'select id, name, type, aux_code, tax_id, email from counterparties where dossier_id=$1 and id=$2', [dossierId, counterpartyId]);
   if (!cp[0]) throw new Error('Tiers introuvable');
-  const moves = await auxiliaryLedger(c, dossierId, counterpartyId);
+  // Relevé adressé au tiers : la vie du compte toutes périodes confondues, donc
+  // sans les à-nouveaux de report (qui doubleraient les pièces déjà listées).
+  const moves = await auxiliaryLedger(c, dossierId, counterpartyId, { cumulative: true });
   let solde = 0;
   const rows = moves.map((m: any) => { solde += m.debit - m.credit; return { ...m, solde: Math.round(solde * 100) / 100 }; });
   const debit = moves.reduce((s: number, m: any) => s + m.debit, 0);

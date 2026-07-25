@@ -162,7 +162,9 @@ export interface Mapping {
   source: 'manual' | 'learned'; account_label: string | null;
 }
 export interface Counterparty { id: string; type: string; name: string; aux_code: string | null; tax_id: string | null; email?: string | null; collective: string | null; }
-export interface AuxBalanceRow { id: string; aux_code: string | null; name: string; type: string; collective: string; debit: number; credit: number; balance: number; }
+// balance = solde de l'exercice sélectionné (à-nouveaux compris) ;
+// open_balance = encours non lettré toutes périodes (ce qui reste dû).
+export interface AuxBalanceRow { id: string; aux_code: string | null; name: string; type: string; collective: string; debit: number; credit: number; balance: number; open_balance: number; open_count: number; }
 export interface AuxLedgerRow { entry_date: string; journal_code: string; piece_ref: string | null; account_code: string; label: string; debit: number; credit: number; }
 export interface BankAccount { account_code: string; label: string; moves: number; unpointed: number; }
 export interface ReconMove { entry_line_id: string; entry_date: string; journal_code: string; piece_ref: string | null; label: string; debit: number; credit: number; pointed: boolean; }
@@ -561,10 +563,19 @@ export const api = {
     req<void>(`/api/dossiers/${dossierId}/counterparties/${cid}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteCounterparty: (dossierId: string, cid: string) =>
     req<void>(`/api/dossiers/${dossierId}/counterparties/${cid}`, { method: 'DELETE' }),
-  auxBalance: (dossierId: string, type?: string) =>
-    req<AuxBalanceRow[]>(`/api/dossiers/${dossierId}/aux-balance${type ? `?type=${type}` : ''}`),
-  auxLedger: (dossierId: string, counterparty: string) =>
-    req<AuxLedgerRow[]>(`/api/dossiers/${dossierId}/aux-ledger?counterparty=${counterparty}`),
+  auxBalance: (dossierId: string, opts: { type?: string; fiscalYearId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.type) q.set('type', opts.type);
+    if (opts.fiscalYearId) q.set('fiscalYearId', opts.fiscalYearId);
+    const s = q.toString();
+    return req<AuxBalanceRow[]>(`/api/dossiers/${dossierId}/aux-balance${s ? `?${s}` : ''}`);
+  },
+  auxLedger: (dossierId: string, counterparty: string, opts: { fiscalYearId?: string; openOnly?: boolean } = {}) => {
+    const q = new URLSearchParams({ counterparty });
+    if (opts.fiscalYearId) q.set('fiscalYearId', opts.fiscalYearId);
+    if (opts.openOnly) q.set('openOnly', '1');
+    return req<AuxLedgerRow[]>(`/api/dossiers/${dossierId}/aux-ledger?${q.toString()}`);
+  },
   bankAccounts: (dossierId: string) => req<BankAccount[]>(`/api/dossiers/${dossierId}/bank-accounts`),
   reconciliation: (dossierId: string, account: string) =>
     req<ReconView>(`/api/dossiers/${dossierId}/reconciliation?account=${encodeURIComponent(account)}`),

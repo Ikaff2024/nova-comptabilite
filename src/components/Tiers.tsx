@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Link2, Unlink, CalendarClock, FileSpreadsheet, Printer, CheckCircle2, BookUser, Scale, Library, Plus, Trash2, Wand2, BellRing, Send, FolderOpen, Mail, Hash, Building2, FileText } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow, type OverdueClient } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, currentFiscalYear, type FiscalYear, type TiersAccount, type OpenItem, type LetteredItem, type AgedRow, type Counterparty, type AuxBalanceRow, type AuxLedgerRow, type OverdueClient } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
 type View = 'fiche' | 'plan' | 'balance' | 'grandlivre' | 'lettrage' | 'aged' | 'relances';
 
-export default function Tiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+export default function Tiers({ dossierId, dossierName, fiscalYears, currency }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
   const [view, setView] = useState<View>('fiche');
   const tabs: [View, string, any][] = [
     ['fiche', 'Dossiers tiers', FolderOpen], ['plan', 'Plan tiers', BookUser], ['balance', 'Balance', Scale], ['grandlivre', 'Grand livre', Library],
@@ -24,8 +24,8 @@ export default function Tiers({ dossierId, dossierName, currency }: { dossierId:
       </div>
       {view === 'fiche' && <FicheTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
       {view === 'plan' && <PlanTiers dossierId={dossierId} />}
-      {view === 'balance' && <BalanceTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
-      {view === 'grandlivre' && <GrandLivreTiers dossierId={dossierId} dossierName={dossierName} currency={currency} />}
+      {view === 'balance' && <BalanceTiers dossierId={dossierId} dossierName={dossierName} fiscalYears={fiscalYears} currency={currency} />}
+      {view === 'grandlivre' && <GrandLivreTiers dossierId={dossierId} dossierName={dossierName} fiscalYears={fiscalYears} currency={currency} />}
       {view === 'lettrage' && <Lettrage dossierId={dossierId} currency={currency} />}
       {view === 'aged' && <Aged dossierId={dossierId} dossierName={dossierName} currency={currency} />}
       {view === 'relances' && <Relances dossierId={dossierId} dossierName={dossierName} currency={currency} />}
@@ -326,38 +326,60 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
   );
 }
 
-function BalanceTiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+// Deux lectures côte à côte, comme se tient une comptabilité auxiliaire :
+//  · Solde de l'exercice (à-nouveaux + mouvements) — justifie le compte
+//    collectif 411/401 de la balance générale du même exercice ;
+//  · Encours non lettré, toutes périodes — ce qui reste réellement dû, sans
+//    remise à zéro au changement d'exercice.
+function BalanceTiers({ dossierId, dossierName, fiscalYears, currency }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
   const [rows, setRows] = useState<AuxBalanceRow[]>([]);
   const [type, setType] = useState('');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
   const [loading, setLoading] = useState(true);
-  useEffect(() => { (async () => { setLoading(true); try { setRows(await api.auxBalance(dossierId, type || undefined)); } finally { setLoading(false); } })(); }, [dossierId, type]);
+  useEffect(() => { setFy((f) => f || currentFiscalYear(fiscalYears)?.id || ''); }, [fiscalYears]);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try { setRows(await api.auxBalance(dossierId, { type: type || undefined, fiscalYearId: fy || undefined })); }
+      finally { setLoading(false); }
+    })();
+  }, [dossierId, type, fy]);
 
-  const withMoves = rows.filter((r) => r.debit || r.credit);
+  const fyLabel = fiscalYears.find((f) => f.id === fy)?.label ?? '';
+  const withMoves = rows.filter((r) => r.debit || r.credit || r.open_balance);
   const totD = withMoves.reduce((s, r) => s + r.debit, 0), totC = withMoves.reduce((s, r) => s + r.credit, 0);
+  const totOpen = withMoves.reduce((s, r) => s + r.open_balance, 0);
 
   const exportCsv = () => {
-    const out: (string | number)[][] = [['Code aux.', 'Tiers', 'Type', 'Collectif', 'Débit', 'Crédit', 'Solde']];
-    for (const r of withMoves) out.push([r.aux_code ?? '', r.name, r.type, r.collective, r.debit, r.credit, r.balance]);
-    out.push(['', 'TOTAUX', '', '', totD, totC, totD - totC]);
-    downloadCsv(`balance-tiers_${dossierName}`.replace(/\s+/g, '-'), out);
+    const out: (string | number)[][] = [['Code aux.', 'Tiers', 'Type', 'Collectif', 'Débit', 'Crédit', 'Solde exercice', 'Encours non lettré']];
+    for (const r of withMoves) out.push([r.aux_code ?? '', r.name, r.type, r.collective, r.debit, r.credit, r.balance, r.open_balance]);
+    out.push(['', 'TOTAUX', '', '', totD, totC, totD - totC, totOpen]);
+    downloadCsv(`balance-tiers_${dossierName}_${fyLabel}`.replace(/\s+/g, '-'), out);
   };
   const exportPdf = () => {
-    const head = `<tr><th>Code</th><th>Tiers</th><th>Coll.</th><th class="n">Débit</th><th class="n">Crédit</th><th class="n">Solde</th></tr>`;
-    const body = withMoves.map((r) => `<tr><td>${r.aux_code ?? ''}</td><td>${(r.name ?? '').replace(/[&<>]/g, '')}</td><td>${r.collective}</td><td class="n">${r.debit ? fmtMoney(r.debit, currency) : ''}</td><td class="n">${r.credit ? fmtMoney(r.credit, currency) : ''}</td><td class="n">${fmtMoney(r.balance, currency)}</td></tr>`).join('');
-    printDocument(`Balance des tiers — ${dossierName}`, `au ${nowStamp()} · devise ${currency}`, `<table><thead>${head}</thead><tbody>${body}<tr class="tot"><td colspan="3">Totaux</td><td class="n">${fmtMoney(totD, currency)}</td><td class="n">${fmtMoney(totC, currency)}</td><td class="n">${fmtMoney(totD - totC, currency)}</td></tr></tbody></table>`);
+    const head = `<tr><th>Code</th><th>Tiers</th><th>Coll.</th><th class="n">Débit</th><th class="n">Crédit</th><th class="n">Solde exercice</th><th class="n">Encours non lettré</th></tr>`;
+    const body = withMoves.map((r) => `<tr><td>${r.aux_code ?? ''}</td><td>${(r.name ?? '').replace(/[&<>]/g, '')}</td><td>${r.collective}</td><td class="n">${r.debit ? fmtMoney(r.debit, currency) : ''}</td><td class="n">${r.credit ? fmtMoney(r.credit, currency) : ''}</td><td class="n">${fmtMoney(r.balance, currency)}</td><td class="n">${r.open_balance ? fmtMoney(r.open_balance, currency) : ''}</td></tr>`).join('');
+    printDocument(`Balance des tiers — ${dossierName}`, `${fyLabel ? `${fyLabel} · ` : ''}au ${nowStamp()} · devise ${currency}`, `<table><thead>${head}</thead><tbody>${body}<tr class="tot"><td colspan="3">Totaux</td><td class="n">${fmtMoney(totD, currency)}</td><td class="n">${fmtMoney(totC, currency)}</td><td class="n">${fmtMoney(totD - totC, currency)}</td><td class="n">${fmtMoney(totOpen, currency)}</td></tr></tbody></table>`);
   };
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
-          <option value="">Tous les tiers</option><option value="client">Clients</option><option value="fournisseur">Fournisseurs</option>
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
+            <option value="">Tous les tiers</option><option value="client">Clients</option><option value="fournisseur">Fournisseurs</option>
+          </select>
+          {fiscalYears.length > 0 && (
+            <select value={fy} onChange={(e) => setFy(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
+              {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          )}
+        </div>
         <div className="flex gap-2">
           <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
           <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> Aperçu</button>
-          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/balance-auxiliaire`, 'balance-auxiliaire-tiers.pdf')} title="Balance auxiliaire des tiers (justifie les comptes collectifs 411/401)" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><FileText className="h-4 w-4" /> Balance aux. (PDF)</button>
-          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/grand-livre-auxiliaire`, 'grand-livre-auxiliaire.pdf')} title="Grand livre auxiliaire : détail ligne à ligne de tous les tiers" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><FileText className="h-4 w-4" /> Grand livre aux.</button>
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/balance-auxiliaire${fy ? `?fiscalYearId=${fy}` : ''}`, 'balance-auxiliaire-tiers.pdf')} title="Balance auxiliaire des tiers (justifie les comptes collectifs 411/401)" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><FileText className="h-4 w-4" /> Balance aux. (PDF)</button>
+          <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/grand-livre-auxiliaire${fy ? `?fiscalYearId=${fy}` : ''}`, 'grand-livre-auxiliaire.pdf')} title="Grand livre auxiliaire : détail ligne à ligne de tous les tiers" className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><FileText className="h-4 w-4" /> Grand livre aux.</button>
         </div>
       </div>
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul…</div> : withMoves.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement de tiers.</p> : (
@@ -365,7 +387,9 @@ function BalanceTiers({ dossierId, dossierName, currency }: { dossierId: string;
           <table className="w-full text-left text-sm">
             <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
               <th className="px-4 py-3 font-medium">Code</th><th className="px-4 py-3 font-medium">Tiers</th><th className="px-4 py-3 font-medium">Coll.</th>
-              <th className="px-4 py-3 text-right font-medium">Débit</th><th className="px-4 py-3 text-right font-medium">Crédit</th><th className="px-4 py-3 text-right font-medium">Solde</th>
+              <th className="px-4 py-3 text-right font-medium">Débit</th><th className="px-4 py-3 text-right font-medium">Crédit</th>
+              <th className="px-4 py-3 text-right font-medium">Solde {fyLabel || 'exercice'}</th>
+              <th className="border-l border-white/10 px-4 py-3 text-right font-medium" title="Postes non lettrés, toutes périodes confondues : ce qui reste réellement dû">Encours non lettré</th>
             </tr></thead>
             <tbody className="divide-y divide-white/5 font-mono">
               {withMoves.map((r) => (
@@ -376,6 +400,9 @@ function BalanceTiers({ dossierId, dossierName, currency }: { dossierId: string;
                   <td className="px-4 py-2 text-right text-zinc-300">{r.debit ? fmtMoney(r.debit, currency) : '—'}</td>
                   <td className="px-4 py-2 text-right text-zinc-300">{r.credit ? fmtMoney(r.credit, currency) : '—'}</td>
                   <td className={cn('px-4 py-2 text-right font-medium', r.balance >= 0 ? 'text-emerald-400' : 'text-rose-400')}>{fmtMoney(r.balance, currency)}</td>
+                  <td className="border-l border-white/10 px-4 py-2 text-right text-zinc-300" title={r.open_count ? `${r.open_count} poste(s) non lettré(s)` : undefined}>
+                    {r.open_balance ? fmtMoney(r.open_balance, currency) : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -384,6 +411,7 @@ function BalanceTiers({ dossierId, dossierName, currency }: { dossierId: string;
               <td className="px-4 py-3 text-right font-semibold text-zinc-100">{fmtMoney(totD, currency)}</td>
               <td className="px-4 py-3 text-right font-semibold text-zinc-100">{fmtMoney(totC, currency)}</td>
               <td className="px-4 py-3 text-right font-semibold text-zinc-100">{fmtMoney(totD - totC, currency)}</td>
+              <td className="border-l border-white/10 px-4 py-3 text-right font-semibold text-zinc-100">{fmtMoney(totOpen, currency)}</td>
             </tr></tfoot>
           </table>
         </div>
@@ -392,34 +420,68 @@ function BalanceTiers({ dossierId, dossierName, currency }: { dossierId: string;
   );
 }
 
-function GrandLivreTiers({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
+// « Exercice » : les mouvements de l'exercice, à-nouveaux compris (lecture qui
+// justifie la balance). « Encours » : les postes non lettrés toutes périodes,
+// sans les à-nouveaux de report (lecture qui suit ce qui reste dû).
+function GrandLivreTiers({ dossierId, dossierName, fiscalYears, currency }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
   const [tiers, setTiers] = useState<Counterparty[]>([]);
   const [cid, setCid] = useState('');
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
+  const [vue, setVue] = useState<'exercice' | 'encours'>('exercice');
   const [rows, setRows] = useState<AuxLedgerRow[]>([]);
   const [loading, setLoading] = useState(false);
   useEffect(() => { (async () => { const t = await api.counterparties(dossierId); setTiers(t); if (!cid && t[0]) setCid(t[0].id); })(); }, [dossierId]);
-  useEffect(() => { if (!cid) return; (async () => { setLoading(true); try { setRows(await api.auxLedger(dossierId, cid)); } finally { setLoading(false); } })(); }, [cid]);
+  useEffect(() => { setFy((f) => f || currentFiscalYear(fiscalYears)?.id || ''); }, [fiscalYears]);
+  useEffect(() => {
+    if (!cid) return;
+    (async () => {
+      setLoading(true);
+      try {
+        setRows(await api.auxLedger(dossierId, cid, vue === 'encours'
+          ? { openOnly: true }
+          : { fiscalYearId: fy || undefined }));
+      } finally { setLoading(false); }
+    })();
+  }, [dossierId, cid, fy, vue]);
 
   let solde = 0;
   const withSolde = rows.map((r) => { solde += r.debit - r.credit; return { ...r, solde }; });
   const tp = tiers.find((t) => t.id === cid);
+  const fyLabel = fiscalYears.find((f) => f.id === fy)?.label ?? '';
   const m = (n: number) => (n ? fmtMoney(n, currency) : '');
 
   const exportPdf = () => {
     const body = `<table><thead><tr><th>Date</th><th>Jrnl</th><th>Cpte</th><th>Libellé</th><th class="n">Débit</th><th class="n">Crédit</th><th class="n">Solde</th></tr></thead><tbody>
       ${withSolde.map((r) => `<tr><td>${r.entry_date}</td><td>${r.journal_code}</td><td>${r.account_code}</td><td>${(r.label ?? '').replace(/[&<>]/g, '')}</td><td class="n">${m(r.debit)}</td><td class="n">${m(r.credit)}</td><td class="n">${fmtMoney(r.solde, currency)}</td></tr>`).join('')}</tbody></table>`;
-    printDocument(`Grand livre tiers — ${tp?.name ?? ''}`, `${dossierName} · ${tp?.aux_code ?? ''} · au ${nowStamp()}`, body);
+    const scope = vue === 'encours' ? 'postes non lettrés · toutes périodes' : fyLabel;
+    printDocument(`Grand livre tiers — ${tp?.name ?? ''}`, `${dossierName} · ${tp?.aux_code ?? ''}${scope ? ` · ${scope}` : ''} · au ${nowStamp()}`, body);
   };
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <select value={cid} onChange={(e) => setCid(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
-          {tiers.map((t) => <option key={t.id} value={t.id}>{t.aux_code} · {t.name}</option>)}
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={cid} onChange={(e) => setCid(e.target.value)} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
+            {tiers.map((t) => <option key={t.id} value={t.id}>{t.aux_code} · {t.name}</option>)}
+          </select>
+          {fiscalYears.length > 0 && (
+            <select value={fy} onChange={(e) => setFy(e.target.value)} disabled={vue === 'encours'}
+              className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50 disabled:opacity-40">
+              {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          )}
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
+            {([['exercice', 'Exercice'], ['encours', 'Encours non lettré']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setVue(v)}
+                className={cn('rounded-md px-3 py-1 font-medium transition-colors', vue === v ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button onClick={exportPdf} disabled={!withSolde.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
       </div>
-      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : withSolde.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement pour ce tiers.</p> : (
+      {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : withSolde.length === 0 ? <p className="text-sm text-zinc-500">{vue === 'encours' ? 'Aucun poste ouvert pour ce tiers : tout est lettré.' : 'Aucun mouvement pour ce tiers sur cet exercice.'}</p> : (
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>

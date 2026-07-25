@@ -2,6 +2,7 @@ import type { Client } from '../db.js';
 import { vatDeclaration } from './tax.js';
 import { agedBalance } from './lettrage.js';
 import { listAssets } from './assets.js';
+import { carryForwardFiscalYears, NOT_CARRY_FORWARD } from './carryforward.js';
 
 // ============================================================================
 // Tableau de bord par entreprise (dossier) : agrège les données déjà calculées
@@ -25,13 +26,19 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
   const fy = (fiscalYearId && fys.find((f: any) => f.id === fiscalYearId)) || fys.find((f: any) => f.status !== 'closed') || fys[0] || null;
 
   // --- Soldes cumulés par compte (position bilancielle : trésorerie, tiers) ---
+  // Position à la clôture de l'exercice affiché : on cumule les écritures
+  // jusqu'à sa date de fin, en écartant les à-nouveaux de report qui
+  // rejoueraient les exercices déjà clos (cf. domain/carryforward.ts). Ce calcul
+  // reste juste que les exercices précédents aient été clôturés ou non.
+  const cf = await carryForwardFiscalYears(c, dossierId);
   const { rows: bal } = await c.query(
     `select a.account_code, a.class_no, coalesce(sum(l.amount_debit - l.amount_credit),0) as balance
        from entry_lines l
        join entries e on e.id = l.entry_id and e.status='posted'
        join accounts a on a.id = l.account_id
-      where l.dossier_id = $1
-      group by a.account_code, a.class_no`, [dossierId]);
+      where l.dossier_id = $1 and ${NOT_CARRY_FORWARD(2)}
+        and ($3::date is null or e.entry_date <= $3::date)
+      group by a.account_code, a.class_no`, [dossierId, cf, fy?.end_date ?? null]);
   const tresorerie = bal.filter((r: any) => r.class_no === 5).reduce((s: number, r: any) => s + Number(r.balance), 0);
   const creances = bal.filter((r: any) => r.account_code.startsWith('41') && Number(r.balance) > 0).reduce((s: number, r: any) => s + Number(r.balance), 0);
   const dettesFrs = -bal.filter((r: any) => r.account_code.startsWith('40') && Number(r.balance) < 0).reduce((s: number, r: any) => s + Number(r.balance), 0);
@@ -52,14 +59,15 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
   const produits = Number(pl[0].produits), charges = Number(pl[0].charges), chiffreAffaires = Number(pl[0].ca);
   const resultat = produits - charges;
 
-  // --- Activité (compteurs + automatisation) ---
+  // --- Activité (compteurs + automatisation), sur l'exercice affiché ---
   const { rows: act } = await c.query(
     `select
         count(*) filter (where status='posted') as posted,
         count(*) filter (where status='draft') as drafts,
         count(*) filter (where status='posted' and source = any($2)) as auto,
         count(*) filter (where status='posted' and entry_date >= date_trunc('month', current_date)) as this_month
-       from entries where dossier_id=$1`, [dossierId, AUTO_SOURCES]);
+       from entries where dossier_id=$1 and ($3::uuid is null or fiscal_year_id=$3::uuid)`,
+    [dossierId, AUTO_SOURCES, fy?.id ?? null]);
   const posted = Number(act[0].posted), drafts = Number(act[0].drafts);
   const autoPct = posted ? Math.round((Number(act[0].auto) / posted) * 100) : 0;
 
@@ -78,14 +86,16 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
     return { month: r.ym, produits: p, charges: ch, resultat: p - ch };
   });
 
-  // --- Top clients / fournisseurs (par solde auxiliaire) ---
+  // --- Top clients / fournisseurs (par solde auxiliaire, même assiette) ---
   const { rows: cps } = await c.query(
     `select cp.name, cp.type, coalesce(sum(l.amount_debit - l.amount_credit),0) as balance
        from entry_lines l
        join counterparties cp on cp.id = l.counterparty_id
        join entries e on e.id = l.entry_id and e.status='posted'
-      where l.dossier_id=$1
-      group by cp.name, cp.type having coalesce(sum(l.amount_debit - l.amount_credit),0) <> 0`, [dossierId]);
+      where l.dossier_id=$1 and ${NOT_CARRY_FORWARD(2)}
+        and ($3::date is null or e.entry_date <= $3::date)
+      group by cp.name, cp.type having coalesce(sum(l.amount_debit - l.amount_credit),0) <> 0`,
+    [dossierId, cf, fy?.end_date ?? null]);
   const topClients = cps.filter((r: any) => Number(r.balance) > 0).map((r: any) => ({ name: r.name, amount: Number(r.balance) }))
     .sort((a: any, b: any) => b.amount - a.amount).slice(0, 5);
   const topFournisseurs = cps.filter((r: any) => Number(r.balance) < 0).map((r: any) => ({ name: r.name, amount: -Number(r.balance) }))
@@ -110,7 +120,8 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
             coalesce((select sum(amount_debit) from entry_lines where entry_id=e.id),0) as amount
        from entries e join journals j on j.id=e.journal_id
       where e.dossier_id=$1 and e.status='posted'
-      order by e.entry_date desc, e.created_at desc limit 8`, [dossierId]);
+        and ($2::uuid is null or e.fiscal_year_id=$2::uuid)
+      order by e.entry_date desc, e.created_at desc limit 8`, [dossierId, fy?.id ?? null]);
 
   // --- Alertes ---
   const alerts: { level: 'info' | 'warn'; message: string; tab?: string }[] = [];

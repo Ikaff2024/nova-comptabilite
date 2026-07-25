@@ -2,6 +2,7 @@ import type { Client } from '../db.js';
 import { postEntry, resolveCounterparty } from './accounting.js';
 import { createLettrage } from './lettrage.js';
 import { recordAudit } from './audit.js';
+import { carryForwardFiscalYears, NOT_CARRY_FORWARD } from './carryforward.js';
 
 // ============================================================================
 // Cycle achats fournisseurs. La comptabilisation génère l'écriture d'achat
@@ -285,6 +286,7 @@ export async function supplierAging(c: Client, dossierId: string, asOf?: string)
          join accounts a on a.id = l.account_id and a.account_code like '40%'
         where l.dossier_id=$1 and l.counterparty_id is not null
           and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+          and ${NOT_CARRY_FORWARD(3)}
      )
      select o.counterparty_id, cp.name, cp.aux_code,
             sum(net) as balance,
@@ -298,7 +300,7 @@ export async function supplierAging(c: Client, dossierId: string, asOf?: string)
       group by o.counterparty_id, cp.name, cp.aux_code
      having sum(net) > 0.005
       order by sum(net) desc`,
-    [dossierId, ref],
+    [dossierId, ref, await carryForwardFiscalYears(c, dossierId)],
   );
   return rows.map((r: any) => ({
     counterpartyId: r.counterparty_id, name: r.name, auxCode: r.aux_code,

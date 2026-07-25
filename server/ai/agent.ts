@@ -574,7 +574,7 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     case 'previsionnel_tresorerie': return await forecast.cashForecast(c, dossierId, {});
     case 'echeancier': { const e: any = await forecast.echeancier(c, dossierId); return { ...e, creances: cap(e.creances, 40), dettes: cap(e.dettes, 40) }; }
     case 'balance_agee': { const a: any = await forecast.agedBalance(c, dossierId); return { clients: { ...a.clients, rows: cap(a.clients.rows, 40) }, fournisseurs: { ...a.fournisseurs, rows: cap(a.fournisseurs.rows, 40) } }; }
-    case 'balance_auxiliaire': { const t = input?.type ? String(input.type) : undefined; const b: any[] = await tiers.auxiliaryBalance(c, dossierId, t); const mv = b.filter((r) => r.debit !== 0 || r.credit !== 0).map((r) => ({ code: r.aux_code, tiers: r.name, nature: r.type, collectif: r.collective, debit: r.debit, credit: r.credit, solde: r.balance })); return { tiers: cap(mv, 80), nombre: mv.length }; }
+    case 'balance_auxiliaire': { const t = input?.type ? String(input.type) : undefined; const b: any[] = await tiers.auxiliaryBalance(c, dossierId, { type: t, fiscalYearId: fy }); const mv = b.filter((r) => r.debit !== 0 || r.credit !== 0 || r.open_balance !== 0).map((r) => ({ code: r.aux_code, tiers: r.name, nature: r.type, collectif: r.collective, debit: r.debit, credit: r.credit, solde_exercice: r.balance, encours_non_lettre: r.open_balance })); return { tiers: cap(mv, 80), nombre: mv.length }; }
     case 'tva': return await tax.vatDeclaration(c, dossierId, String(input?.debut ?? ''), String(input?.fin ?? ''));
     case 'factures_ventes': return cap(await invoicing.listInvoices(c, dossierId, input?.statut, 'invoice'), 50);
     case 'factures_achats': return cap(await purchases.listPurchases(c, dossierId, input?.statut), 50);
@@ -835,8 +835,8 @@ async function buildDocAttachment(c: Client, dossierId: string, fy: string | und
     case 'grand_livre_general': { const r = await accdocs.grandLivreGeneralPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le grand livre général.' }; return r; }
     case 'journal_centralisateur': { const r = await accdocs.journalCentralisateurPdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucune écriture pour le journal centralisateur.' }; return r; }
     case 'balance_agee': { const r = await accdocs.balanceAgeePdf(c, dossierId); if (r.count === 0) return { error: 'Aucun solde ouvert pour la balance âgée.' }; return r; }
-    case 'balance_auxiliaire': { const r = await accdocs.balanceAuxiliairePdf(c, dossierId); if (r.count === 0) return { error: 'Aucun tiers mouvementé pour la balance auxiliaire.' }; return r; }
-    case 'grand_livre_auxiliaire': { const r = await accdocs.grandLivreAuxiliairePdf(c, dossierId); if (r.count === 0) return { error: 'Aucun mouvement de tiers pour le grand livre auxiliaire.' }; return r; }
+    case 'balance_auxiliaire': { const r = await accdocs.balanceAuxiliairePdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucun tiers mouvementé pour la balance auxiliaire.' }; return r; }
+    case 'grand_livre_auxiliaire': { const r = await accdocs.grandLivreAuxiliairePdf(c, dossierId, fy); if (r.count === 0) return { error: 'Aucun mouvement de tiers pour le grand livre auxiliaire.' }; return r; }
     case 'releve_tiers': {
       const cp = await tiers.findCounterparty(c, dossierId, String(pj.tiers ?? ''));
       if (!cp) return { error: `Tiers « ${pj.tiers} » introuvable pour le relevé de compte.` };

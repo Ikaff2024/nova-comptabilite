@@ -1144,14 +1144,19 @@ export function createApi() {
   app.get('/api/dossiers/:id/aux-balance', h(async (req, res) => {
     const userId = requireUser(req);
     const type = (req.query.type as string) || undefined;
-    res.json(await withUser(userId, (c) => tiers.auxiliaryBalance(c, req.params.id, type)));
+    const fiscalYearId = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => tiers.auxiliaryBalance(c, req.params.id, { type, fiscalYearId })));
   }));
 
   app.get('/api/dossiers/:id/aux-ledger', h(async (req, res) => {
     const userId = requireUser(req);
     const counterparty = (req.query.counterparty as string) || '';
     if (!counterparty) { const e: any = new Error('counterparty requis'); e.status = 400; throw e; }
-    res.json(await withUser(userId, (c) => tiers.auxiliaryLedger(c, req.params.id, counterparty)));
+    const fiscalYearId = (req.query.fiscalYearId as string) || undefined;
+    const openOnly = req.query.openOnly === '1';
+    res.json(await withUser(userId, (c) => tiers.auxiliaryLedger(c, req.params.id, counterparty, {
+      fiscalYearId, openOnly, cumulative: !fiscalYearId,
+    })));
   }));
   // Relevé de compte d'un tiers, en PDF (état de compte pour le recouvrement).
   app.get('/api/dossiers/:id/tiers/:cid/statement', h(async (req, res) => {
@@ -1203,7 +1208,8 @@ export function createApi() {
 
   app.get('/api/dossiers/:id/balance-auxiliaire', h(async (req, res) => {
     const userId = requireUser(req);
-    const out = await withUser(userId, (c) => accdocs.balanceAuxiliairePdf(c, req.params.id));
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const out = await withUser(userId, (c) => accdocs.balanceAuxiliairePdf(c, req.params.id, fy));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);
@@ -1211,7 +1217,8 @@ export function createApi() {
 
   app.get('/api/dossiers/:id/grand-livre-auxiliaire', h(async (req, res) => {
     const userId = requireUser(req);
-    const out = await withUser(userId, (c) => accdocs.grandLivreAuxiliairePdf(c, req.params.id));
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const out = await withUser(userId, (c) => accdocs.grandLivreAuxiliairePdf(c, req.params.id, fy));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.send(out.buffer);

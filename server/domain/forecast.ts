@@ -1,5 +1,6 @@
 import type { Client } from '../db.js';
 import { occurrenceDates } from './recurring.js';
+import { carryForwardFiscalYears, NOT_CARRY_FORWARD } from './carryforward.js';
 
 // ============================================================================
 // Prévisionnel de trésorerie : projette le solde de trésorerie sur un horizon,
@@ -30,12 +31,15 @@ export async function cashForecast(
   const horizonEnd = addDays(weekStart(today), horizonWeeks * 7);
 
   // --- Position de trésorerie actuelle (classe 5) ---
+  // Cumul toutes périodes : on écarte les à-nouveaux de report, qui rejoueraient
+  // les mouvements des exercices déjà clos (cf. domain/carryforward.ts).
+  const cf = await carryForwardFiscalYears(c, dossierId);
   const { rows: bal } = await c.query(
     `select coalesce(sum(l.amount_debit - l.amount_credit),0) as cash
        from entry_lines l
        join entries e on e.id=l.entry_id and e.status='posted'
        join accounts a on a.id=l.account_id and a.class_no=5
-      where l.dossier_id=$1`, [dossierId]);
+      where l.dossier_id=$1 and ${NOT_CARRY_FORWARD(2)}`, [dossierId, cf]);
   const currentCash = round2(Number(bal[0].cash));
 
   const flows: Flow[] = [];
@@ -49,7 +53,8 @@ export async function cashForecast(
        join accounts a on a.id=l.account_id and (a.account_code like '41%' or a.account_code like '40%')
        left join counterparties cp on cp.id=l.counterparty_id
       where l.dossier_id=$1
-        and not exists (select 1 from lettrage_lines ll where ll.entry_line_id=l.id)`, [dossierId]);
+        and not exists (select 1 from lettrage_lines ll where ll.entry_line_id=l.id)
+        and ${NOT_CARRY_FORWARD(2)}`, [dossierId, cf]);
   for (const r of open) {
     const net = round2(Number(r.net));
     if (net === 0) continue;

@@ -1,5 +1,6 @@
 import type { Client } from '../db.js';
 import { tablePdf } from '../documents/pdf.js';
+import { carryForwardFiscalYears, NOT_CARRY_FORWARD } from './carryforward.js';
 
 // ============================================================================
 // Relances clients : créances échues non réglées (postes non lettrés au débit
@@ -54,6 +55,7 @@ export function relanceEmailBody(letter: any, level: number, cur: string): { sub
 
 export async function overdueClients(c: Client, dossierId: string, asOf?: string): Promise<any[]> {
   const ref = asOf || new Date().toISOString().slice(0, 10);
+  const cf = await carryForwardFiscalYears(c, dossierId);
   const { rows } = await c.query(
     `with open as (
        select l.counterparty_id, (l.amount_debit - l.amount_credit) as net,
@@ -63,6 +65,7 @@ export async function overdueClients(c: Client, dossierId: string, asOf?: string
          join accounts a on a.id = l.account_id and a.account_code like '41%'
         where l.dossier_id = $1 and l.counterparty_id is not null
           and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+          and ${NOT_CARRY_FORWARD(3)}
      )
      select o.counterparty_id, cp.name, cp.aux_code, cp.email,
             sum(net) as balance,
@@ -73,10 +76,10 @@ export async function overdueClients(c: Client, dossierId: string, asOf?: string
             max(age) as oldest_age
        from open o
        join counterparties cp on cp.id = o.counterparty_id
-      group by o.counterparty_id, cp.name, cp.aux_code
+      group by o.counterparty_id, cp.name, cp.aux_code, cp.email
      having sum(net) > 0.005
       order by sum(net) desc`,
-    [dossierId, ref],
+    [dossierId, ref, cf],
   );
 
   const { rows: rel } = await c.query(
@@ -113,8 +116,9 @@ export async function relanceLetter(c: Client, dossierId: string, counterpartyId
        join accounts a on a.id = l.account_id and a.account_code like '41%'
       where l.dossier_id = $1 and l.counterparty_id = $2
         and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+        and ${NOT_CARRY_FORWARD(4)}
       order by e.entry_date`,
-    [dossierId, counterpartyId, ref],
+    [dossierId, counterpartyId, ref, await carryForwardFiscalYears(c, dossierId)],
   );
   const open = items.map((r: any) => ({ date: r.date, piece_ref: r.piece_ref, label: r.label, amount: Number(r.net), age: Number(r.age) }))
     .filter((r: any) => Math.abs(r.amount) > 0.005);

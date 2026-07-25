@@ -40,10 +40,17 @@ Ouvrir http://localhost:3000 → **inscription / connexion** → onboarding cabi
 ## Tests
 
 ```bash
-npm run test:domain   # parcours domaine + RLS (10 checks)
+npm run test:domain      # parcours domaine + RLS (10 checks)
+npm run test:exercices   # deux exercices + clôture : balances, tiers, encours (39 checks)
 # smoke-test SQL pur :
 docker exec -i nova-pg psql -U postgres -d nova < supabase/tests/smoke_test.sql
 ```
+
+`test:exercices` verrouille la règle centrale des états : lecture **par exercice**
+(filtre `fiscal_year_id`, à-nouveaux compris) vs lecture **cumulée** (encours non
+lettré, position à date), qui doit écarter les à-nouveaux de report — sinon tout
+ce qui touche au bilan double après la première clôture. Voir
+`server/domain/carryforward.ts`.
 
 ## Notes
 

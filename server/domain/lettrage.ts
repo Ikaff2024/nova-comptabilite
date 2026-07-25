@@ -1,8 +1,14 @@
 import type { Client } from '../db.js';
+import { carryForwardFiscalYears, NOT_CARRY_FORWARD } from './carryforward.js';
 
 // ============================================================================
 // Lettrage des comptes de tiers + balance âgée.
 // Le lettrage est stocké hors du ledger immuable (tables lettrages/lettrage_lines).
+//
+// Ces vues raisonnent en POSTES OUVERTS, hors bornes d'exercice : elles écartent
+// donc les à-nouveaux de report, qui dupliqueraient les pièces d'origine
+// (cf. domain/carryforward.ts). Une facture impayée reste un poste ouvert avec
+// sa date et son ancienneté réelles, même après la clôture de son exercice.
 // ============================================================================
 
 // Code lettre séquentiel : 1->A, 26->Z, 27->AA…
@@ -14,22 +20,25 @@ function letterCode(n: number): string {
 
 // Comptes de tiers (classe 4) ayant des mouvements — pour le sélecteur.
 export async function tiersAccounts(c: Client, dossierId: string): Promise<any[]> {
+  const cf = await carryForwardFiscalYears(c, dossierId);
   const { rows } = await c.query(
     `select a.account_code, a.label,
-            count(*) filter (where not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)) as open_count
+            count(*) filter (where not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+                               and ${NOT_CARRY_FORWARD(2)}) as open_count
        from entry_lines l
        join entries e on e.id = l.entry_id and e.status = 'posted'
        join accounts a on a.id = l.account_id and a.class_no = 4
       where l.dossier_id = $1
       group by a.account_code, a.label
       order by a.account_code`,
-    [dossierId],
+    [dossierId, cf],
   );
   return rows.map((r: any) => ({ account_code: r.account_code, label: r.label, open_count: Number(r.open_count) }));
 }
 
 // Pièces non lettrées d'un compte (open items) + lettrages existants.
 export async function accountLettrageView(c: Client, dossierId: string, accountCode: string): Promise<any> {
+  const cf = await carryForwardFiscalYears(c, dossierId);
   const { rows: open } = await c.query(
     `select l.id as entry_line_id, to_char(e.entry_date, 'YYYY-MM-DD') as entry_date,
             j.code as journal_code, e.piece_ref, coalesce(l.label, e.description) as label,
@@ -40,8 +49,9 @@ export async function accountLettrageView(c: Client, dossierId: string, accountC
        join accounts a on a.id = l.account_id
       where l.dossier_id = $1 and a.account_code = $2
         and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+        and ${NOT_CARRY_FORWARD(3)}
       order by e.entry_date, e.created_at`,
-    [dossierId, accountCode],
+    [dossierId, accountCode, cf],
   );
   const { rows: lettered } = await c.query(
     `select le.id, le.code,
@@ -152,7 +162,8 @@ export async function autoLettrage(
 ): Promise<{ groups: number; linesLettered: number }> {
   const params: any[] = [dossierId];
   let filter = '';
-  if (accountCode) { params.push(accountCode); filter = ' and a.account_code = $2'; }
+  if (accountCode) { params.push(accountCode); filter = ` and a.account_code = $${params.length}`; }
+  params.push(await carryForwardFiscalYears(c, dossierId));
   const { rows } = await c.query(
     `select l.id, a.account_code, l.counterparty_id,
             (l.amount_debit - l.amount_credit) as net
@@ -161,6 +172,7 @@ export async function autoLettrage(
        join accounts a on a.id = l.account_id and a.class_no = 4
       where l.dossier_id = $1${filter}
         and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+        and ${NOT_CARRY_FORWARD(params.length)}
       order by e.entry_date, e.created_at`,
     params,
   );
@@ -188,6 +200,7 @@ export async function autoLettrage(
 // Balance âgée : encours non lettré par compte de tiers, ventilé par ancienneté.
 export async function agedBalance(c: Client, dossierId: string, asOf?: string): Promise<any[]> {
   const ref = asOf || new Date().toISOString().slice(0, 10);
+  const cf = await carryForwardFiscalYears(c, dossierId);
   const { rows } = await c.query(
     `with open as (
        select a.account_code, a.label, (l.amount_debit - l.amount_credit) as net,
@@ -197,6 +210,7 @@ export async function agedBalance(c: Client, dossierId: string, asOf?: string): 
          join accounts a on a.id = l.account_id and a.class_no = 4
         where l.dossier_id = $1
           and not exists (select 1 from lettrage_lines ll where ll.entry_line_id = l.id)
+          and ${NOT_CARRY_FORWARD(3)}
      )
      select account_code, label,
             sum(net) as balance,
@@ -208,7 +222,7 @@ export async function agedBalance(c: Client, dossierId: string, asOf?: string): 
       group by account_code, label
      having sum(net) <> 0
       order by account_code`,
-    [dossierId, ref],
+    [dossierId, ref, cf],
   );
   return rows.map((r: any) => ({
     account_code: r.account_code, label: r.label,

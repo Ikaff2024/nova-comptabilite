@@ -212,9 +212,9 @@ export async function journalCentralisateurPdf(c: Client, dossierId: string, fyI
 // 401 fournisseurs) : chaque tiers avec ses totaux débit/crédit et son solde.
 // Le sous-total par nature doit égaler le solde du compte collectif à la balance.
 const TIERS_LABELS: Record<string, string> = { client: 'CLIENTS (411)', fournisseur: 'FOURNISSEURS (401)', salarie: 'PERSONNEL (42)', etat: 'ÉTAT (44)', autre: 'AUTRES TIERS' };
-export async function balanceAuxiliairePdf(c: Client, dossierId: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+export async function balanceAuxiliairePdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
   const { d, md, money, meta } = await ctx(c, dossierId);
-  const all: any[] = await auxiliaryBalance(c, dossierId);
+  const all: any[] = await auxiliaryBalance(c, dossierId, { fiscalYearId: fyId });
   const mouv = all.filter((r) => r.debit !== 0 || r.credit !== 0);
 
   const rows: string[][] = [];
@@ -251,9 +251,9 @@ export async function balanceAuxiliairePdf(c: Client, dossierId: string): Promis
 
 // Grand livre auxiliaire — tous les tiers, chacun avec ses mouvements et son solde
 // progressif, un sous-total par tiers. Justifie ligne à ligne les comptes 411/401.
-export async function grandLivreAuxiliairePdf(c: Client, dossierId: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
+export async function grandLivreAuxiliairePdf(c: Client, dossierId: string, fyId?: string): Promise<{ filename: string; buffer: Buffer; count: number }> {
   const { d, md, money, meta } = await ctx(c, dossierId);
-  const lines: any[] = await allTiersLedger(c, dossierId);
+  const lines: any[] = await allTiersLedger(c, dossierId, { fiscalYearId: fyId });
 
   const rows: string[][] = [];
   const rowStyles: (RowStyle | undefined)[] = [];

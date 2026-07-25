@@ -1,5 +1,6 @@
 import type { Client } from '../db.js';
 import { listAssets } from './assets.js';
+import { carryForwardFiscalYears, NOT_CARRY_FORWARD } from './carryforward.js';
 
 // ============================================================================
 // Travaux de fin d'exercice / clôture — MOTEUR DÉTERMINISTE de contrôle du
@@ -98,7 +99,8 @@ export async function clotureChecklist(c: Client, dossierId: string, fiscalYearI
          join accounts a on a.id=l.account_id and (a.account_code like '41%' or a.account_code like '40%')
         where l.dossier_id=$1 and l.counterparty_id is not null
           and not exists (select 1 from lettrage_lines ll where ll.entry_line_id=l.id)
-     ) x where age > 90`, [dossierId]);
+          and ${NOT_CARRY_FORWARD(2)}
+     ) x where age > 90`, [dossierId, await carryForwardFiscalYears(c, dossierId)]);
   const vieilles = r0(Number(old[0]?.creances ?? 0));
   if (vieilles > 0.5) taches.push({ id: 'creances_agees', titre: 'Créances anciennes (+90 j)', statut: 'attention', detail: 'Des créances clients de plus de 90 jours restent non lettrées.', montant: vieilles, action: 'Relancer, lettrer les règlements reçus, et provisionner les créances douteuses (491).', outil: 'onglet Tiers' });
 

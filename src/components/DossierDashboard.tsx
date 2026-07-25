@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Loader2, RotateCcw, TrendingUp, Wallet, Landmark, ArrowDownRight, ArrowUpRight, Sparkles, AlertTriangle, Info, Receipt, Building2, FileText } from 'lucide-react';
-import { api, fmtMoney, downloadAuthed, type DossierDashboard as DashData } from '../lib/api';
+import { api, fmtMoney, downloadAuthed, currentFiscalYear, type FiscalYear, type DossierDashboard as DashData } from '../lib/api';
 import { cn } from '../lib/utils';
 
 const SOURCE_LABELS: Record<string, string> = {
   manual: 'Saisie', ocr: 'Capture IA', mobile_money: 'Mobile Money', bank_import: 'Import', recurring: 'Récurrente', api: 'API', opening_balance: 'À-nouveaux',
 };
 
-export default function DossierDashboard({ dossierId, currency, onNavigate }: { dossierId: string; currency: string; onNavigate?: (tab: string) => void }) {
+export default function DossierDashboard({ dossierId, currency, fiscalYears = [], onNavigate }: { dossierId: string; currency: string; fiscalYears?: FiscalYear[]; onNavigate?: (tab: string) => void }) {
   const [d, setD] = useState<DashData | null>(null);
   const [loading, setLoading] = useState(true);
-  const load = async () => { setLoading(true); try { setD(await api.dossierDashboard(dossierId)); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, [dossierId]);
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
+  const load = async () => { setLoading(true); try { setD(await api.dossierDashboard(dossierId, fy || undefined)); } finally { setLoading(false); } };
+  useEffect(() => { setFy((f) => f || currentFiscalYear(fiscalYears)?.id || ''); }, [fiscalYears]);
+  useEffect(() => { load(); }, [dossierId, fy]);
 
   const m = (n: number) => fmtMoney(n, currency);
   const short = (n: number) => {
@@ -32,7 +34,15 @@ export default function DossierDashboard({ dossierId, currency, onNavigate }: { 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-zinc-400">Synthèse{d.fiscalYear ? ` · ${d.fiscalYear.label}` : ''}</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-zinc-400">Synthèse</span>
+          {fiscalYears.length > 0 ? (
+            <select value={fy} onChange={(e) => setFy(e.target.value)}
+              className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-emerald-500/50">
+              {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          ) : d.fiscalYear ? <span className="text-sm text-zinc-400">· {d.fiscalYear.label}</span> : null}
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={() => downloadAuthed(`/api/dossiers/${dossierId}/activity-report`, 'rapport-activite.pdf')} title="Rapport d'activité du mois préparé par Lexa" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"><FileText className="h-4 w-4" /> Rapport d'activité</button>
           <button onClick={load} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/10"><RotateCcw className="h-4 w-4" /> Actualiser</button>
