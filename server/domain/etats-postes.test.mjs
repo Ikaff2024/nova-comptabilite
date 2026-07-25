@@ -93,5 +93,34 @@ for (const [nom, postes] of Object.entries(tables)) {
   console.log(`  ${nom} : ${postes.length} postes, ${nbExpr} expressions — OK`);
 }
 
+// 6 — COMPLÉTUDE : tout compte MOUVEMENTABLE du plan doit tomber dans un poste,
+// sinon son solde s'évapore et l'état est faux. On ne regarde que les comptes
+// « feuilles » : un compte de regroupement (281, 603…) n'est jamais mouvementé,
+// ses enfants le sont. Signalé sans faire échouer tant que les points ouverts
+// ne sont pas tranchés sur l'ouvrage (immobilisations en cours, virements
+// internes, comptes de liaison).
+const codes = [];
+for (const l of fs.readFileSync(path.join(ROOT, 'plan_comptable_OHADA_valide.txt'), 'utf8').split(/\r?\n/)) {
+  const m = l.match(/^(\d{3,})\s+(.+)/);
+  if (m) codes.push({ code: m[1], libelle: m[2].trim() });
+}
+const feuille = (c) => !codes.some((x) => x.code !== c && x.code.startsWith(c));
+
+const exprsDe = (postes) => postes.flatMap((p) => p.exprs);
+const couvert = (code, postes) => exprsDe(postes).some((raw) => match(code, raw));
+
+for (const [nom, classes, postes] of [
+  ['BILAN', '12345', [...tables.BILAN_ACTIF, ...tables.BILAN_PASSIF]],
+  ['COMPTE DE RESULTAT', '678', tables.COMPTE_DE_RESULTAT],
+]) {
+  const orphelins = codes.filter((c) => classes.includes(c.code[0]) && feuille(c.code) && !couvert(c.code, postes));
+  if (orphelins.length) {
+    console.log(`\n  ${nom} — ${orphelins.length} compte(s) mouvementable(s) sans poste :`);
+    for (const o of orphelins) console.log(`    ${o.code.padEnd(6)} ${o.libelle.slice(0, 56)}`);
+  } else {
+    console.log(`\n  ${nom} — couverture complète du plan ✅`);
+  }
+}
+
 console.log(ko === 0 ? '\nTableaux de correspondance conformes ✅' : `\n${ko} anomalie(s)`);
 process.exitCode = ko === 0 ? 0 : 1;
