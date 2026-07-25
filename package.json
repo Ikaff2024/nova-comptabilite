@@ -16,6 +16,7 @@
     "migrate": "node scripts/migrate.mjs",
     "test:domain": "tsx server/integration-test.ts",
     "test:exercices": "tsx server/integration-test-exercices.ts",
+    "test:postes": "node server/domain/etats-postes.test.mjs",
     "test:payroll": "tsx server/payroll/core/run-tests.ts"
   },
   "dependencies": {
