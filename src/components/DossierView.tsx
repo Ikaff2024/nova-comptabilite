@@ -308,12 +308,37 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
   const [rows, setRows] = useState<BalanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<6 | 8>(6);
+  // Bornage libre à l'intérieur de l'exercice : balance d'un mois, d'un
+  // trimestre, ou arrêtée à une date.
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   useEffect(() => { setFy((f) => f || currentFiscalYear(fiscalYears)?.id || ''); }, [fiscalYears]);
+  useEffect(() => { setFrom(''); setTo(''); }, [fy]);
   useEffect(() => {
-    (async () => { setLoading(true); try { setRows(await api.trialBalance(dossierId, fy || undefined)); } finally { setLoading(false); } })();
-  }, [dossierId, fy]);
+    const t = setTimeout(async () => {
+      setLoading(true);
+      try { setRows(await api.trialBalance(dossierId, fy || undefined, { from: from || undefined, to: to || undefined })); }
+      finally { setLoading(false); }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [dossierId, fy, from, to]);
 
   const fyLabel = fiscalYears.find((f) => f.id === fy)?.label ?? '';
+  const periode = from || to ? `${from || 'début'} → ${to || 'fin'}` : '';
+  const champsPeriode = (
+    <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+      <span>du</span>
+      <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+        className="rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-emerald-500/50" />
+      <span>au</span>
+      <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+        className="rounded-lg border border-white/10 bg-zinc-900/60 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-emerald-500/50" />
+      {(from || to) && (
+        <button onClick={() => { setFrom(''); setTo(''); }} title="Tout l'exercice"
+          className="rounded-md px-1.5 py-1 text-zinc-500 hover:text-zinc-300">✕</button>
+      )}
+    </div>
+  );
   const fySelect = fiscalYears.length > 0 && (
     <select value={fy} onChange={(e) => setFy(e.target.value)}
       className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
@@ -327,8 +352,9 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-zinc-400">Balance générale des comptes</p>
         {fySelect}
+        {champsPeriode}
       </div>
-      <p className="text-zinc-400">Aucun mouvement comptabilisé sur {fyLabel ? `l'exercice « ${fyLabel} »` : 'cet exercice'}.</p>
+      <p className="text-zinc-400">Aucun mouvement comptabilisé sur {periode ? `la période ${periode}` : fyLabel ? `l'exercice « ${fyLabel} »` : 'cet exercice'}.</p>
     </div>
   );
 
@@ -358,13 +384,13 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
     const out: (string | number)[][] = [['Compte', 'Intitulé', ...subHeaders]];
     for (const r of rows) out.push([r.account_code, r.account_label, ...vals(r)]);
     out.push(['', 'TOTAUX', ...totals]);
-    downloadCsv(`balance-${mode}col_${dossierName}_${fyLabel}`.replace(/\s+/g, '-'), out);
+    downloadCsv(`balance-${mode}col_${dossierName}_${fyLabel}${periode ? `_${from || ''}-${to || ''}` : ''}`.replace(/\s+/g, '-'), out);
   };
   const exportPdf = () => {
     const head = `<tr><th>Compte</th><th>Intitulé</th>${subHeaders.map((s) => `<th class="n">${s}</th>`).join('')}</tr>`;
     const body = rows.map((r) => `<tr><td>${r.account_code}</td><td>${(r.account_label ?? '').replace(/[&<>]/g, '')}</td>${vals(r).map((x) => `<td class="n">${x ? fmtMoney(x, currency) : ''}</td>`).join('')}</tr>`).join('');
     const tot = `<tr class="tot"><td colspan="2">Totaux</td>${totals.map((t) => `<td class="n">${fmtMoney(t, currency)}</td>`).join('')}</tr>`;
-    printDocument(`Balance à ${mode} colonnes — ${dossierName}`, `${fyLabel ? `${fyLabel} · ` : ''}devise ${currency} · édité le ${nowStamp()}`, `<table><thead>${head}</thead><tbody>${body}${tot}</tbody></table>`);
+    printDocument(`Balance à ${mode} colonnes — ${dossierName}`, `${fyLabel ? `${fyLabel} · ` : ''}${periode ? `période ${periode} · ` : ''}devise ${currency} · édité le ${nowStamp()}`, `<table><thead>${head}</thead><tbody>${body}${tot}</tbody></table>`);
   };
 
   return (
@@ -373,6 +399,7 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-zinc-400">Balance générale des comptes</p>
           {fySelect}
+          {champsPeriode}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>

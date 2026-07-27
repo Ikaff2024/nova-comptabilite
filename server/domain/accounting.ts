@@ -138,15 +138,88 @@ export async function openDossier(c: Client, input: OpenDossierInput): Promise<{
   return { id, accounts };
 }
 
+// Un exercice mal borné contamine tout ce qui en dépend : la balance, le grand
+// livre et les états sont filtrés sur fiscal_year_id, et postEntry n'accepte une
+// date que si elle tombe dans les bornes. Un « Exercice 2025 » qui court
+// jusqu'en 2026, ou deux exercices qui se chevauchent, laissent donc entrer des
+// écritures dans le mauvais exercice — sans qu'aucun contrôle ne s'en aperçoive.
+// D'où ces refus à la création.
 export async function createFiscalYear(
   c: Client, dossierId: string, label: string, startDate: string, endDate: string,
 ): Promise<string> {
+  const fr = (s: string) => s.split('-').reverse().join('/');
+  if (!label?.trim()) throw new Error('Libellé requis.');
+  if (!(startDate < endDate)) throw new Error("La date de fin doit être postérieure à la date de début.");
+
+  const mois = (Date.parse(endDate) - Date.parse(startDate)) / (1000 * 60 * 60 * 24 * 30.44);
+  if (mois > 24) {
+    throw new Error(`Exercice de ${Math.round(mois)} mois : un exercice comptable dure 12 mois (un premier exercice peut être plus court ou plus long, jamais à ce point).`);
+  }
+
+  const { rows: chev } = await c.query(
+    `select label, to_char(start_date,'YYYY-MM-DD') as d1, to_char(end_date,'YYYY-MM-DD') as d2
+       from fiscal_years
+      where dossier_id = $1 and start_date <= $3::date and end_date >= $2::date
+      limit 1`,
+    [dossierId, startDate, endDate],
+  );
+  if (chev[0]) {
+    throw new Error(`Chevauchement avec l'exercice « ${chev[0].label} » (${fr(chev[0].d1)} – ${fr(chev[0].d2)}). Deux exercices ne peuvent pas se recouvrir : une écriture serait rattachable à l'un comme à l'autre.`);
+  }
+
   const { rows } = await c.query(
     `insert into fiscal_years(dossier_id, label, start_date, end_date)
      values ($1,$2,$3,$4) returning id`,
-    [dossierId, label, startDate, endDate],
+    [dossierId, label.trim(), startDate, endDate],
   );
   return rows[0].id;
+}
+
+// Exercices mal bornés et écritures rattachées au mauvais exercice : diagnostic
+// sur l'EXISTANT, que les contrôles à la création ne peuvent pas rattraper.
+export async function anomaliesExercices(c: Client, dossierId: string): Promise<{
+  chevauchements: { a: string; b: string; du: string; au: string }[];
+  ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string }[];
+  dureesAnormales: { exercice: string; mois: number; bornes: string }[];
+}> {
+  const { rows: fys } = await c.query(
+    `select id, label, to_char(start_date,'YYYY-MM-DD') as d1, to_char(end_date,'YYYY-MM-DD') as d2
+       from fiscal_years where dossier_id=$1 order by start_date`, [dossierId]);
+
+  const chevauchements: any[] = [];
+  for (let i = 0; i < fys.length; i++) {
+    for (let k = i + 1; k < fys.length; k++) {
+      if (fys[i].d1 <= fys[k].d2 && fys[k].d1 <= fys[i].d2) {
+        chevauchements.push({
+          a: fys[i].label, b: fys[k].label,
+          du: fys[k].d1 > fys[i].d1 ? fys[k].d1 : fys[i].d1,
+          au: fys[k].d2 < fys[i].d2 ? fys[k].d2 : fys[i].d2,
+        });
+      }
+    }
+  }
+
+  const dureesAnormales = fys
+    .map((f: any) => ({ exercice: f.label, mois: Math.round((Date.parse(f.d2) - Date.parse(f.d1)) / (1000 * 60 * 60 * 24 * 30.44)), bornes: `${f.d1} → ${f.d2}` }))
+    .filter((x: any) => x.mois > 13 || x.mois < 1);
+
+  const { rows: hors } = await c.query(
+    `select f.label, to_char(f.start_date,'YYYY-MM-DD') as d1, to_char(f.end_date,'YYYY-MM-DD') as d2,
+            count(*)::int as nb,
+            to_char(min(e.entry_date),'YYYY-MM-DD') as premiere,
+            to_char(max(e.entry_date),'YYYY-MM-DD') as derniere
+       from entries e
+       join fiscal_years f on f.id = e.fiscal_year_id
+      where e.dossier_id = $1 and (e.entry_date < f.start_date or e.entry_date > f.end_date)
+      group by f.label, f.start_date, f.end_date`, [dossierId]);
+
+  return {
+    chevauchements,
+    dureesAnormales,
+    ecrituresHorsBornes: hors.map((r: any) => ({
+      exercice: r.label, bornes: `${r.d1} → ${r.d2}`, nb: r.nb, premiere: r.premiere, derniere: r.derniere,
+    })),
+  };
 }
 
 export async function createJournal(
@@ -1100,12 +1173,18 @@ export async function closeExercise(
 
 // Grand livre : détail chronologique des mouvements par compte (dos de la balance).
 export async function generalLedger(
-  c: Client, dossierId: string, opts: { fiscalYearId?: string; accountCode?: string } = {},
+  c: Client, dossierId: string,
+  opts: { fiscalYearId?: string; accountCode?: string; from?: string; to?: string } = {},
 ): Promise<any[]> {
   const params: any[] = [dossierId];
   let where = 'l.dossier_id = $1';
   if (opts.fiscalYearId) { params.push(opts.fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
   if (opts.accountCode) { params.push(opts.accountCode); where += ` and a.account_code = $${params.length}`; }
+  // Bornage libre, indépendant de l'exercice : un contrôle porte souvent sur un
+  // mois ou un trimestre, et c'est aussi ce qui permet de voir qu'une écriture
+  // est datée hors des bornes de l'exercice auquel elle est rattachée.
+  if (opts.from) { params.push(opts.from); where += ` and e.entry_date >= $${params.length}::date`; }
+  if (opts.to) { params.push(opts.to); where += ` and e.entry_date <= $${params.length}::date`; }
 
   const { rows } = await c.query(
     `select a.account_code, a.label as account_label,
@@ -1133,10 +1212,16 @@ export async function generalLedger(
 // mouvements cumulés (D/C) et solde. Le front choisit la présentation 6 ou 8.
 export async function trialBalance(
   c: Client, dossierId: string, fiscalYearId?: string,
+  bornes: { from?: string; to?: string } = {},
 ): Promise<any[]> {
   const params: any[] = [dossierId];
   let where = 'l.dossier_id = $1';
   if (fiscalYearId) { params.push(fiscalYearId); where += ` and e.fiscal_year_id = $${params.length}`; }
+  // Bornage libre à l'intérieur de l'exercice : balance d'un mois, d'un
+  // trimestre, ou arrêtée à une date. Les à-nouveaux restent inclus s'ils
+  // tombent dans la fenêtre — c'est le cas dès qu'elle démarre à l'ouverture.
+  if (bornes.from) { params.push(bornes.from); where += ` and e.entry_date >= $${params.length}::date`; }
+  if (bornes.to) { params.push(bornes.to); where += ` and e.entry_date <= $${params.length}::date`; }
   const opening = `(e.source = 'opening_balance' or j.type = 'a_nouveaux')`;
 
   const { rows } = await c.query(

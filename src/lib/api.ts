@@ -150,6 +150,12 @@ export interface IsEstimate {
 }
 // Chantier d'immobilisation produite en interne : de la première charge
 // capitalisée à la mise en service, qui ouvre l'amortissement.
+export interface AnomaliesExercices {
+  chevauchements: { a: string; b: string; du: string; au: string }[];
+  ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string }[];
+  dureesAnormales: { exercice: string; mois: number; bornes: string }[];
+}
+
 export interface Wip {
   id: string; label: string;
   wipAccountCode: string; targetAccountCode: string; productionAccountCode: string;
@@ -596,8 +602,16 @@ export const api = {
     req<Mapping>(`/api/dossiers/${dossierId}/mappings`, { method: 'POST', body: JSON.stringify({ keyword, accountCode }) }),
   deleteMapping: (dossierId: string, id: string) =>
     req<void>(`/api/dossiers/${dossierId}/mappings/${id}`, { method: 'DELETE' }),
-  trialBalance: (dossierId: string, fiscalYearId?: string) =>
-    req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  trialBalance: (dossierId: string, fiscalYearId?: string, bornes: { from?: string; to?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (fiscalYearId) q.set('fiscalYearId', fiscalYearId);
+    if (bornes.from) q.set('from', bornes.from);
+    if (bornes.to) q.set('to', bornes.to);
+    const s = q.toString();
+    return req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${s ? `?${s}` : ''}`);
+  },
+  anomaliesExercices: (dossierId: string) =>
+    req<AnomaliesExercices>(`/api/dossiers/${dossierId}/anomalies-exercices`),
   counterparties: (dossierId: string, type?: string) =>
     req<Counterparty[]>(`/api/dossiers/${dossierId}/counterparties${type ? `?type=${type}` : ''}`),
   tiersScheme: (dossierId: string) => req<{ scheme: 'numerique'|'alphanumerique' }>(`/api/dossiers/${dossierId}/tiers-scheme`),
@@ -724,10 +738,12 @@ export const api = {
     req<{ id: string }>(`/api/dossiers/${dossierId}/fiscal-years`, { method: 'POST', body: JSON.stringify({ label, startDate, endDate }) }),
   closeExercise: (dossierId: string, fiscalYearId: string) =>
     req<{ anEntryId: string; newFiscalYearId: string; resultat: number }>(`/api/dossiers/${dossierId}/close-exercise`, { method: 'POST', body: JSON.stringify({ fiscalYearId }) }),
-  generalLedger: (dossierId: string, opts: { fiscalYearId?: string; account?: string } = {}) => {
+  generalLedger: (dossierId: string, opts: { fiscalYearId?: string; account?: string; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams();
     if (opts.fiscalYearId) q.set('fiscalYearId', opts.fiscalYearId);
     if (opts.account) q.set('account', opts.account);
+    if (opts.from) q.set('from', opts.from);
+    if (opts.to) q.set('to', opts.to);
     const qs = q.toString();
     return req<LedgerRow[]>(`/api/dossiers/${dossierId}/general-ledger${qs ? `?${qs}` : ''}`);
   },

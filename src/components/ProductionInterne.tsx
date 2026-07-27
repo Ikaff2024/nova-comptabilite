@@ -124,6 +124,8 @@ function NouveauChantier({ dossierId, sections, onDone, onError }: {
 }) {
   const [label, setLabel] = useState('');
   const [compte, setCompte] = useState('2193');
+  const [cible, setCible] = useState('');
+  const [libre, setLibre] = useState(false);
   const [section, setSection] = useState('');
   const [debut, setDebut] = useState(new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
@@ -131,7 +133,11 @@ function NouveauChantier({ dossierId, sections, onDone, onError }: {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); onError('');
     try {
-      await api.wipCreate(dossierId, { label: label.trim(), wipAccountCode: compte, analyticSection: section || undefined, startedOn: debut });
+      await api.wipCreate(dossierId, {
+        label: label.trim(), wipAccountCode: compte.trim(),
+        targetAccountCode: libre ? cible.trim() : undefined,
+        analyticSection: section || undefined, startedOn: debut,
+      });
       onDone();
     } catch (e: any) { onError(e.message); } finally { setBusy(false); }
   };
@@ -142,12 +148,30 @@ function NouveauChantier({ dossierId, sections, onDone, onError }: {
         <input value={label} onChange={(e) => setLabel(e.target.value)} required placeholder="Nova — plateforme comptable"
           className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
       </label>
+      {/* Les six natures courantes ne sont qu'un raccourci : tout compte du plan
+          du dossier est admis, et sa destination est libre. Une entreprise a ses
+          propres subdivisions — on ne lui impose pas les nôtres. */}
       <label className="text-xs text-zinc-400">Nature
-        <select value={compte} onChange={(e) => setCompte(e.target.value)}
+        <select value={libre ? 'autre' : compte}
+          onChange={(e) => { if (e.target.value === 'autre') { setLibre(true); } else { setLibre(false); setCompte(e.target.value); setCible(''); } }}
           className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/50">
           {ENCOURS.map((x) => <option key={x.code} value={x.code}>{x.libelle} ({x.code} → {x.cible})</option>)}
+          <option value="autre">Autre compte…</option>
         </select>
       </label>
+      {libre && (
+        <>
+          <label className="text-xs text-zinc-400">Compte d'en-cours
+            <input value={compte} onChange={(e) => setCompte(e.target.value)} required placeholder="2193"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+          </label>
+          <label className="text-xs text-zinc-400">Compte définitif
+            <input value={cible} onChange={(e) => setCible(e.target.value)} required placeholder="212"
+              title="Compte qui portera l'immobilisation à la mise en service"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+          </label>
+        </>
+      )}
       <label className="text-xs text-zinc-400">Section analytique
         <select value={section} onChange={(e) => setSection(e.target.value)}
           title="La section qui porte les charges du chantier : elle servira à proposer le montant à capitaliser."
