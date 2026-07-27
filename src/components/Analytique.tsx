@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, PieChart, Layers, ChevronRight, CalendarRange, Printer } from 'lucide-react';
+import { Loader2, Plus, Trash2, PieChart, Layers, ChevronRight, CalendarRange, Printer, TrendingUp } from 'lucide-react';
 import { api, fmtMoney, type FiscalYear, type AnalyticSection, type AnalyticReport, type AnalyticDetail, type AnalyticMonthly, currentFiscalYear } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
+import Rentabilite from './Rentabilite';
 
 export default function Analytique({ dossierId, currency, fiscalYears }: { dossierId: string; currency: string; fiscalYears: FiscalYear[] }) {
   const [sections, setSections] = useState<AnalyticSection[]>([]);
@@ -12,7 +13,7 @@ export default function Analytique({ dossierId, currency, fiscalYears }: { dossi
   const [code, setCode] = useState('');
   const [label, setLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'sections' | 'monthly'>('sections');
+  const [view, setView] = useState<'sections' | 'monthly' | 'rentabilite'>('sections');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, AnalyticDetail>>({});
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
@@ -92,6 +93,7 @@ export default function Analytique({ dossierId, currency, fiscalYears }: { dossi
           <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
             <button onClick={() => setView('sections')} className={cn('flex items-center gap-2 rounded-md px-3 py-1.5 font-medium transition-colors', view === 'sections' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}><PieChart className="h-4 w-4" /> Par section</button>
             <button onClick={() => setView('monthly')} className={cn('flex items-center gap-2 rounded-md px-3 py-1.5 font-medium transition-colors', view === 'monthly' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}><CalendarRange className="h-4 w-4" /> Vue mensuelle</button>
+            <button onClick={() => setView('rentabilite')} title="Marge de l'activité rapprochée de ce qu'elle a demandé d'investir" className={cn('flex items-center gap-2 rounded-md px-3 py-1.5 font-medium transition-colors', view === 'rentabilite' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}><TrendingUp className="h-4 w-4" /> Rentabilité</button>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
@@ -101,7 +103,8 @@ export default function Analytique({ dossierId, currency, fiscalYears }: { dossi
           </div>
         </div>
 
-        {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul…</div>
+        {view === 'rentabilite' ? <Rentabilite dossierId={dossierId} fiscalYearId={fy} currency={currency} />
+          : loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul…</div>
           : view === 'sections' ? (
             !report || report.sections.length === 0 ? <p className="text-sm text-zinc-500">Aucune charge/produit ventilé. Créez des sections et affectez-les en saisie.</p> : (
             <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">

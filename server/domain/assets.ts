@@ -255,6 +255,7 @@ export async function listAssets(c: Client, dossierId: string) {
       acquisitionDate: a.acquisition_date, commissioningDate: a.commissioning_date,
       amount, residualValue: residual, durationYears: duration, method: a.method, depreciationPeriod: a.depreciation_period,
       counterpartyName: a.counterparty_name, notes: a.notes, status: a.status,
+      analyticSection: a.analytic_section ?? null,
       repriseCumul: repris, repriseDate: a.reprise_date ? isoDate(a.reprise_date) : null,
       cumulPosted, vnc: round2(amount - cumulPosted),
       pending: a.status === 'disposed' ? 0 : pending, pendingAmount: a.status === 'disposed' ? 0 : pendingAmount, fullyAmortized: cumulPosted >= round2(amount - residual) - 0.005,

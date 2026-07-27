@@ -73,6 +73,7 @@ import * as portal from './domain/portal.js';
 import * as relances from './domain/relances.js';
 import * as officiels from './domain/etats-officiels.js';
 import * as wip from './domain/assetswip.js';
+import * as rentab from './domain/rentabilite.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -1983,6 +1984,21 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatementsComparative(c, req.params.id, fy)));
   }));
+  // Rentabilité par activité : marge de la section + investissement rattaché.
+  app.get('/api/dossiers/:id/rentabilite', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => rentab.rentabiliteParActivite(c, req.params.id, fy)));
+  }));
+  // Rattachement analytique d'une immobilisation acquise (le produit interne en hérite).
+  app.patch('/api/dossiers/:id/assets/:assetId/analytic', h(async (req, res) => {
+    const userId = requireUser(req);
+    const section = (req.body?.section ?? '').toString().trim() || null;
+    await withUser(userId, (c) => c.query(
+      'update fixed_assets set analytic_section=$3 where dossier_id=$1 and id=$2', [req.params.id, req.params.assetId, section]));
+    res.status(204).end();
+  }));
+
   // --- Immobilisations produites en interne (chantiers en cours) -------------
   app.get('/api/dossiers/:id/wip', h(async (req, res) => {
     const userId = requireUser(req);

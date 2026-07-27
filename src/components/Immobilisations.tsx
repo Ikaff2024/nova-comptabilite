@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2, Landmark, CheckCircle2, CalendarClock, ChevronDo
 import { api, fmtMoney, downloadAuthed, type FixedAsset, type FixedAssetDetail } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
+import ProductionInterne from './ProductionInterne';
 
 export default function Immobilisations({ dossierId, dossierName, currency }: { dossierId: string; dossierName: string; currency: string }) {
   const [assets, setAssets] = useState<FixedAsset[]>([]);
@@ -66,6 +67,10 @@ export default function Immobilisations({ dossierId, dossierName, currency }: { 
 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
       {msg && <p className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> {msg}</p>}
+
+      {/* Ce que l'entreprise construit pour elle-même arrive au registre par ce
+          chemin : chantier, capitalisations, puis mise en service. */}
+      <ProductionInterne dossierId={dossierId} currency={currency} onChanged={load} />
 
       {showForm && <AssetForm dossierId={dossierId} currency={currency} onDone={() => { setShowForm(false); load(); }} onError={setError} />}
       {disposing && <DisposeForm dossierId={dossierId} asset={disposing} currency={currency}

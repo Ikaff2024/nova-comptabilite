@@ -148,6 +148,32 @@ export interface IsEstimate {
   tauxIMF: number; imf: number; imfPlancher: number; imfPlafond: number;
   impotDu: number; baseRetenue: string; acompteProvisionnel: number; note: string;
 }
+// Chantier d'immobilisation produite en interne : de la première charge
+// capitalisée à la mise en service, qui ouvre l'amortissement.
+export interface Wip {
+  id: string; label: string;
+  wipAccountCode: string; targetAccountCode: string; productionAccountCode: string;
+  analyticSection: string | null; startedOn: string; commissionedOn: string | null;
+  fixedAssetId: string | null; notes: string | null;
+  cumul: number; nbCapitalisations: number; statut: 'en_cours' | 'en_service';
+}
+
+// Rentabilité par activité : ce que l'activité rapporte, et ce qu'elle a
+// demandé d'investir — l'analytique seule ignore le second terme.
+export interface ActiviteRentabilite {
+  code: string; libelle: string;
+  exercice: { produits: number; charges: number; marge: number; tauxMarge: number | null };
+  cumul: { produits: number; charges: number; marge: number };
+  investissement: { immobilise: number; vnc: number; dotationExercice: number; enCours: number; total: number; nbImmobilisations: number };
+  retour: { ratio: number | null; commentaire: string };
+}
+export interface RapportRentabilite {
+  exercice: { id: string; label: string } | null;
+  activites: ActiviteRentabilite[];
+  totaux: { margeExercice: number; margeCumulee: number; investissement: number; vnc: number };
+  sansSection: { produits: number; charges: number; marge: number } | null;
+}
+
 // États au format officiel SYSCOHADA : postes référencés (AD…BZ, CA…DZ, TA…XI).
 // Le bilan actif se lit brut − amortissements = net ; au passif et au compte de
 // résultat, une seule colonne. Les contrôles accompagnent toujours l'état.
@@ -714,6 +740,19 @@ export const api = {
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   etatsOfficiels: (dossierId: string, fiscalYearId?: string) =>
     req<EtatsOfficiels>(`/api/dossiers/${dossierId}/etats-officiels${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  rentabilite: (dossierId: string, fiscalYearId?: string) =>
+    req<RapportRentabilite>(`/api/dossiers/${dossierId}/rentabilite${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  // --- Immobilisations produites en interne ---
+  wipList: (dossierId: string) => req<Wip[]>(`/api/dossiers/${dossierId}/wip`),
+  wipCreate: (dossierId: string, body: { label: string; wipAccountCode: string; targetAccountCode?: string; analyticSection?: string; startedOn: string; notes?: string }) =>
+    req<{ id: string }>(`/api/dossiers/${dossierId}/wip`, { method: 'POST', body: JSON.stringify(body) }),
+  wipDelete: (dossierId: string, wipId: string) => req<void>(`/api/dossiers/${dossierId}/wip/${wipId}`, { method: 'DELETE' }),
+  wipCosts: (dossierId: string, wipId: string, from: string, to: string) =>
+    req<{ section: string | null; total: number; parCompte: { compte: string; intitule: string; montant: number }[] }>(`/api/dossiers/${dossierId}/wip/${wipId}/costs?from=${from}&to=${to}`),
+  wipCapitalize: (dossierId: string, wipId: string, body: { date: string; montant: number; from?: string; to?: string; note?: string }) =>
+    req<{ entryId: string; montant: number }>(`/api/dossiers/${dossierId}/wip/${wipId}/capitalize`, { method: 'POST', body: JSON.stringify(body) }),
+  wipCommission: (dossierId: string, wipId: string, body: { date: string; durationYears: number; residualValue?: number }) =>
+    req<{ entryId: string; assetId: string; montant: number }>(`/api/dossiers/${dossierId}/wip/${wipId}/commission`, { method: 'POST', body: JSON.stringify(body) }),
   creditScore: (dossierId: string, fiscalYearId?: string) => req<CreditScore>(`/api/dossiers/${dossierId}/score${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financingRequests: (dossierId: string) => req<FinancingRequest[]>(`/api/dossiers/${dossierId}/financing`),
   requestFinancing: (dossierId: string, amount: number) => req<{ id: string }>(`/api/dossiers/${dossierId}/financing/request`, { method: 'POST', body: JSON.stringify({ amount }) }),

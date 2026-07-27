@@ -214,6 +214,14 @@ export async function mettreEnService(
     notes: `Produite en interne — cumul de production immobilisée (${wip.wip_account_code}).`,
   } as any, userId);
 
+  // L'immobilisation hérite de la section analytique du chantier : sans cela,
+  // la rentabilité de l'activité verrait ses charges mais jamais son
+  // investissement.
+  if (wip.analytic_section) {
+    await c.query('update fixed_assets set analytic_section=$3 where dossier_id=$1 and id=$2',
+      [dossierId, asset.id, wip.analytic_section]);
+  }
+
   await c.query(
     'update assets_in_progress set commissioned_on=$3, fixed_asset_id=$4 where dossier_id=$1 and id=$2',
     [dossierId, wipId, input.date, asset.id]);

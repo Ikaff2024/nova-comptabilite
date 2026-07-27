@@ -4,6 +4,7 @@ import * as acc from './domain/accounting.js';
 import * as wip from './domain/assetswip.js';
 import * as officiels from './domain/etats-officiels.js';
 import * as analytic from './domain/analytic.js';
+import * as rentab from './domain/rentabilite.js';
 
 // ============================================================================
 // Cycle complet d'une IMMOBILISATION PRODUITE EN INTERNE, sur le cas réel d'un
@@ -102,6 +103,29 @@ async function main() {
   try { await withUser(u, (c) => wip.capitaliser(c, d.id, w.id, { date: '2026-09-30', montant: 100000 }, u)); }
   catch { refus = true; }
   check('capitalisation refusée après mise en service', refus);
+
+  // ---------------- Rentabilité par activité ----------------
+  // L'analytique seule voit les charges et les produits ; elle ignore ce que
+  // l'activité a demandé d'investir. Une activité peut afficher une marge et
+  // n'avoir jamais remboursé sa mise de départ — c'est ce que ce rapport montre.
+  await withUser(u, (c) => acc.postEntry(c, {
+    dossierId: d.id, fiscalYearId: fy, journalId: jBQ, entryDate: '2026-09-30',
+    description: 'Abonnements Nova encaissés', source: 'manual',
+    lines: [
+      { accountCode: '521', debit: 1200000 },
+      { accountCode: '706', credit: 1200000, analyticAxis: 'NOVA', label: 'Abonnements' },
+    ],
+  }));
+
+  const rp: any = await withUser(u, (c) => rentab.rentabiliteParActivite(c, d.id, fy));
+  const nova = rp.activites.find((a: any) => a.code === 'NOVA');
+  check('rentabilité · activité NOVA présente', !!nova, `(${rp.activites.length} activité(s))`);
+  check('rentabilité · produits de l\'exercice = 1 200 000', nova?.exercice.produits === 1200000, `(${nova?.exercice.produits})`);
+  check('rentabilité · charges de l\'exercice = 4 600 000', nova?.exercice.charges === 4600000, `(${nova?.exercice.charges})`);
+  check('rentabilité · investissement rattaché = 3 680 000', nova?.investissement.immobilise === 3680000, `(${nova?.investissement.immobilise})`);
+  check('rentabilité · immobilisation héritée de la section', nova?.investissement.nbImmobilisations === 1, `(${nova?.investissement.nbImmobilisations})`);
+  check('rentabilité · retour calculé, rien remboursé', nova?.retour.ratio != null && nova.retour.ratio < 0, `(${nova?.retour.ratio} %)`);
+  check('rentabilité · VNC reprise', (nova?.investissement.vnc ?? 0) > 0, `(${nova?.investissement.vnc})`);
 
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   await closePool();
