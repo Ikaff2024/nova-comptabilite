@@ -71,6 +71,7 @@ import * as documents from './domain/documents.js';
 import * as csv from './documents/csv.js';
 import * as portal from './domain/portal.js';
 import * as relances from './domain/relances.js';
+import * as officiels from './domain/etats-officiels.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -1980,6 +1981,12 @@ export function createApi() {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatementsComparative(c, req.params.id, fy)));
+  }));
+  // Bilan et compte de résultat au format officiel SYSCOHADA (postes référencés).
+  app.get('/api/dossiers/:id/etats-officiels', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => officiels.etatsOfficiels(c, req.params.id, fy)));
   }));
   app.get('/api/dossiers/:id/etats-comparatifs', h(async (req, res) => {
     const userId = requireUser(req);

@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react';
-import { api, downloadAuthed, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS, currentFiscalYear } from '../lib/api';
+import { Loader2, FileText, CheckCircle2, AlertTriangle, Printer, Info } from 'lucide-react';
+import { api, downloadAuthed, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS, type EtatsOfficiels, type LigneEtatOfficiel, currentFiscalYear } from '../lib/api';
 import { cn } from '../lib/utils';
+
+type Vue = 'synthese' | 'officiel';
 
 export default function FinancialStatements({
   dossierId, dossierName, fiscalYears, currency,
 }: { dossierId: string; dossierName: string; fiscalYears: FiscalYear[]; currency: string }) {
   const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
+  const [vue, setVue] = useState<Vue>('synthese');
   const [cmp, setCmp] = useState<ComparativeFS | null>(null);
+  const [off, setOff] = useState<EtatsOfficiels | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,6 +20,13 @@ export default function FinancialStatements({
     return () => { on = false; };
   }, [dossierId, fy]);
 
+  useEffect(() => {
+    if (vue !== 'officiel') return;
+    let on = true;
+    api.etatsOfficiels(dossierId, fy || undefined).then((d) => { if (on) setOff(d); }).catch(() => {});
+    return () => { on = false; };
+  }, [dossierId, fy, vue]);
+
   const m = (n: number) => fmtMoney(n, currency);
   const fyLabel = fiscalYears.find((f) => f.id === fy)?.label ?? '';
   const data = cmp?.current ?? null;
@@ -23,20 +34,35 @@ export default function FinancialStatements({
   const nLabel = cmp?.currentLabel ?? 'N';
   const n1Label = cmp?.previousLabel ?? null;
 
-  const exportPdf = () => { if (data) printStatements(data, dossierName, fyLabel, currency); };
+  const exportPdf = () => {
+    if (vue === 'officiel') { if (off) printOfficiels(off, dossierName, fyLabel, currency); return; }
+    if (data) printStatements(data, dossierName, fyLabel, currency);
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
-          <FileText className="h-4 w-4" /> États financiers SYSCOHADA
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <FileText className="h-4 w-4" /> États financiers SYSCOHADA
+          </div>
+          {/* Deux lectures des mêmes chiffres : la synthèse (regroupements par
+              nature) et la présentation officielle à postes référencés. */}
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
+            {([['synthese', 'Synthèse'], ['officiel', 'Format officiel']] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setVue(v)}
+                className={cn('rounded-md px-3 py-1 font-medium transition-colors', vue === v ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <select value={fy} onChange={(e) => setFy(e.target.value)}
             className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
             {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
           </select>
-          <button onClick={exportPdf} disabled={!data}
+          <button onClick={exportPdf} disabled={vue === 'officiel' ? !off : !data}
             className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40">
             <Printer className="h-4 w-4" /> Export PDF
           </button>
@@ -53,7 +79,10 @@ export default function FinancialStatements({
         </div>
       </div>
 
-      {loading ? (
+      {vue === 'officiel' ? (
+        !off ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul des états officiels…</div>
+          : <EtatsOfficielsVue e={off} m={m} />
+      ) : loading ? (
         <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul des états…</div>
       ) : !data ? null : (
         <div className="space-y-6">
@@ -119,6 +148,110 @@ export default function FinancialStatements({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Présentation officielle : postes référencés SYSCOHADA -------------------
+// Les contrôles viennent avec l'état, pas dans un coin : un bilan qui ne
+// s'équilibre pas ou un solde non repris doivent sauter aux yeux.
+function EtatsOfficielsVue({ e, m }: { e: EtatsOfficiels; m: (n: number) => string }) {
+  const { equilibreBilan: eq, resultat: res } = e.controles;
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Controle ok={eq.ok} titre="Équilibre du bilan"
+          detail={eq.ok ? `Actif = Passif = ${m(eq.actif)}` : `Actif ${m(eq.actif)} · Passif ${m(eq.passif)} · écart ${m(eq.ecart)}`} />
+        <Controle ok={res.ok} titre="Résultat recoupé"
+          detail={res.ok ? `${m(res.parLesPostes)} — identique au résultat de la balance` : `Postes ${m(res.parLesPostes)} · balance ${m(res.parLaBalance)} · écart ${m(res.ecart)}`} />
+      </div>
+
+      {e.comptesNonAffectes.length > 0 && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div className="mb-1 flex items-center gap-2 font-medium"><AlertTriangle className="h-4 w-4" /> {e.comptesNonAffectes.length} solde(s) non repris dans les états</div>
+          <div className="font-mono text-xs text-rose-200/80">
+            {e.comptesNonAffectes.slice(0, 8).map((c) => `${c.compte} ${c.intitule} (${m(c.solde)})`).join(' · ')}
+            {e.comptesNonAffectes.length > 8 && ` … +${e.comptesNonAffectes.length - 8}`}
+          </div>
+        </div>
+      )}
+
+      {e.aVentiler.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="mb-1 flex items-center gap-2 font-medium"><Info className="h-4 w-4" /> Comptes à ventiler manuellement</div>
+          <div className="text-xs text-amber-200/80">
+            L'ouvrage marque ces comptes « pour partie » : le partage entre postes ne se déduit pas du seul numéro de compte.
+            Ils sont imputés en entier au premier poste, à reventiler si nécessaire.
+          </div>
+          <div className="mt-1.5 font-mono text-xs">
+            {e.aVentiler.map((v) => `${v.compte} ${m(v.solde)} → ${v.impute} (partagé avec ${v.partageAvec.join(', ')})`).join(' · ')}
+          </div>
+        </div>
+      )}
+
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        <h3 className="border-b border-white/10 px-6 py-3 font-display text-lg font-semibold">Bilan — Actif</h3>
+        <TableEtat lignes={e.bilanActif} m={m} colonnes={['Brut', 'Amort./dépréc.', 'Net']} />
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        <h3 className="border-b border-white/10 px-6 py-3 font-display text-lg font-semibold">Bilan — Passif</h3>
+        <TableEtat lignes={e.bilanPassif} m={m} colonnes={['Montant']} />
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        <h3 className="border-b border-white/10 px-6 py-3 font-display text-lg font-semibold">Compte de résultat</h3>
+        <TableEtat lignes={e.compteResultat} m={m} colonnes={['Montant']} />
+      </section>
+    </div>
+  );
+}
+
+function Controle({ ok, titre, detail }: { ok: boolean; titre: string; detail: string }) {
+  return (
+    <div className={cn('flex items-start gap-2 rounded-xl border px-4 py-3 text-sm',
+      ok ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200')}>
+      {ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+      <div>
+        <div className="font-medium">{titre}</div>
+        <div className="font-mono text-xs opacity-80">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function TableEtat({ lignes, m, colonnes }: { lignes: LigneEtatOfficiel[]; m: (n: number) => string; colonnes: string[] }) {
+  const val = (l: LigneEtatOfficiel) => (colonnes.length === 3 ? [l.brut, l.amort, l.net] : [l.montant]);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+          <th className="w-14 px-4 py-2 font-medium">Réf</th>
+          <th className="px-4 py-2 font-medium">Libellé</th>
+          {colonnes.map((c) => <th key={c} className="px-4 py-2 text-right font-medium">{c}</th>)}
+        </tr></thead>
+        <tbody className="divide-y divide-white/5">
+          {lignes.map((l) => {
+            const calcule = l.nature === 'total' || l.nature === 'solde';
+            const rubrique = l.nature === 'rubrique';
+            return (
+              <tr key={l.ref} className={cn(calcule && 'bg-white/[0.04]', rubrique && 'bg-white/[0.02]')}>
+                <td className="px-4 py-1.5 font-mono text-xs text-zinc-500">{l.ref}</td>
+                <td className={cn('px-4 py-1.5', calcule ? 'font-semibold text-zinc-100' : rubrique ? 'font-medium text-zinc-300' : 'text-zinc-400')}
+                  title={l.note}>
+                  {l.libelle}{l.note && <span className="ml-1.5 text-xs text-amber-400/70">•</span>}
+                </td>
+                {val(l).map((x, i) => (
+                  <td key={i} className={cn('px-4 py-1.5 text-right font-mono',
+                    calcule ? 'font-semibold text-emerald-400' : 'text-zinc-300')}>
+                    {x == null ? '' : x === 0 && !calcule ? '—' : m(x)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -196,6 +329,74 @@ function printStatements(data: FS, dossierName: string, fyLabel: string, currenc
       </div>
     </div>
     <p style="color:#888;margin-top:24px;font-size:10px">Généré par Nova Comptabilité — états SYSCOHADA (présentation simplifiée).</p>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+// --- Export PDF de la présentation officielle -------------------------------
+// Même fenêtre imprimable que la synthèse : document clair, sans dépendance.
+// Les contrôles figurent en pied — un état qui ne s'équilibre pas doit le dire
+// sur le papier aussi.
+function printOfficiels(e: EtatsOfficiels, dossierName: string, fyLabel: string, currency: string) {
+  const m = (n: number) => fmtMoney(n, currency);
+  const esc = (s: string) => (s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
+  const cell = (x?: number, fort?: boolean) => `<td class="n">${x == null ? '' : (x === 0 && !fort ? '' : m(x))}</td>`;
+  const corps = (lignes: LigneEtatOfficiel[], trois: boolean) => lignes.map((l) => {
+    const fort = l.nature === 'total' || l.nature === 'solde';
+    const cls = fort ? 'strong' : l.nature === 'rubrique' ? 'rub' : '';
+    const vals = trois ? cell(l.brut, fort) + cell(l.amort, fort) + cell(l.net, fort) : cell(l.montant, fort);
+    return `<tr class="${cls}"><td class="ref">${l.ref}</td><td>${esc(l.libelle)}</td>${vals}</tr>`;
+  }).join('');
+
+  const eq = e.controles.equilibreBilan, res = e.controles.resultat;
+  const today = new Date().toLocaleDateString('fr-FR');
+  const alerte = e.comptesNonAffectes.length
+    ? `<p class="warn">${e.comptesNonAffectes.length} solde(s) non repris : ${e.comptesNonAffectes.slice(0, 10).map((c) => `${c.compte} (${m(c.solde)})`).join(', ')}</p>` : '';
+
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>États officiels — ${esc(dossierName)}</title>
+  <style>
+    *{font-family:Arial,Helvetica,sans-serif;color:#111}
+    body{margin:32px;font-size:11px}
+    h1{font-size:18px;margin:0 0 2px} h2{font-size:13px;margin:22px 0 6px;border-bottom:2px solid #111;padding-bottom:3px}
+    .sub{color:#555;margin-bottom:4px}
+    table{width:100%;border-collapse:collapse}
+    td{padding:3px 6px;border-bottom:1px solid #e6e6e6}
+    td.ref{width:34px;color:#777;font-size:10px}
+    td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;width:110px}
+    tr.strong td{font-weight:bold;background:#f2f2f2}
+    tr.rub td{font-weight:bold;color:#333}
+    .ctl{margin-top:18px;padding:8px 10px;border:1px solid #bbb;background:#fafafa}
+    .ok{color:#0a6b3d} .ko{color:#a11}
+    .warn{color:#a11;margin-top:6px}
+    @media print{body{margin:12mm}}
+  </style></head><body>
+    <h1>${esc(dossierName)}</h1>
+    <div class="sub">Bilan et Compte de résultat — format officiel SYSCOHADA (Système Normal)${fyLabel ? ` · ${esc(fyLabel)}` : ''} · devise ${currency} · édité le ${today}</div>
+
+    <h2>Bilan — Actif</h2>
+    <table><tr class="strong"><td class="ref">Réf</td><td>Libellé</td><td class="n">Brut</td><td class="n">Amort./dépréc.</td><td class="n">Net</td></tr>
+    ${corps(e.bilanActif, true)}</table>
+
+    <h2>Bilan — Passif</h2>
+    <table><tr class="strong"><td class="ref">Réf</td><td>Libellé</td><td class="n">Montant</td></tr>
+    ${corps(e.bilanPassif, false)}</table>
+
+    <h2>Compte de résultat</h2>
+    <table><tr class="strong"><td class="ref">Réf</td><td>Libellé</td><td class="n">Montant</td></tr>
+    ${corps(e.compteResultat, false)}</table>
+
+    <div class="ctl">
+      <div class="${eq.ok ? 'ok' : 'ko'}">Équilibre du bilan : ${eq.ok ? `Actif = Passif = ${m(eq.actif)}` : `écart de ${m(eq.ecart)} (actif ${m(eq.actif)} / passif ${m(eq.passif)})`}</div>
+      <div class="${res.ok ? 'ok' : 'ko'}">Résultat : ${res.ok ? `${m(res.parLesPostes)}, recoupé avec la balance` : `écart de ${m(res.ecart)}`}</div>
+      ${alerte}
+    </div>
+    <p style="color:#888;margin-top:18px;font-size:10px">Généré par Nova Comptabilité — correspondance postes/comptes SYSCOHADA révisé.</p>
   </body></html>`;
 
   const w = window.open('', '_blank');

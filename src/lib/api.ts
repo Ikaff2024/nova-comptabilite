@@ -148,6 +148,25 @@ export interface IsEstimate {
   tauxIMF: number; imf: number; imfPlancher: number; imfPlafond: number;
   impotDu: number; baseRetenue: string; acompteProvisionnel: number; note: string;
 }
+// États au format officiel SYSCOHADA : postes référencés (AD…BZ, CA…DZ, TA…XI).
+// Le bilan actif se lit brut − amortissements = net ; au passif et au compte de
+// résultat, une seule colonne. Les contrôles accompagnent toujours l'état.
+export interface LigneEtatOfficiel {
+  ref: string; libelle: string; nature: 'rubrique' | 'poste' | 'total' | 'solde';
+  brut?: number; amort?: number; net?: number; montant?: number; note?: string;
+}
+export interface EtatsOfficiels {
+  exercice: { id: string; label: string } | null;
+  bilanActif: LigneEtatOfficiel[];
+  bilanPassif: LigneEtatOfficiel[];
+  compteResultat: LigneEtatOfficiel[];
+  controles: {
+    equilibreBilan: { actif: number; passif: number; ecart: number; ok: boolean };
+    resultat: { parLesPostes: number; parLaBalance: number; ecart: number; ok: boolean };
+  };
+  comptesNonAffectes: { compte: string; intitule: string; solde: number; etat: 'bilan' | 'resultat' }[];
+  aVentiler: { compte: string; intitule: string; solde: number; impute: string; partageAvec: string[] }[];
+}
 export interface ComparativeFS {
   currentLabel: string | null; previousLabel: string | null;
   current: FinancialStatements; previous: FinancialStatements | null;
@@ -693,6 +712,8 @@ export const api = {
   liasseStatus: (dossierId: string) => req<{ enabled: boolean }>(`/api/dossiers/${dossierId}/liasse-status`),
   financialStatementsComparative: (dossierId: string, fiscalYearId?: string) =>
     req<ComparativeFS>(`/api/dossiers/${dossierId}/financial-statements-comparative${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  etatsOfficiels: (dossierId: string, fiscalYearId?: string) =>
+    req<EtatsOfficiels>(`/api/dossiers/${dossierId}/etats-officiels${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   creditScore: (dossierId: string, fiscalYearId?: string) => req<CreditScore>(`/api/dossiers/${dossierId}/score${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   financingRequests: (dossierId: string) => req<FinancingRequest[]>(`/api/dossiers/${dossierId}/financing`),
   requestFinancing: (dossierId: string, amount: number) => req<{ id: string }>(`/api/dossiers/${dossierId}/financing/request`, { method: 'POST', body: JSON.stringify({ amount }) }),

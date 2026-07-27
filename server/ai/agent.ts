@@ -12,6 +12,7 @@ import * as invoicing from '../domain/invoicing.js';
 import * as dash from '../domain/dossierdashboard.js';
 import * as alerts from '../domain/alerts.js';
 import * as ratios from '../domain/ratios.js';
+import * as officiels from '../domain/etats-officiels.js';
 import * as controls from '../domain/controls.js';
 import * as coherence from '../domain/coherence.js';
 import * as accountingquality from '../domain/accountingquality.js';
@@ -303,6 +304,7 @@ const READ_TOOLS = [
   { name: 'grand_livre', description: 'Détail des écritures d\'un compte donné (grand livre). Fournir le code du compte.', input_schema: { type: 'object', properties: { compte: { type: 'string', description: 'Code du compte SYSCOHADA, ex. 411, 521, 601' } }, required: ['compte'] } },
   { name: 'plan_comptable', description: "Plan comptable DU DOSSIER (SYSCOHADA révisé) : cherche les comptes dont le code ou l'intitulé correspond à une recherche. APPELLE-LE AVANT de proposer une écriture, une facture ou une imputation quand tu n'es pas certain du compte — n'écris jamais un code de mémoire. Recherche par nature d'opération (« carburant », « honoraires », « téléphone ») ou par code (« 62 »). Les intitulés SYSCOHADA font foi et diffèrent du plan français. Si rien ne correspond, dis-le et propose de créer le compte — n'invente pas de code. Le résultat indique aussi si le compte est mouvementable (imputable) et s'il est collectif (tiers obligatoire).", input_schema: { type: 'object', properties: { recherche: { type: 'string', description: "Nature de l'opération ou fragment de code/intitulé, ex. « carburant », « 401 », « transport »" }, classe: { type: 'number', description: 'Restreindre à une classe 1-9 (optionnel)' } }, required: ['recherche'] } },
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'etats_officiels', description: "Bilan et Compte de résultat au FORMAT OFFICIEL SYSCOHADA : chaque poste avec sa référence normalisée (AD, BI, TA, RA…), l'actif ventilé brut / amortissements / net, et surtout les SOLDES INTERMÉDIAIRES DE GESTION — marge commerciale (XA), chiffre d'affaires (XB), valeur ajoutée (XC), excédent brut d'exploitation (XD), résultat d'exploitation (XE), financier (XF), HAO (XH), net (XI). Utilise-le dès qu'on te demande un de ces agrégats, une lecture normalisée du bilan, ou de préparer la liasse/DSF — les états de synthèse, eux, regroupent seulement par nature et ne donnent aucun de ces soldes. Deux contrôles accompagnent la réponse : l'équilibre du bilan et le recoupement du résultat avec la balance ; s'ils ne sont pas OK, signale-le avant de commenter les chiffres.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'ratios_financiers', description: 'Analyse financière : ratios de liquidité, autonomie/endettement, rentabilité et marges, + grandes masses (BFR, fonds de roulement, trésorerie nette). Pour un diagnostic financier ou du conseil sur la structure et la performance.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controles_coherence', description: 'Contrôles de cohérence comptable (révision automatisée) : détecte les soldes anormaux au sens SYSCOHADA (fournisseur 401 débiteur, client 411 créditeur, caisse négative, comptes d\'attente 47 non soldés, TVA inversée…). Pour un contrôle qualité / une révision avant clôture.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'veille_nocturne', description: "Veille de Lexa : le dernier digest calculé pour ce dossier (points prioritaires détectés la nuit — trésorerie, créances, TVA, échéances, cohérence inter-modules, dotations dues, alertes RH). Utilise-le pour « qu'est-ce qui a été détecté », « quoi de neuf », ou pour ouvrir un point du jour. Si aucun digest n'existe, dis que la veille n'a pas encore tourné (elle s'active dans l'onglet Lexa).", input_schema: { type: 'object', properties: {}, required: [] } },
@@ -566,6 +568,25 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       return { comptes: cap(comptes, 40), nombre: comptes.length };
     }
     case 'etats_financiers': return await acc.financialStatements(c, dossierId, fy);
+    case 'etats_officiels': {
+      const e: any = await officiels.etatsOfficiels(c, dossierId, fy);
+      // On ne renvoie que les lignes servies : un état complet fait 99 postes,
+      // dont beaucoup à zéro sur une PME. Les soldes intermédiaires, eux,
+      // partent toujours — c'est ce qu'on vient chercher.
+      const utile = (l: any) => l.nature === 'total' || l.nature === 'solde' || l.net || l.montant;
+      const ligne = (l: any) => (l.brut !== undefined
+        ? { poste: l.ref, libelle: l.libelle, brut: l.brut, amortissements: l.amort, net: l.net }
+        : { poste: l.ref, libelle: l.libelle, montant: l.montant });
+      return {
+        exercice: e.exercice?.label ?? null,
+        bilan_actif: e.bilanActif.filter(utile).map(ligne),
+        bilan_passif: e.bilanPassif.filter(utile).map(ligne),
+        compte_de_resultat: e.compteResultat.filter(utile).map(ligne),
+        controles: e.controles,
+        soldes_non_repris: e.comptesNonAffectes,
+        a_ventiler: e.aVentiler,
+      };
+    }
     case 'ratios_financiers': return await ratios.financialRatios(c, dossierId, fy);
     case 'controles_coherence': return await controls.coherenceChecks(c, dossierId, fy);
     case 'veille_nocturne': {
