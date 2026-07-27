@@ -346,24 +346,17 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
     </select>
   );
 
-  if (loading) return <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul de la balance…</div>;
-  if (rows.length === 0) return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm text-zinc-400">Balance générale des comptes</p>
-        {fySelect}
-        {champsPeriode}
-      </div>
-      <p className="text-zinc-400">Aucun mouvement comptabilisé sur {periode ? `la période ${periode}` : fyLabel ? `l'exercice « ${fyLabel} »` : 'cet exercice'}.</p>
-    </div>
-  );
-
+  // La barre d'outils reste TOUJOURS montée : la démonter pendant le calcul
+  // faisait perdre le focus et effaçait une date en cours de saisie, chaque
+  // frappe relançant la requête. Seule la zone de résultat bascule.
+  //
   // Repère de reprise : aucun à-nouveau alors que l'exercice précédent n'est pas
-  // clôturé = les soldes de bilan de l'exercice précédent ne sont pas repris
-  // (les comptes de bilan repartent à zéro sur la période affichée).
+  // clôturé = les soldes de bilan ne sont pas repris (les comptes de bilan
+  // repartent à zéro sur la période affichée).
   const fyIndex = fiscalYears.findIndex((f) => f.id === fy);
   const prevFy = fyIndex > 0 ? fiscalYears[fyIndex - 1] : undefined;
-  const noOpening = !!prevFy && prevFy.status !== 'closed' && rows.every((r) => r.open_debit === 0 && r.open_credit === 0);
+  const noOpening = rows.length > 0 && !!prevFy && prevFy.status !== 'closed'
+    && rows.every((r) => r.open_debit === 0 && r.open_credit === 0);
 
   const md = (n: number) => (n ? fmtMoney(n, currency) : '—');
   // valeurs numériques par ligne selon le format
@@ -402,8 +395,8 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
           {champsPeriode}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
-          <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
+          <button onClick={exportCsv} disabled={!rows.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><FileSpreadsheet className="h-4 w-4" /> Excel/CSV</button>
+          <button onClick={exportPdf} disabled={!rows.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
           <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
             {[6, 8].map((n) => (
               <button key={n} onClick={() => setMode(n as 6 | 8)}
@@ -422,6 +415,13 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
         </p>
       )}
 
+      {loading ? (
+        <div className="flex items-center gap-2 py-6 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul de la balance…</div>
+      ) : rows.length === 0 ? (
+        <p className="py-6 text-zinc-400">
+          Aucun mouvement comptabilisé sur {periode ? `la période ${periode}` : fyLabel ? `l'exercice « ${fyLabel} »` : 'cet exercice'}.
+        </p>
+      ) : (
       <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-white/10 bg-white/5 text-xs text-zinc-400">
@@ -473,6 +473,7 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
           </tfoot>
         </table>
       </div>
+      )}
     </div>
   );
 }
