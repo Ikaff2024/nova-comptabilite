@@ -179,7 +179,7 @@ export async function createFiscalYear(
 // sur l'EXISTANT, que les contrôles à la création ne peuvent pas rattraper.
 export async function anomaliesExercices(c: Client, dossierId: string): Promise<{
   chevauchements: { a: string; b: string; du: string; au: string }[];
-  ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string }[];
+  ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string; journaux: string[]; sources: string[] }[];
   dureesAnormales: { exercice: string; mois: number; bornes: string }[];
 }> {
   const { rows: fys } = await c.query(
@@ -203,13 +203,19 @@ export async function anomaliesExercices(c: Client, dossierId: string): Promise<
     .map((f: any) => ({ exercice: f.label, mois: Math.round((Date.parse(f.d2) - Date.parse(f.d1)) / (1000 * 60 * 60 * 24 * 30.44)), bornes: `${f.d1} → ${f.d2}` }))
     .filter((x: any) => x.mois > 13 || x.mois < 1);
 
+  // Les journaux et sources concernés désignent l'origine : un import, une
+  // facture, une dotation. Sans eux, on sait qu'il y a un problème sans savoir
+  // par où il est entré.
   const { rows: hors } = await c.query(
     `select f.label, to_char(f.start_date,'YYYY-MM-DD') as d1, to_char(f.end_date,'YYYY-MM-DD') as d2,
             count(*)::int as nb,
             to_char(min(e.entry_date),'YYYY-MM-DD') as premiere,
-            to_char(max(e.entry_date),'YYYY-MM-DD') as derniere
+            to_char(max(e.entry_date),'YYYY-MM-DD') as derniere,
+            array_agg(distinct j.code) as journaux,
+            array_agg(distinct e.source::text) as sources
        from entries e
        join fiscal_years f on f.id = e.fiscal_year_id
+       join journals j on j.id = e.journal_id
       where e.dossier_id = $1 and (e.entry_date < f.start_date or e.entry_date > f.end_date)
       group by f.label, f.start_date, f.end_date`, [dossierId]);
 
@@ -218,6 +224,7 @@ export async function anomaliesExercices(c: Client, dossierId: string): Promise<
     dureesAnormales,
     ecrituresHorsBornes: hors.map((r: any) => ({
       exercice: r.label, bornes: `${r.d1} → ${r.d2}`, nb: r.nb, premiere: r.premiere, derniere: r.derniere,
+      journaux: r.journaux ?? [], sources: r.sources ?? [],
     })),
   };
 }
@@ -358,6 +365,18 @@ export async function deleteAccount(c: Client, dossierId: string, id: string): P
   await c.query('delete from accounts where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 
+// Ramène une date à la forme 'AAAA-MM-JJ', quelle que soit sa provenance :
+// littéral saisi, chaîne ISO complète, ou objet Date restitué par le pilote pg
+// pour une colonne `date`. Renvoie '' si la valeur n'est pas une date.
+function normaliseDate(v: unknown): string {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? '' : v.toISOString().slice(0, 10);
+  const s = String(v ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})T/);            // ISO complet
+  if (m) return m[1];
+  return '';
+}
+
 // --- Le cœur : passer une écriture (atomique, équilibrée) --------------------
 
 export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id: string }> {
@@ -371,27 +390,37 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
   }
 
   // Garde-fou : la date d'écriture doit tomber dans les bornes de l'exercice.
+  //
+  // La date est NORMALISÉE avant comparaison, et ce n'est pas une précaution de
+  // style : le pilote pg restitue les colonnes `date` en objets Date JavaScript,
+  // et plusieurs appelants passent une date lue en base. Or `unObjetDate <
+  // '2025-01-01'` vaut toujours faux en JS — la chaîne est convertie en NaN.
+  // Les deux comparaisons tombaient donc à faux et le contrôle laissait passer
+  // n'importe quelle date, sans le moindre message.
+  const entryDate = normaliseDate(input.entryDate);
+  if (!entryDate) throw new Error(`Date d'écriture invalide : « ${String(input.entryDate)} » (attendu AAAA-MM-JJ).`);
+
   const { rows: fyr } = await c.query(
     "select label, to_char(start_date,'YYYY-MM-DD') as start, to_char(end_date,'YYYY-MM-DD') as end from fiscal_years where dossier_id=$1 and id=$2",
     [input.dossierId, input.fiscalYearId],
   );
   if (!fyr[0]) throw new Error('Exercice introuvable pour ce dossier.');
-  if (input.entryDate < fyr[0].start || input.entryDate > fyr[0].end) {
+  if (entryDate < fyr[0].start || entryDate > fyr[0].end) {
     const fr = (s: string) => s.split('-').reverse().join('/');
-    throw new Error(`La date ${fr(input.entryDate)} est hors de l'exercice « ${fyr[0].label} » (${fr(fyr[0].start)} – ${fr(fyr[0].end)}). Choisissez l'exercice correspondant ou une date dans l'exercice.`);
+    throw new Error(`La date ${fr(entryDate)} est hors de l'exercice « ${fyr[0].label} » (${fr(fyr[0].start)} – ${fr(fyr[0].end)}). Choisissez l'exercice correspondant ou une date dans l'exercice.`);
   }
 
   // Garde-fou : refuser une écriture dans un mois clôturé (clôtures mensuelles).
   // Tolérant : si la table n'existe pas encore (migration non appliquée), on saute.
   if (await tableExists('period_closures')) {
-    const ey = Number(input.entryDate.slice(0, 4)), em = Number(input.entryDate.slice(5, 7));
+    const ey = Number(entryDate.slice(0, 4)), em = Number(entryDate.slice(5, 7));
     const { rows: closed } = await c.query(
       'select 1 from period_closures where dossier_id=$1 and (year*12 + month) >= ($2*12 + $3) limit 1',
       [input.dossierId, ey, em],
     );
     if (closed[0]) {
       const fr = (s: string) => s.split('-').reverse().join('/');
-      throw new Error(`La période ${em}/${ey} est clôturée : aucune écriture ne peut y être ajoutée (date ${fr(input.entryDate)}). Rouvrez le mois pour saisir.`);
+      throw new Error(`La période ${em}/${ey} est clôturée : aucune écriture ne peut y être ajoutée (date ${fr(entryDate)}). Rouvrez le mois pour saisir.`);
     }
   }
 
@@ -417,7 +446,7 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
       'select count(*) n from entries where dossier_id=$1 and journal_id=$2 and fiscal_year_id=$3',
       [input.dossierId, input.journalId, input.fiscalYearId],
     );
-    pieceRef = `${jcode}-${input.entryDate.slice(0, 4)}-${String(Number(cnt[0].n) + 1).padStart(4, '0')}`;
+    pieceRef = `${jcode}-${entryDate.slice(0, 4)}-${String(Number(cnt[0].n) + 1).padStart(4, '0')}`;
   }
 
   const { rows: er } = await c.query(
@@ -425,7 +454,7 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
                          source, piece_ref, document_url, ai_confidence, created_by)
      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
     [
-      input.dossierId, input.fiscalYearId, input.journalId, input.entryDate, input.description,
+      input.dossierId, input.fiscalYearId, input.journalId, entryDate, input.description,
       input.source ?? 'manual', pieceRef, input.documentUrl ?? null,
       input.aiConfidence ?? null, input.createdBy ?? null,
     ],

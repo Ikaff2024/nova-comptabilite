@@ -152,7 +152,7 @@ export interface IsEstimate {
 // capitalisée à la mise en service, qui ouvre l'amortissement.
 export interface AnomaliesExercices {
   chevauchements: { a: string; b: string; du: string; au: string }[];
-  ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string }[];
+  ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string; journaux: string[]; sources: string[] }[];
   dureesAnormales: { exercice: string; mois: number; bornes: string }[];
 }
 

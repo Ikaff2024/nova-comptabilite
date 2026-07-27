@@ -102,24 +102,41 @@ export default function GeneralLedger({
         </div>
       </div>
 
-      {/* Un exercice mal borné laisse entrer des écritures d'une autre année :
-          la lecture par exercice devient trompeuse sans que rien ne le signale. */}
-      {anomalies && (anomalies.ecrituresHorsBornes.length > 0 || anomalies.chevauchements.length > 0 || anomalies.dureesAnormales.length > 0) && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          <div className="mb-1 font-medium">Exercices mal bornés — la lecture par exercice est faussée</div>
-          <ul className="space-y-0.5 text-xs text-amber-200/85">
+      {/* Deux anomalies bien distinctes, et les confondre mène à la mauvaise
+          correction : des BORNES fausses se corrigent sur l'exercice ; des
+          écritures RATTACHÉES au mauvais exercice se réaffectent, et surtout
+          pas en étirant les bornes pour les englober. */}
+      {anomalies && (anomalies.chevauchements.length > 0 || anomalies.dureesAnormales.length > 0) && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div className="mb-1 font-medium">Exercices mal bornés</div>
+          <ul className="space-y-0.5 text-xs text-rose-200/85">
             {anomalies.dureesAnormales.map((d) => (
               <li key={d.exercice}>« {d.exercice} » dure {d.mois} mois ({d.bornes}) — un exercice en compte 12.</li>
             ))}
             {anomalies.chevauchements.map((x, i) => (
               <li key={i}>« {x.a} » et « {x.b} » se chevauchent du {x.du} au {x.au} : une écriture de cette période est rattachable aux deux.</li>
             ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-rose-200/70">Corrigez les bornes de l'exercice dans l'onglet Clôtures.</p>
+        </div>
+      )}
+
+      {anomalies && anomalies.ecrituresHorsBornes.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="mb-1 font-medium">Écritures rattachées au mauvais exercice</div>
+          <ul className="space-y-0.5 text-xs text-amber-200/85">
             {anomalies.ecrituresHorsBornes.map((h) => (
-              <li key={h.exercice}>{h.nb} écriture(s) rattachée(s) à « {h.exercice} » ({h.bornes}) sont datées hors de ces bornes — du {h.premiere} au {h.derniere}.</li>
+              <li key={h.exercice}>
+                {h.nb} écriture(s) portent l'exercice « {h.exercice} » ({h.bornes}) alors qu'elles sont datées du {h.premiere} au {h.derniere}.
+                {h.journaux.length > 0 && <> Journaux : {h.journaux.join(', ')}.</>}
+                {h.sources.length > 0 && <> Origine : {h.sources.join(', ')}.</>}
+              </li>
             ))}
           </ul>
           <p className="mt-1.5 text-xs text-amber-200/70">
-            Corrigez les bornes dans l'onglet Clôtures, puis réaffectez les écritures concernées à leur exercice.
+            Les bornes de l'exercice sont correctes : ce sont les écritures qu'il faut réaffecter, ou redater.
+            N'étirez pas l'exercice pour les englober — ce serait mélanger deux exercices, et fausser les deux résultats.
+            Retrouvez-les en bornant l'affichage ci-dessus sur leurs dates.
           </p>
         </div>
       )}

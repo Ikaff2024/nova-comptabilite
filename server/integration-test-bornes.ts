@@ -76,6 +76,38 @@ async function main() {
   const an = await withUser(u, (c) => acc.anomaliesExercices(c, d.id));
   check('diagnostic : écriture hors bornes détectée', an.ecrituresHorsBornes.length === 1, `(${an.ecrituresHorsBornes[0]?.nb} écriture(s) — ${an.ecrituresHorsBornes[0]?.premiere})`);
   check('diagnostic : aucun chevauchement résiduel', an.chevauchements.length === 0);
+  check('diagnostic : origine identifiée (journal)', (an.ecrituresHorsBornes[0]?.journaux ?? []).includes('BQ'),
+    `(${(an.ecrituresHorsBornes[0]?.journaux ?? []).join(',')})`);
+
+  // --- le garde-fou de date résiste à un objet Date ---
+  // Le pilote pg restitue les colonnes `date` en objets Date : passer une telle
+  // valeur faisait taire le contrôle, car `unObjetDate < 'chaîne'` vaut
+  // toujours faux en JavaScript. Le contrôle laissait alors passer n'importe
+  // quelle date, sans message.
+  let refuseDate = false;
+  try {
+    await withUser(u, (c) => acc.postEntry(c, {
+      dossierId: d.id, fiscalYearId: fy, journalId: j,
+      entryDate: new Date('2026-03-15') as any, description: 'Objet Date hors exercice', source: 'manual',
+      lines: [{ accountCode: '521', debit: 1000 }, { accountCode: '701', credit: 1000 }],
+    }));
+  } catch { refuseDate = true; }
+  check('objet Date hors bornes refusé — garde-fou non contournable', refuseDate);
+
+  let acceptee = false;
+  try {
+    await withUser(u, (c) => acc.postEntry(c, {
+      dossierId: d.id, fiscalYearId: fy, journalId: j,
+      entryDate: new Date('2025-08-15') as any, description: 'Objet Date dans exercice', source: 'manual',
+      lines: [{ accountCode: '521', debit: 1000 }, { accountCode: '701', credit: 1000 }],
+    }));
+    acceptee = true;
+  } catch { /* ignore */ }
+  check('objet Date dans les bornes accepté', acceptee);
+  if (acceptee) {
+    const gl2 = await withUser(u, (c) => acc.generalLedger(c, d.id, { fiscalYearId: fy, from: '2025-08-01', to: '2025-08-31' }));
+    check('date stockée normalisée en AAAA-MM-JJ', gl2.some((l: any) => l.entry_date === '2025-08-15'), `(${gl2[0]?.entry_date})`);
+  }
 
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   await closePool();
