@@ -18,6 +18,7 @@
     "test:exercices": "tsx server/integration-test-exercices.ts",
     "test:postes": "node server/domain/etats-postes.test.mjs",
     "test:etats": "tsx server/domain/etats-officiels.test.ts",
+    "test:production-immo": "tsx server/integration-test-production-immobilisee.ts",
     "test:payroll": "tsx server/payroll/core/run-tests.ts"
   },
   "dependencies": {

@@ -72,6 +72,7 @@ import * as csv from './documents/csv.js';
 import * as portal from './domain/portal.js';
 import * as relances from './domain/relances.js';
 import * as officiels from './domain/etats-officiels.js';
+import * as wip from './domain/assetswip.js';
 
 // ============================================================================
 // API HTTP — fine couche au-dessus du domaine. Chaque route s'exécute dans une
@@ -1982,6 +1983,35 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatementsComparative(c, req.params.id, fy)));
   }));
+  // --- Immobilisations produites en interne (chantiers en cours) -------------
+  app.get('/api/dossiers/:id/wip', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => wip.listWip(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/wip', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => wip.createWip(c, req.params.id, req.body ?? {}, userId)));
+  }));
+  app.delete('/api/dossiers/:id/wip/:wipId', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => wip.deleteWip(c, req.params.id, req.params.wipId));
+    res.status(204).end();
+  }));
+  app.get('/api/dossiers/:id/wip/:wipId/costs', h(async (req, res) => {
+    const userId = requireUser(req);
+    const from = (req.query.from as string) || '', to = (req.query.to as string) || '';
+    if (!from || !to) { const e: any = new Error('from et to requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => wip.coutsDeLaPeriode(c, req.params.id, req.params.wipId, from, to)));
+  }));
+  app.post('/api/dossiers/:id/wip/:wipId/capitalize', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => wip.capitaliser(c, req.params.id, req.params.wipId, req.body ?? {}, userId)));
+  }));
+  app.post('/api/dossiers/:id/wip/:wipId/commission', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => wip.mettreEnService(c, req.params.id, req.params.wipId, req.body ?? {}, userId)));
+  }));
+
   // Bilan et compte de résultat au format officiel SYSCOHADA (postes référencés).
   app.get('/api/dossiers/:id/etats-officiels', h(async (req, res) => {
     const userId = requireUser(req);
