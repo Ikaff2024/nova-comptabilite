@@ -197,8 +197,15 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
           </nav>
 
           <div className="min-w-0 flex-1">
-            {/* Barre horizontale : catégories comptabilité et suivantes, en menus déroulants. */}
-            <div ref={barRef} className="mb-4 flex flex-wrap gap-2">
+            {/* Barre horizontale : catégories comptabilité et suivantes, en menus
+                déroulants. Figée en haut du défilement — sur un grand livre ou
+                une balance de plusieurs centaines de lignes, perdre la
+                navigation oblige à remonter pour changer de module.
+                Le fond opaque et le flou évitent que le tableau défile en
+                transparence derrière ; z-30 passe au-dessus du contenu et des
+                barres d'en-tête de tableaux. */}
+            <div ref={barRef}
+              className="sticky top-0 z-30 -mt-2 mb-4 flex flex-wrap gap-2 border-b border-white/5 bg-zinc-950/85 py-3 backdrop-blur-xl">
               {barGroups.map((g) => {
                 const active = g.items.includes(tab);
                 const open = openMenu === g.label;
