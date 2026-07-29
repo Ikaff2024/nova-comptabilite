@@ -13,6 +13,7 @@ import * as dash from '../domain/dossierdashboard.js';
 import * as alerts from '../domain/alerts.js';
 import * as ratios from '../domain/ratios.js';
 import * as officiels from '../domain/etats-officiels.js';
+import * as reclass from '../domain/reclassement.js';
 import * as controls from '../domain/controls.js';
 import * as coherence from '../domain/coherence.js';
 import * as accountingquality from '../domain/accountingquality.js';
@@ -306,6 +307,7 @@ const READ_TOOLS = [
   { name: 'etats_financiers', description: 'États financiers de synthèse : bilan et compte de résultat.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'etats_officiels', description: "Bilan et Compte de résultat au FORMAT OFFICIEL SYSCOHADA : chaque poste avec sa référence normalisée (AD, BI, TA, RA…), l'actif ventilé brut / amortissements / net, et surtout les SOLDES INTERMÉDIAIRES DE GESTION — marge commerciale (XA), chiffre d'affaires (XB), valeur ajoutée (XC), excédent brut d'exploitation (XD), résultat d'exploitation (XE), financier (XF), HAO (XH), net (XI). Utilise-le dès qu'on te demande un de ces agrégats, une lecture normalisée du bilan, ou de préparer la liasse/DSF — les états de synthèse, eux, regroupent seulement par nature et ne donnent aucun de ces soldes. Deux contrôles accompagnent la réponse : l'équilibre du bilan et le recoupement du résultat avec la balance ; s'ils ne sont pas OK, signale-le avant de commenter les chiffres.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'ratios_financiers', description: 'Analyse financière : ratios de liquidité, autonomie/endettement, rentabilité et marges, + grandes masses (BFR, fonds de roulement, trésorerie nette). Pour un diagnostic financier ou du conseil sur la structure et la performance.', input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'reclassements_possibles', description: "Reclassements à envisager, détectés de façon déterministe : fournisseur au solde débiteur (= avance versée, à porter en 409), client au solde créditeur (= avance reçue, à porter en 419), écriture rattachée à un exercice qui ne couvre pas sa date, compte d'attente 47 non soldé. Chaque candidat indique s'il est AUTOMATISABLE — c'est-à-dire si son traitement se déduit sans jugement. Les comptes d'attente ne le sont jamais : leur destination dépend de la nature réelle de l'opération. Utilise-le avant une clôture, une révision, ou quand on te demande ce qu'il y a à redresser.", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'controles_coherence', description: 'Contrôles de cohérence comptable (révision automatisée) : détecte les soldes anormaux au sens SYSCOHADA (fournisseur 401 débiteur, client 411 créditeur, caisse négative, comptes d\'attente 47 non soldés, TVA inversée…). Pour un contrôle qualité / une révision avant clôture.', input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'veille_nocturne', description: "Veille de Lexa : le dernier digest calculé pour ce dossier (points prioritaires détectés la nuit — trésorerie, créances, TVA, échéances, cohérence inter-modules, dotations dues, alertes RH). Utilise-le pour « qu'est-ce qui a été détecté », « quoi de neuf », ou pour ouvrir un point du jour. Si aucun digest n'existe, dis que la veille n'a pas encore tourné (elle s'active dans l'onglet Lexa).", input_schema: { type: 'object', properties: {}, required: [] } },
   { name: 'guide_nova', description: "Guide d'utilisation de Nova : renvoie la ou les fiches du guide correspondant à une question sur l'USAGE du logiciel (où trouver un écran, marche à suivre, rôle d'un module, signification d'un indicateur). Utilise-le AVANT de répondre à toute question « comment faire dans Nova », et cite la fiche. N'invente jamais un chemin de menu : si rien ne remonte, dis-le. Ne l'utilise PAS pour les questions de données comptables. Paramètre : question (la formulation de l'utilisateur).", input_schema: { type: 'object', properties: { question: { type: 'string', description: "La question de l'utilisateur, telle quelle" } }, required: ['question'] } },
@@ -413,6 +415,31 @@ const DRAFT_TOOLS = [
         },
       },
       required: ['fournisseur', 'lignes'],
+    },
+  },
+  {
+    name: 'preparer_reclassement',
+    description: "Prépare EN BROUILLON une écriture de reclassement : elle vire un montant d'un compte vers un autre, sans toucher à l'écriture d'origine (le grand livre est immuable). N'en prépare une QUE si le traitement se déduit sans jugement — c'est le cas d'un fournisseur débiteur vers 409 ou d'un client créditeur vers 419, signalés « automatisable » par reclassements_possibles. Pour un compte d'attente 47, ne prépare RIEN : demande de quoi il s'agit. Le motif est obligatoire et doit dire pourquoi, pas quoi. Le brouillon n'entre ni en balance ni dans les états : préviens toujours qu'il reste à valider par un humain.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        compte_source: { type: 'string', description: 'Compte à solder, ex. 401' },
+        compte_cible: { type: 'string', description: 'Compte de destination, ex. 409' },
+        montant: { type: 'number' },
+        date: { type: 'string', description: 'AAAA-MM-JJ' },
+        motif: { type: 'string', description: "Pourquoi ce reclassement, ex. « solde débiteur = avance versée »" },
+        tiers: { type: 'string', description: 'Nom ou code auxiliaire du tiers (optionnel)' },
+      },
+      required: ['compte_source', 'compte_cible', 'montant', 'motif'],
+    },
+  },
+  {
+    name: 'reaffecter_exercice',
+    description: "Prépare le redressement d'une écriture rattachée à un exercice qui ne couvre pas sa date : contre-passation dans l'exercice erroné (obligatoire, il est immuable) puis réécriture à l'identique EN BROUILLON dans le bon exercice. Deux exercices sont touchés, donc deux résultats : annonce-le avant de le faire. N'utilise cet outil que sur un candidat « exercice_errone » marqué automatisable — sinon l'exercice cible n'existe pas et il faut d'abord le créer.",
+    input_schema: {
+      type: 'object',
+      properties: { ecriture_id: { type: 'string', description: "Identifiant de l'écriture à réaffecter" } },
+      required: ['ecriture_id'],
     },
   },
 ];
@@ -589,6 +616,40 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
     }
     case 'ratios_financiers': return await ratios.financialRatios(c, dossierId, fy);
     case 'controles_coherence': return await controls.coherenceChecks(c, dossierId, fy);
+    case 'reclassements_possibles': {
+      const cands = await reclass.candidatsReclassement(c, dossierId, fy);
+      return {
+        nombre: cands.length,
+        automatisables: cands.filter((x) => x.automatisable).length,
+        candidats: cap(cands, 40),
+        rappel: "Un candidat non automatisable ne se propose pas : demande de quoi il s'agit avant toute écriture.",
+      };
+    }
+    case 'preparer_reclassement': {
+      const source = String(input?.compte_source ?? '').trim();
+      const cible = String(input?.compte_cible ?? '').trim();
+      const motif = String(input?.motif ?? '').trim();
+      let cpId: string | undefined;
+      if (input?.tiers) {
+        const cp = await tiers.findCounterparty(c, dossierId, String(input.tiers));
+        if (cp) cpId = cp.id;
+      }
+      const r = await reclass.preparerReclassement(c, dossierId, {
+        compteSource: source, compteCible: cible, montant: Number(input?.montant),
+        date: String(input?.date ?? today), motif, counterpartyId: cpId,
+      });
+      return {
+        ...r, statut: 'brouillon',
+        message: `Reclassement de ${r.montant} du compte ${source} vers ${cible} préparé EN BROUILLON sur l'exercice « ${r.exercice} ». Il n'entre ni en balance ni dans les états tant qu'il n'est pas validé — onglet Journaux, section Brouillons.`,
+      };
+    }
+    case 'reaffecter_exercice': {
+      const r = await reclass.preparerReaffectationExercice(c, dossierId, String(input?.ecriture_id ?? ''));
+      return {
+        ...r, statut: 'brouillon',
+        message: `Écriture contre-passée dans son exercice d'origine, et réécrite EN BROUILLON dans « ${r.exercice} ». Deux exercices sont touchés : les deux résultats bougeront à la validation.`,
+      };
+    }
     case 'veille_nocturne': {
       const d = await nightly.latestDigest(c, dossierId);
       return d ? { genere_le: d.generated_at, resume: d.resume, points: cap(d.items ?? [], 25), notifie_a: d.notified_to }

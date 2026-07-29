@@ -73,6 +73,7 @@ import * as portal from './domain/portal.js';
 import * as relances from './domain/relances.js';
 import * as officiels from './domain/etats-officiels.js';
 import * as wip from './domain/assetswip.js';
+import * as reclass from './domain/reclassement.js';
 import * as rentab from './domain/rentabilite.js';
 
 // ============================================================================
@@ -1993,6 +1994,36 @@ export function createApi() {
     const fy = (req.query.fiscalYearId as string) || undefined;
     res.json(await withUser(userId, (c) => acc.financialStatementsComparative(c, req.params.id, fy)));
   }));
+  // --- Reclassements et brouillons -------------------------------------------
+  app.get('/api/dossiers/:id/reclassements', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => reclass.candidatsReclassement(c, req.params.id, fy)));
+  }));
+  app.post('/api/dossiers/:id/reclassements', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => reclass.preparerReclassement(c, req.params.id, req.body ?? {}, userId)));
+  }));
+  app.post('/api/dossiers/:id/reclassements/exercice', h(async (req, res) => {
+    const userId = requireUser(req);
+    const entryId = String(req.body?.entryId ?? '');
+    res.status(201).json(await withUser(userId, (c) => reclass.preparerReaffectationExercice(c, req.params.id, entryId, userId)));
+  }));
+  app.get('/api/dossiers/:id/brouillons', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => reclass.listerBrouillons(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/brouillons/:entryId/valider', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => reclass.validerBrouillon(c, req.params.id, req.params.entryId));
+    res.status(204).end();
+  }));
+  app.delete('/api/dossiers/:id/brouillons/:entryId', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => reclass.supprimerBrouillon(c, req.params.id, req.params.entryId));
+    res.status(204).end();
+  }));
+
   // Rentabilité par activité : marge de la section + investissement rattaché.
   app.get('/api/dossiers/:id/rentabilite', h(async (req, res) => {
     const userId = requireUser(req);

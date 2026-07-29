@@ -48,6 +48,11 @@ export interface PostEntryInput {
   aiConfidence?: number;
   createdBy?: string;
   counterpartyName?: string; // utilisé pour la mémoire de codification
+  /** 'draft' laisse l'écriture en brouillon : modifiable, supprimable, hors
+   *  balance et hors états tant qu'un humain ne l'a pas validée. C'est le mode
+   *  dans lequel Lexa propose une écriture — elle prépare, elle ne comptabilise
+   *  pas. */
+  status?: 'draft' | 'posted';
   lines: EntryLineInput[];
 }
 
@@ -479,6 +484,17 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
         counterpartyId, l.taxCodeId ?? null, l.analyticAxis ?? null, l.externalRef ?? null, l.operationDate ?? null,
       ],
     );
+  }
+
+  // Un brouillon reste en l'état : il n'entre ni en balance ni dans les états,
+  // et n'alimente pas la mémoire de codification — on n'apprend que de ce qu'un
+  // humain a validé.
+  if (input.status === 'draft') {
+    await recordAudit(c, {
+      dossierId: input.dossierId, action: 'entry.drafted', entity: 'entry', entityId: entryId,
+      detail: { description: input.description, lignes: input.lines.length },
+    });
+    return { id: entryId };
   }
 
   // Validation : déclenche en base le contrôle d'équilibre + verrouillage

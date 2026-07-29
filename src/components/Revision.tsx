@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, ClipboardCheck, CheckCircle2, Circle, ShieldCheck, AlertTriangle, ChevronDown } from 'lucide-react';
 import { api, fmtMoney, type FiscalYear, type RevisionReport, type RevisionAccount, type InterModuleReport, type CoherenceNiveau, type QualityScore, currentFiscalYear } from '../lib/api';
 import { cn } from '../lib/utils';
+import Reclassements from './Reclassements';
 
 export default function Revision({ dossierId, currency, fiscalYears }: { dossierId: string; currency: string; fiscalYears: FiscalYear[] }) {
   const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
@@ -45,6 +46,10 @@ export default function Revision({ dossierId, currency, fiscalYears }: { dossier
           </select>
         </div>
       </div>
+
+      {/* Ce que la révision détecte de redressable, et les brouillons en attente.
+          Rien n'est comptabilisé sans un geste humain. */}
+      <Reclassements dossierId={dossierId} fiscalYearId={fy || undefined} currency={currency} />
 
       <QualityScorePanel dossierId={dossierId} fy={fy} />
       <CoherencePanel dossierId={dossierId} fy={fy} currency={currency} />

@@ -150,6 +150,20 @@ export interface IsEstimate {
 }
 // Chantier d'immobilisation produite en interne : de la première charge
 // capitalisée à la mise en service, qui ouvre l'amortissement.
+// Un reclassement déductible sans jugement est « automatisable » ; les autres
+// sont signalés mais jamais proposés.
+export interface CandidatReclassement {
+  nature: 'fournisseur_debiteur' | 'client_crediteur' | 'exercice_errone' | 'attente_non_solde';
+  automatisable: boolean; libelle: string; montant: number;
+  compteSource?: string; compteCible?: string;
+  tiers?: { id: string; nom: string } | null;
+  entryIds?: string[]; explication: string;
+}
+export interface Brouillon {
+  id: string; date: string; journal: string; description: string; exercice: string | null; montant: number;
+  lignes: { compte: string; intitule: string; debit: number; credit: number; libelle: string | null }[];
+}
+
 export interface AnomaliesExercices {
   chevauchements: { a: string; b: string; du: string; au: string }[];
   ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string; journaux: string[]; sources: string[] }[];
@@ -610,6 +624,17 @@ export const api = {
     const s = q.toString();
     return req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${s ? `?${s}` : ''}`);
   },
+  reclassements: (dossierId: string, fiscalYearId?: string) =>
+    req<CandidatReclassement[]>(`/api/dossiers/${dossierId}/reclassements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  preparerReclassement: (dossierId: string, body: { compteSource: string; compteCible: string; montant: number; date: string; motif: string; counterpartyId?: string }) =>
+    req<{ entryId: string; montant: number; exercice: string }>(`/api/dossiers/${dossierId}/reclassements`, { method: 'POST', body: JSON.stringify(body) }),
+  reaffecterExercice: (dossierId: string, entryId: string) =>
+    req<{ extourneId: string; brouillonId: string; exercice: string; montant: number }>(`/api/dossiers/${dossierId}/reclassements/exercice`, { method: 'POST', body: JSON.stringify({ entryId }) }),
+  brouillons: (dossierId: string) => req<Brouillon[]>(`/api/dossiers/${dossierId}/brouillons`),
+  validerBrouillon: (dossierId: string, entryId: string) =>
+    req<void>(`/api/dossiers/${dossierId}/brouillons/${entryId}/valider`, { method: 'POST', body: '{}' }),
+  supprimerBrouillon: (dossierId: string, entryId: string) =>
+    req<void>(`/api/dossiers/${dossierId}/brouillons/${entryId}`, { method: 'DELETE' }),
   anomaliesExercices: (dossierId: string) =>
     req<AnomaliesExercices>(`/api/dossiers/${dossierId}/anomalies-exercices`),
   counterparties: (dossierId: string, type?: string) =>
