@@ -124,18 +124,40 @@ export default function BankReconciliation({ dossierId, dossierName, currency }:
 
       {showImport && (
         <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm text-zinc-300">Relevé bancaire — scannez un <strong>PDF/photo</strong>, ou collez le CSV (Date ; Libellé ; Débit ; Crédit) — rapprochement assisté sur <span className="font-mono text-zinc-400">{account}</span></div>
-            <div className="flex gap-2">
-              <button onClick={() => scanRef.current?.click()} className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20"><ScanLine className="h-3.5 w-3.5" /> Scanner (PDF/photo)</button>
-              <input ref={scanRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && onScan(e.target.files[0])} />
-              <button onClick={() => { setCsv(SAMPLE_STATEMENT); setMatch(null); }} className="text-xs text-zinc-400 hover:text-emerald-400">Exemple</button>
-              <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400"><FileSpreadsheet className="h-3.5 w-3.5" /> CSV…</button>
-              <input ref={fileRef} type="file" accept=".csv,.txt,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-            </div>
+          {/* Le PDF est le chemin normal : c'est ce que la banque envoie. Le CSV
+              n'est qu'un repli, et il était mis en avant au point de faire croire
+              qu'il était obligatoire. */}
+          <div className="text-sm text-zinc-300">
+            Relevé bancaire sur <span className="font-mono text-zinc-400">{account}</span> — déposez le <strong>PDF de votre banque</strong> (ou une photo), Lexa en extrait les opérations et contrôle le bouclage du solde.
           </div>
-          <textarea value={csv} onChange={(e) => { setCsv(e.target.value); setMatch(null); }} rows={5} placeholder={SAMPLE_STATEMENT}
-            className="w-full rounded-xl border border-white/10 bg-zinc-900/60 p-3 font-mono text-xs text-zinc-200 outline-none focus:border-emerald-500/50" />
+
+          <button onClick={() => scanRef.current?.click()} disabled={impBusy}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 px-4 py-6 text-sm font-medium text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50">
+            {impBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ScanLine className="h-5 w-5" />}
+            {impBusy ? 'Lecture du relevé…' : 'Déposer le relevé — PDF ou photo'}
+          </button>
+          <input ref={scanRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && onScan(e.target.files[0])} />
+
+          <details className="rounded-xl border border-white/10 bg-zinc-900/40">
+            <summary className="cursor-pointer px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200">
+              Pas de PDF exploitable ? Coller ou importer un CSV (Date ; Libellé ; Débit ; Crédit)
+            </summary>
+            <div className="space-y-2 p-3 pt-0">
+              <div className="flex gap-3">
+                <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-emerald-400"><FileSpreadsheet className="h-3.5 w-3.5" /> Importer un fichier CSV</button>
+                <input ref={fileRef} type="file" accept=".csv,.txt,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
+                <button onClick={() => { setCsv(SAMPLE_STATEMENT); setMatch(null); }} className="text-xs text-zinc-400 hover:text-emerald-400">Voir un exemple</button>
+              </div>
+              <textarea value={csv} onChange={(e) => { setCsv(e.target.value); setMatch(null); }} rows={5} placeholder={SAMPLE_STATEMENT}
+                className="w-full rounded-xl border border-white/10 bg-zinc-900/60 p-3 font-mono text-xs text-zinc-200 outline-none focus:border-emerald-500/50" />
+            </div>
+          </details>
+
+          {csv.trim() && (
+            <div className="rounded-lg border border-white/10 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+              {csv.trim().split('\n').length - 1} ligne(s) prête(s) à rapprocher — relisez-les avant d'analyser.
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={analyze} disabled={impBusy || !csv.trim()} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40">{impBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Analyser le relevé</button>
             {match && match.matched.length > 0 && <button onClick={applyMatches} disabled={impBusy} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40"><CheckCircle2 className="h-4 w-4" /> Pointer les {match.matched.length} rapprochement(s)</button>}

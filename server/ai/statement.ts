@@ -4,11 +4,16 @@
 // opérations pour alimenter le rapprochement. On ne comptabilise rien
 // automatiquement — l'utilisateur vérifie les lignes extraites.
 //
-// Module autonome (n'utilise pas les helpers privés de provider.ts) : Claude
-// vision en principal, OpenRouter en secours, comme la Capture.
+// Module autonome (n'utilise pas les helpers privés de provider.ts). Il accepte
+// les MÊMES fournisseurs que la Capture — Claude, Gemini, OpenRouter — et c'est
+// délibéré : le scanner ne connaissait que Claude et OpenRouter, si bien qu'une
+// installation configurée en Gemini voyait le bouton « Scanner un relevé » et se
+// heurtait à un refus du serveur. Le rapprochement paraissait alors n'accepter
+// que le CSV, alors que le chemin PDF existait depuis toujours.
 // ============================================================================
 
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001';
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-001';
 
 export interface StatementTx { date: string; label: string; debit: number; credit: number }
@@ -23,7 +28,15 @@ export interface StatementExtraction {
 }
 
 export function statementExtractionAvailable(): boolean {
-  return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY);
+  return !!(process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY);
+}
+
+/** Fournisseur retenu, pour que l'écran puisse le dire au lieu d'un refus sec. */
+export function statementProvider(): string {
+  if (process.env.ANTHROPIC_API_KEY) return `claude:${CLAUDE_MODEL}`;
+  if (process.env.GEMINI_API_KEY) return `gemini:${GEMINI_MODEL}`;
+  if (process.env.OPENROUTER_API_KEY) return `openrouter:${OPENROUTER_MODEL}`;
+  return 'demo';
 }
 
 const STATEMENT_SYSTEM = [
@@ -41,6 +54,32 @@ const STATEMENT_SCHEMA = {
     currency: { type: ['string', 'null'] },
     openingBalance: { type: ['number', 'null'] },
     closingBalance: { type: ['number', 'null'] },
+    confidence: { type: 'number' },
+    transactions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'AAAA-MM-JJ' },
+          label: { type: 'string' },
+          debit: { type: 'number', description: 'sortie (0 si crédit)' },
+          credit: { type: 'number', description: 'entrée (0 si débit)' },
+        },
+        required: ['date', 'label'],
+      },
+    },
+  },
+  required: ['transactions'],
+} as const;
+
+// Gemini n'accepte pas les types union (`type: ['string','null']`) : son schéma
+// suit un sous-ensemble d'OpenAPI où l'absence se déclare par `nullable`.
+const STATEMENT_SCHEMA_GEMINI = {
+  type: 'object',
+  properties: {
+    currency: { type: 'string', nullable: true },
+    openingBalance: { type: 'number', nullable: true },
+    closingBalance: { type: 'number', nullable: true },
     confidence: { type: 'number' },
     transactions: {
       type: 'array',
@@ -101,26 +140,66 @@ export function statementToCsv(ext: StatementExtraction): string {
 
 export async function extractStatement(input: { mimeType: string; dataBase64: string }): Promise<StatementExtraction> {
   const hasClaude = !!process.env.ANTHROPIC_API_KEY;
+  const hasGemini = !!process.env.GEMINI_API_KEY;
   const hasOR = !!process.env.OPENROUTER_API_KEY;
-  if (!hasClaude && !hasOR) {
-    return normalize({
-      transactions: [
-        { date: '2026-07-03', label: 'VIREMENT CLIENT AWA', credit: 380000 },
-        { date: '2026-07-06', label: 'ACHAT GROSSISTE ADJAME', debit: 180000 },
-        { date: '2026-07-10', label: 'LOYER BOUTIQUE', debit: 120000 },
-      ], openingBalance: 0, closingBalance: 80000, currency: 'XOF', confidence: 0.9,
-    });
-  }
-  if (hasClaude) {
-    try { return normalize(await viaClaude(input)); }
-    catch (e: any) {
-      if (!hasOR) throw e;
-      const r = normalize(await viaOpenRouter(input));
-      r.warnings.push('Fournisseur principal indisponible — bascule automatique.');
-      return r;
+
+  // Ordre de repli : un fournisseur qui tombe ne doit pas renvoyer l'utilisateur
+  // au CSV. On essaie les suivants avant d'abandonner.
+  const chaine: { nom: string; appel: () => Promise<any> }[] = [];
+  if (hasClaude) chaine.push({ nom: 'Claude', appel: () => viaClaude(input) });
+  if (hasGemini) chaine.push({ nom: 'Gemini', appel: () => viaGemini(input) });
+  if (hasOR) chaine.push({ nom: 'OpenRouter', appel: () => viaOpenRouter(input) });
+
+  if (chaine.length > 0) {
+    let derniere: any;
+    for (let i = 0; i < chaine.length; i++) {
+      try {
+        const r = normalize(await chaine[i].appel());
+        if (i > 0) r.warnings.push(`${chaine[0].nom} indisponible — extraction par ${chaine[i].nom}.`);
+        return r;
+      } catch (e) { derniere = e; }
     }
+    throw derniere;
   }
-  return normalize(await viaOpenRouter(input));
+
+  // Sans aucune clé : jeu d'essai, pour que le parcours reste démontrable.
+  const demo = normalize({
+    transactions: [
+      { date: '2026-07-03', label: 'VIREMENT CLIENT AWA', credit: 380000 },
+      { date: '2026-07-06', label: 'ACHAT GROSSISTE ADJAME', debit: 180000 },
+      { date: '2026-07-10', label: 'LOYER BOUTIQUE', debit: 120000 },
+    ], openingBalance: 0, closingBalance: 80000, currency: 'XOF', confidence: 0.9,
+  });
+  demo.warnings.push("Aucun fournisseur d'IA configuré : opérations de démonstration, à ne pas prendre pour votre relevé.");
+  return demo;
+}
+
+// --- Gemini (generateContent, responseSchema JSON) ---------------------------
+// Même endpoint que la Capture : Gemini lit nativement un PDF comme une image.
+async function viaGemini(input: { mimeType: string; dataBase64: string }): Promise<any> {
+  const key = process.env.GEMINI_API_KEY!;
+  const body = {
+    systemInstruction: { parts: [{ text: STATEMENT_SYSTEM }] },
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: 'Extrais toutes les opérations de ce relevé bancaire.' },
+        { inline_data: { mime_type: input.mimeType || 'application/pdf', data: input.dataBase64 } },
+      ],
+    }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: STATEMENT_SCHEMA_GEMINI, temperature: 0.1 },
+  };
+  const { signal, done } = await withTimeout(60000);
+  let res: Response;
+  try {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
+    });
+  } finally { done(); }
+  if (!res.ok) throw new Error(`Gemini indisponible (${res.status}) ${(await res.text().catch(() => '')).slice(0, 200)}`);
+  const data: any = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') ?? '';
+  try { return JSON.parse(text); } catch { throw new Error('Réponse Gemini illisible'); }
 }
 
 async function viaClaude(input: { mimeType: string; dataBase64: string }): Promise<any> {
