@@ -112,9 +112,14 @@ export async function analyticMonthly(c: Client, dossierId: string, fiscalYearId
   let where = "l.dossier_id=$1 and e.status='posted'";
   if (fiscalYearId) { params.push(fiscalYearId); where += ` and e.fiscal_year_id=$${params.length}`; }
 
+  // Regroupement par ANNÉE-MOIS, pas par numéro de mois. Deux raisons :
+  //  · un exercice ne suit pas forcément l'année civile (avril → mars) ;
+  //  · si des écritures d'années différentes sont rattachées au même exercice
+  //    — exercice mal borné, écriture mal rattachée — juillet 2025 et juillet
+  //    2026 se seraient additionnés dans la même case, sans que rien ne le dise.
   const { rows } = await c.query(
     `select coalesce(nullif(l.analytic_axis,''),'—') as section,
-            extract(month from e.entry_date)::int as mois,
+            to_char(e.entry_date,'YYYY-MM') as mois,
             coalesce(sum(l.amount_credit - l.amount_debit) filter (where a.class_no=7),0) as produits,
             coalesce(sum(l.amount_debit - l.amount_credit) filter (where a.class_no=6),0) as charges
        from entry_lines l
@@ -128,12 +133,40 @@ export async function analyticMonthly(c: Client, dossierId: string, fiscalYearId
   const { rows: secs } = await c.query('select code, label from analytic_sections where dossier_id=$1', [dossierId]);
   const labelOf = new Map(secs.map((s: any) => [s.code, s.label]));
 
-  const bySection = new Map<string, number[]>(); // code -> résultat[0..11]
+  // Colonnes = les mois de l'EXERCICE, dans son ordre à lui. À défaut
+  // d'exercice (lecture toutes périodes), on prend les mois réellement
+  // rencontrés — un mois hors bornes apparaît alors en clair, au lieu de se
+  // fondre dans une colonne homonyme.
+  const ABR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  const cles = new Set<string>(rows.map((r: any) => r.mois as string));
+  if (fiscalYearId) {
+    const { rows: fy } = await c.query(
+      "select to_char(start_date,'YYYY-MM') as d1, to_char(end_date,'YYYY-MM') as d2 from fiscal_years where dossier_id=$1 and id=$2",
+      [dossierId, fiscalYearId]);
+    if (fy[0]) {
+      let [y, mo] = fy[0].d1.split('-').map(Number);
+      for (let i = 0; i < 24; i++) {
+        const k = `${y}-${String(mo).padStart(2, '0')}`;
+        cles.add(k);
+        if (k === fy[0].d2) break;
+        mo += 1; if (mo > 12) { mo = 1; y += 1; }
+      }
+    }
+  }
+  const mois = [...cles].sort();
+  const index = new Map(mois.map((k, i) => [k, i]));
+  const libelle = (k: string) => {
+    const [y, mo] = k.split('-');
+    return `${ABR[Number(mo) - 1]} ${y.slice(2)}`;
+  };
+
+  const bySection = new Map<string, number[]>();
   for (const r of rows) {
     const code = r.section as string;
-    if (!bySection.has(code)) bySection.set(code, Array(12).fill(0));
-    const arr = bySection.get(code)!;
-    arr[Number(r.mois) - 1] = Math.round((Number(r.produits) - Number(r.charges)) * 100) / 100;
+    if (!bySection.has(code)) bySection.set(code, Array(mois.length).fill(0));
+    const i = index.get(r.mois as string);
+    if (i == null) continue;
+    bySection.get(code)![i] = Math.round((Number(r.produits) - Number(r.charges)) * 100) / 100;
   }
 
   const sections = [...bySection.entries()].map(([code, monthly]) => ({
@@ -142,6 +175,6 @@ export async function analyticMonthly(c: Client, dossierId: string, fiscalYearId
   })).filter((s) => s.monthly.some((v) => v !== 0))
     .sort((a, b) => (a.code === '—' ? 1 : b.code === '—' ? -1 : a.code.localeCompare(b.code)));
 
-  const monthTotals = Array(12).fill(0).map((_, i) => Math.round(sections.reduce((s, sec) => s + sec.monthly[i], 0) * 100) / 100);
-  return { months: ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'], sections, monthTotals };
+  const monthTotals = mois.map((_, i) => Math.round(sections.reduce((s, sec) => s + sec.monthly[i], 0) * 100) / 100);
+  return { months: mois.map(libelle), sections, monthTotals };
 }
