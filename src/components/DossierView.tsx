@@ -138,6 +138,23 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
     return () => document.removeEventListener('mousedown', onDown);
   }, [openMenu]);
 
+  // Hauteur réelle de la barre de modules, publiée pour que les en-têtes de
+  // tableaux se figent JUSTE en dessous. Elle passe sur deux lignes quand
+  // l'écran rétrécit : une valeur en dur laisserait un décalage ou un
+  // chevauchement. On observe donc son redimensionnement.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const publier = () => document.documentElement.style.setProperty('--nova-topbar', `${el.offsetHeight}px`);
+    publier();
+    const ro = new ResizeObserver(publier);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.setProperty('--nova-topbar', '0px');
+    };
+  }, [ready, needsSetup]);
+
   return (
     <div className="space-y-8">
       <div>
@@ -429,9 +446,9 @@ function BalanceTab({ dossierId, dossierName, fiscalYears, currency }: { dossier
           Aucun mouvement comptabilisé sur {periode ? `la période ${periode}` : fyLabel ? `l'exercice « ${fyLabel} »` : 'cet exercice'}.
         </p>
       ) : (
-      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5 lg:overflow-x-visible">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-white/10 bg-white/5 text-xs text-zinc-400">
+          <thead className="thead-fige text-xs text-zinc-400">
             <tr>
               <th className="px-4 py-2 font-medium" rowSpan={2}>Compte</th>
               <th className="px-4 py-2 font-medium" rowSpan={2}>Intitulé</th>
@@ -535,9 +552,9 @@ function PlanTab({ dossierId }: { dossierId: string }) {
       )}
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+      <div className="rounded-2xl border border-white/10 bg-white/5">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400">
+          <thead className="thead-fige text-xs uppercase text-zinc-400">
             <tr><th className="px-5 py-3 font-medium">Code</th><th className="px-5 py-3 font-medium">Intitulé</th><th className="px-5 py-3 font-medium">Classe</th><th className="px-5 py-3"></th></tr>
           </thead>
           <tbody className="divide-y divide-white/5">

@@ -148,13 +148,13 @@ export default function GeneralLedger({
       ) : (
         <div className="space-y-6">
           {groups.map((g) => (
-            <div key={g.code} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+            <div key={g.code} className="rounded-2xl border border-white/10 bg-white/5">
               <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-2.5">
                 <span className="font-mono text-sm text-zinc-200">{g.code}<span className="ml-3 font-sans text-zinc-400">{g.label}</span></span>
                 <span className="font-mono text-xs text-zinc-500">solde {fmtMoney(g.totDebit - g.totCredit, currency)}</span>
               </div>
               <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase text-zinc-500">
+                <thead className="thead-fige text-xs uppercase text-zinc-500">
                   <tr>
                     <th className="px-4 py-2 font-medium">Date</th>
                     <th className="px-4 py-2 font-medium">Jrnl</th>

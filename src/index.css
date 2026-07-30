@@ -21,6 +21,38 @@
 }
 
 /* =========================================================================
+   EN-TÊTES DE TABLEAUX FIGÉS
+   Sur un grand livre ou une balance de plusieurs centaines de lignes, perdre
+   la ligne de colonnes oblige à remonter pour savoir ce qu'on lit. L'en-tête
+   reste donc collé sous la barre de modules, elle-même figée.
+
+   L'offset suit la hauteur RÉELLE de cette barre : elle passe sur deux lignes
+   quand l'écran rétrécit, et une valeur en dur laisserait alors un décalage.
+   DossierView la mesure et la publie dans --nova-topbar.
+
+   Le fond doit être opaque : un « bg-white/5 » laisserait le tableau défiler
+   en transparence derrière ses propres colonnes.
+   ========================================================================= */
+:root { --nova-topbar: 0px; --nova-thead-bg: #191a1d; }
+:root[data-theme="light"] { --nova-thead-bg: #efe9de; }
+
+.thead-fige {
+  position: sticky;
+  top: var(--nova-topbar);
+  z-index: 10;                    /* sous la barre de modules, en z-30 */
+  background-color: var(--nova-thead-bg);
+  /* En ombre portée plutôt qu'en bordure : une bordure de thead disparaît au
+     collage quand les bords du tableau sont fusionnés. */
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.10);
+}
+:root[data-theme="light"] .thead-fige { box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.10); }
+
+/* L'enveloppe arrondie ne peut plus rogner l'en-tête (son overflow enfermerait
+   le collage) : on arrondit donc les cellules d'angle elles-mêmes. */
+.thead-fige tr:first-child th:first-child { border-top-left-radius: 1rem; }
+.thead-fige tr:first-child th:last-child { border-top-right-radius: 1rem; }
+
+/* =========================================================================
    THÈME CLAIR (« choix 2 ») — surcharge crème/beige pour les utilisateurs
    qui préfèrent le clair. L'app est écrite en sombre ; on remappe ici les
    utilitaires neutres (fonds, bordures, textes) quand data-theme="light".

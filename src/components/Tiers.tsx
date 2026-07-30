@@ -79,9 +79,9 @@ function Relances({ dossierId, dossierName, currency }: { dossierId: string; dos
       {msg && <p className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> {msg}</p>}
 
       {rows.length === 0 ? <p className="text-sm text-zinc-500">Aucune créance client échue. 🎉</p> : (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        <div className="rounded-2xl border border-white/10 bg-white/5">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+            <thead className="thead-fige text-xs uppercase text-zinc-400"><tr>
               <th className="px-4 py-3 font-medium">Client</th><th className="px-4 py-3 text-right font-medium">Solde dû</th>
               <th className="px-4 py-3 text-right font-medium">+90 j</th><th className="px-4 py-3 text-right font-medium">Ancienneté</th>
               <th className="px-4 py-3 text-center font-medium">Dernière relance</th><th className="px-4 py-3"></th>
@@ -201,10 +201,10 @@ function FicheTiers({ dossierId, dossierName, currency }: { dossierId: string; d
 
           {/* Grand livre du tiers */}
           {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : withSolde.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement pour ce tiers.</p> : (
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+            <div className="rounded-2xl border border-white/10 bg-white/5">
               <div className="border-b border-white/10 px-4 py-2.5 text-xs uppercase text-zinc-400">Mouvements (grand livre auxiliaire)</div>
               <table className="w-full text-left text-sm">
-                <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+                <thead className="thead-fige text-xs uppercase text-zinc-400"><tr>
                   <th className="px-4 py-2.5 font-medium">Date</th><th className="px-4 py-2.5 font-medium">Jrnl</th><th className="px-4 py-2.5 font-medium">Compte</th><th className="px-4 py-2.5 font-medium">Libellé</th>
                   <th className="px-4 py-2.5 text-right font-medium">Débit</th><th className="px-4 py-2.5 text-right font-medium">Crédit</th><th className="px-4 py-2.5 text-right font-medium">Solde</th>
                 </tr></thead>
@@ -297,9 +297,9 @@ function PlanTiers({ dossierId }: { dossierId: string }) {
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : rows.length === 0 ? <p className="text-sm text-zinc-500">Aucun tiers. Ils se créent automatiquement à la saisie, ou ajoutez-les ici.</p> : (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        <div className="rounded-2xl border border-white/10 bg-white/5">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+            <thead className="thead-fige text-xs uppercase text-zinc-400"><tr>
               <th className="px-4 py-3 font-medium">Code aux.</th><th className="px-4 py-3 font-medium">Type</th><th className="px-4 py-3 font-medium">Nom</th><th className="px-4 py-3 font-medium">Collectif</th><th className="px-4 py-3 font-medium">Id. fiscal</th><th className="px-4 py-3 font-medium">Email</th><th className="px-4 py-3"></th>
             </tr></thead>
             <tbody className="divide-y divide-white/5">
@@ -383,9 +383,9 @@ function BalanceTiers({ dossierId, dossierName, fiscalYears, currency }: { dossi
         </div>
       </div>
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul…</div> : withMoves.length === 0 ? <p className="text-sm text-zinc-500">Aucun mouvement de tiers.</p> : (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        <div className="rounded-2xl border border-white/10 bg-white/5">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+            <thead className="thead-fige text-xs uppercase text-zinc-400"><tr>
               <th className="px-4 py-3 font-medium">Code</th><th className="px-4 py-3 font-medium">Tiers</th><th className="px-4 py-3 font-medium">Coll.</th>
               <th className="px-4 py-3 text-right font-medium">Débit</th><th className="px-4 py-3 text-right font-medium">Crédit</th>
               <th className="px-4 py-3 text-right font-medium">Solde {fyLabel || 'exercice'}</th>
@@ -482,9 +482,9 @@ function GrandLivreTiers({ dossierId, dossierName, fiscalYears, currency }: { do
         <button onClick={exportPdf} disabled={!withSolde.length} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40"><Printer className="h-4 w-4" /> PDF</button>
       </div>
       {loading ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Chargement…</div> : withSolde.length === 0 ? <p className="text-sm text-zinc-500">{vue === 'encours' ? 'Aucun poste ouvert pour ce tiers : tout est lettré.' : 'Aucun mouvement pour ce tiers sur cet exercice.'}</p> : (
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+        <div className="rounded-2xl border border-white/10 bg-white/5">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+            <thead className="thead-fige text-xs uppercase text-zinc-400"><tr>
               <th className="px-4 py-2.5 font-medium">Date</th><th className="px-4 py-2.5 font-medium">Jrnl</th><th className="px-4 py-2.5 font-medium">Compte</th><th className="px-4 py-2.5 font-medium">Libellé</th>
               <th className="px-4 py-2.5 text-right font-medium">Débit</th><th className="px-4 py-2.5 text-right font-medium">Crédit</th><th className="px-4 py-2.5 text-right font-medium">Solde</th>
             </tr></thead>
@@ -592,7 +592,7 @@ function Lettrage({ dossierId, currency }: { dossierId: string; currency: string
             </div>
             {data.open.length === 0 ? <p className="px-4 py-4 text-sm text-zinc-500">Tout est lettré ✅</p> : (
               <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase text-zinc-500"><tr>
+                <thead className="thead-fige text-xs uppercase text-zinc-500"><tr>
                   <th className="px-4 py-2"></th><th className="px-4 py-2 font-medium">Date</th><th className="px-4 py-2 font-medium">Pièce</th>
                   <th className="px-4 py-2 font-medium">Libellé</th><th className="px-4 py-2 text-right font-medium">Débit</th><th className="px-4 py-2 text-right font-medium">Crédit</th>
                 </tr></thead>
@@ -670,9 +670,9 @@ function Aged({ dossierId, dossierName, currency }: { dossierId: string; dossier
           <button onClick={exportPdf} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Printer className="h-4 w-4" /> PDF</button>
         </div>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+      <div className="rounded-2xl border border-white/10 bg-white/5">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-white/10 bg-white/5 text-xs uppercase text-zinc-400"><tr>
+          <thead className="thead-fige text-xs uppercase text-zinc-400"><tr>
             <th className="px-4 py-3 font-medium">Compte</th><th className="px-4 py-3 font-medium">Intitulé</th>
             {heads.map((h) => <th key={h} className="px-4 py-3 text-right font-medium">{h}</th>)}
             <th className="px-4 py-3 text-right font-medium">Solde</th>
