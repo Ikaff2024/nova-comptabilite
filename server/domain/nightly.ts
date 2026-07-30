@@ -7,6 +7,7 @@ import { listAssets } from './assets.js';
 import { cashForecast } from './forecast.js';
 import { fiscalAdvisor } from './fiscaladvisor.js';
 import { behaviorSignals } from './behavior.js';
+import { anomaliesExercices } from './accounting.js';
 import { sendEmail, emailEnabled } from '../email/provider.js';
 
 // ============================================================================
@@ -19,16 +20,78 @@ import { sendEmail, emailEnabled } from '../email/provider.js';
 // ============================================================================
 
 export type Niveau = 'haute' | 'moyenne' | 'info';
+export type Etat = 'nouveau' | 'aggrave' | 'ameliore' | 'stable' | 'resolu';
+
 export interface Insight {
   niveau: Niveau; categorie: string; titre: string; detail?: string;
   montant?: number; echeance?: string; onglet?: string;
+  /** Comparé au digest précédent — c'est ce qui distingue une alerte à lire
+   *  d'une alerte déjà vue hier. Sans ça, le même mail chaque matin finit
+   *  filtré, et les points qui bougent vraiment se noient avec le reste. */
+  etat?: Etat;
+  /** Variation du montant depuis le digest précédent. */
+  variation?: number;
+  /** Ce qui explique le montant, CALCULÉ depuis les données — jamais deviné. */
+  causes?: { libelle: string; montant: number }[];
 }
+
+/** Fiabilité des chiffres : un digest calculé sur une comptabilité douteuse doit
+ *  le dire, sinon il donne à des montants faux l'autorité du chiffre précis. */
+export interface Fiabilite { fiable: boolean; motifs: string[] }
 
 const RANK: Record<Niveau, number> = { haute: 0, moyenne: 1, info: 2 };
 const round = (n: number) => Math.round(Number(n) || 0);
 
+// Clé d'identité d'un signal entre deux jours. Les nombres du titre sont
+// neutralisés : « 3 demande(s) de congés à valider » et « 4 demande(s)… » sont
+// le même point qui a bougé, pas deux points différents.
+const cle = (i: { categorie: string; titre: string }) =>
+  `${i.categorie}|${i.titre.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim()}`;
+
+// Compare le digest du jour au précédent. Un montant qui s'aggrave n'est pas
+// une nouvelle alerte, et un point disparu mérite d'être annoncé : c'est la
+// seule preuve visible que traiter les alertes sert à quelque chose.
+export function comparer(items: Insight[], precedents: Insight[]): { items: Insight[]; resolus: Insight[] } {
+  const avant = new Map(precedents.map((p) => [cle(p), p]));
+  const pire = (i: Insight, p: Insight) => {
+    // « Pire » se lit selon le sens du montant : une trésorerie qui descend et
+    // une dette qui monte s'aggravent toutes deux, en s'éloignant de zéro.
+    if (i.montant == null || p.montant == null) return 0;
+    return Math.abs(i.montant) - Math.abs(p.montant);
+  };
+  const sortie = items.map((i) => {
+    const p = avant.get(cle(i));
+    if (!p) return { ...i, etat: 'nouveau' as Etat };
+    const d = pire(i, p);
+    const variation = i.montant != null && p.montant != null ? round(i.montant - p.montant) : undefined;
+    if (Math.abs(d) < 0.5) return { ...i, etat: 'stable' as Etat, variation };
+    return { ...i, etat: (d > 0 ? 'aggrave' : 'ameliore') as Etat, variation };
+  });
+  const encore = new Set(items.map(cle));
+  const resolus = precedents.filter((p) => !encore.has(cle(p))).map((p) => ({ ...p, etat: 'resolu' as Etat }));
+  return { items: sortie, resolus };
+}
+
+// Les chiffres qui suivent valent ce que vaut la comptabilité qui les porte.
+// Une écriture rattachée au mauvais exercice, un exercice mal borné, et toute
+// lecture filtrée par exercice devient trompeuse — sans que rien ne l'indique.
+// Le digest le dit avant d'annoncer des montants au franc près.
+async function verifierFiabilite(c: Client, dossierId: string): Promise<Fiabilite> {
+  const motifs: string[] = [];
+  try {
+    const an = await anomaliesExercices(c, dossierId);
+    for (const d of an.dureesAnormales) motifs.push(`l'exercice « ${d.exercice} » couvre ${d.mois} mois`);
+    for (const x of an.chevauchements) motifs.push(`« ${x.a} » et « ${x.b} » se chevauchent`);
+    for (const h of an.ecrituresHorsBornes) {
+      motifs.push(`${h.nb} écriture(s) rattachée(s) à « ${h.exercice} » sont datées hors de ses bornes`);
+    }
+  } catch { /* la fiabilité ne doit jamais empêcher le digest */ }
+  return { fiable: motifs.length === 0, motifs };
+}
+
 export async function computeDigest(c: Client, dossierId: string, fiscalYearId?: string): Promise<{
-  resume: { haute: number; moyenne: number; info: number; total: number }; items: Insight[];
+  resume: { haute: number; moyenne: number; info: number; total: number };
+  items: Insight[]; fiabilite: Fiabilite;
 }> {
   const items: Insight[] = [];
   const push = (i: Insight) => items.push(i);
@@ -82,13 +145,38 @@ export async function computeDigest(c: Client, dossierId: string, fiscalYearId?:
     for (const s of b.signaux ?? []) push({ niveau: s.niveau, categorie: 'habitude', titre: s.titre, detail: s.detail, onglet: 'saisie' });
   });
 
-  // 5) Point bas de trésorerie projeté.
+  // 5) Point bas de trésorerie projeté, avec ce qui le creuse.
   await safe(async () => {
     const f: any = await cashForecast(c, dossierId, { horizonWeeks: 13 });
     if (f && Number(f.minBalance) < 0) {
-      push({ niveau: 'haute', categorie: 'previsionnel', titre: 'Trésorerie projetée négative', detail: `Le solde projeté devient négatif${f.minWeek ? ` (semaine du ${f.minWeek})` : ''} sur les 13 prochaines semaines.`, montant: round(f.minBalance), onglet: 'previsionnel' });
+      // Les causes sont EXTRAITES des flux projetés — les trois plus gros
+      // décaissements attendus d'ici le point bas. On ne les devine pas : une
+      // cause plausible mais fausse, envoyée chaque matin, coûte plus cher que
+      // pas de cause du tout.
+      const causes = (f.events ?? [])
+        .filter((e: any) => Number(e.amount) < 0 && (!f.minWeek || e.date <= f.minWeek))
+        .sort((a: any, b: any) => Number(a.amount) - Number(b.amount))
+        .slice(0, 3)
+        .map((e: any) => ({ libelle: String(e.label ?? '').slice(0, 60), montant: round(e.amount) }));
+      push({
+        niveau: 'haute', categorie: 'previsionnel', titre: 'Trésorerie projetée négative',
+        detail: `Le solde projeté devient négatif${f.minWeek ? ` (semaine du ${f.minWeek})` : ''} sur les 13 prochaines semaines.`,
+        montant: round(f.minBalance), onglet: 'previsionnel',
+        causes: causes.length ? causes : undefined,
+      });
     }
   });
+
+  // 6) Fiabilité de l'assiette. Signalée en tête, et comme point à traiter :
+  // tant qu'elle n'est pas rétablie, les montants ci-dessus restent indicatifs.
+  const fiabilite = await verifierFiabilite(c, dossierId);
+  if (!fiabilite.fiable) {
+    push({
+      niveau: 'haute', categorie: 'fiabilite', titre: 'Comptabilité à fiabiliser avant de lire les montants',
+      detail: `${fiabilite.motifs[0]}${fiabilite.motifs.length > 1 ? `, et ${fiabilite.motifs.length - 1} autre(s) point(s)` : ''}. Les chiffres de cette veille en dépendent.`,
+      onglet: 'revision',
+    });
+  }
 
   items.sort((a, b) => RANK[a.niveau] - RANK[b.niveau] || (a.echeance ?? '').localeCompare(b.echeance ?? ''));
   const resume = {
@@ -97,23 +185,54 @@ export async function computeDigest(c: Client, dossierId: string, fiscalYearId?:
     info: items.filter((x) => x.niveau === 'info').length,
     total: items.length,
   };
-  return { resume, items };
+  return { resume, items, fiabilite };
 }
 
-// Calcule, enregistre, et pousse par email si demandé et si le canal existe.
-export async function runForDossier(c: Client, dossierId: string, opts: { notifyTo?: string } = {}): Promise<{
-  resume: any; items: Insight[]; notified: string | null;
+// L'objet doit porter le risque, pas son décompte. « 5 points à traiter » ne
+// dit rien ; « trésorerie à -735 683 » fait ouvrir le message.
+function objet(nom: string, items: Insight[], resume: any, cur: string): string {
+  const majeur = items.find((i) => i.niveau === 'haute') ?? items[0];
+  if (!majeur) return `Veille Nova — ${nom}`;
+  const chiffre = majeur.montant != null ? ` ${grp(majeur.montant)} ${cur}` : '';
+  const reste = resume.haute + resume.moyenne - 1;
+  return `Nova — ${majeur.titre}${chiffre}${reste > 0 ? ` (+${reste} autre${reste > 1 ? 's' : ''})` : ''} — ${nom}`;
+}
+
+// Faut-il écrire ce matin ? Un mail identique à celui d'hier n'est pas lu : il
+// apprend au destinataire à ne plus ouvrir les suivants. On n'écrit donc que
+// lorsque quelque chose a BOUGÉ — ou une fois par semaine, pour que le silence
+// ne se confonde pas avec une panne.
+export function doitEnvoyer(items: Insight[], resolus: Insight[], jour = new Date()): { envoyer: boolean; motif: string } {
+  const aTraiter = items.filter((i) => i.niveau !== 'info');
+  if (aTraiter.length === 0 && resolus.length === 0) return { envoyer: false, motif: 'rien à signaler' };
+  const bouge = aTraiter.filter((i) => i.etat === 'nouveau' || i.etat === 'aggrave');
+  if (bouge.length > 0) return { envoyer: true, motif: `${bouge.length} point(s) nouveau(x) ou aggravé(s)` };
+  if (resolus.length > 0) return { envoyer: true, motif: `${resolus.length} point(s) résolu(s)` };
+  if (jour.getDay() === 1) return { envoyer: true, motif: 'récapitulatif hebdomadaire' };
+  return { envoyer: false, motif: 'situation inchangée depuis hier' };
+}
+
+// Calcule, compare au précédent, enregistre, et n'écrit que si ça vaut la peine.
+export async function runForDossier(c: Client, dossierId: string, opts: { notifyTo?: string; forcerEnvoi?: boolean } = {}): Promise<{
+  resume: any; items: Insight[]; resolus: Insight[]; fiabilite: Fiabilite; notified: string | null; motif: string;
 }> {
-  const { resume, items } = await computeDigest(c, dossierId);
+  const brut = await computeDigest(c, dossierId);
+  const precedent = await latestDigest(c, dossierId);
+  const { items, resolus } = comparer(brut.items, (precedent?.items as Insight[]) ?? []);
+  const { resume, fiabilite } = brut;
+
   const { rows: dr } = await c.query('select raison_sociale, base_currency from dossiers where id=$1', [dossierId]);
   const nom = dr[0]?.raison_sociale ?? 'votre dossier';
   const cur = dr[0]?.base_currency ?? 'XOF';
 
+  const decision = doitEnvoyer(items, resolus);
   let notified: string | null = null;
-  // On n'écrit un email que s'il y a quelque chose à dire : pas de bruit.
-  if (opts.notifyTo && emailEnabled() && (resume.haute + resume.moyenne) > 0) {
+  if (opts.notifyTo && emailEnabled() && (decision.envoyer || opts.forcerEnvoi)) {
     try {
-      await sendEmail({ to: opts.notifyTo, subject: `Veille Nova — ${nom} : ${resume.haute + resume.moyenne} point(s) à traiter`, html: digestHtml(nom, resume, items, cur) });
+      await sendEmail({
+        to: opts.notifyTo, subject: objet(nom, items, resume, cur),
+        html: digestHtml(nom, resume, items, cur, { resolus, fiabilite }),
+      });
       notified = opts.notifyTo;
     } catch { /* l'échec d'envoi ne doit pas perdre le digest */ }
   }
@@ -121,7 +240,7 @@ export async function runForDossier(c: Client, dossierId: string, opts: { notify
   await c.query(
     'insert into agent_insights(dossier_id, resume, items, notified_to) values ($1,$2::jsonb,$3::jsonb,$4)',
     [dossierId, JSON.stringify(resume), JSON.stringify(items), notified]);
-  return { resume, items, notified };
+  return { resume, items, resolus, fiabilite, notified, motif: decision.motif };
 }
 
 export async function latestDigest(c: Client, dossierId: string): Promise<any | null> {
@@ -144,21 +263,68 @@ const esc = (s: string) => String(s ?? '').replace(/[&<>]/g, (ch) => ({ '&': '&a
 const grp = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 const COLOR: Record<Niveau, string> = { haute: '#e11d48', moyenne: '#b45309', info: '#0369a1' };
 
-export function digestHtml(nom: string, resume: any, items: Insight[], cur: string): string {
+// Ce que l'état vaut à l'œil : c'est la première chose que le lecteur cherche
+// après trois jours d'abonnement — « qu'est-ce qui a changé depuis hier ».
+const ETAT_LIB: Record<Etat, { texte: string; couleur: string }> = {
+  nouveau: { texte: 'NOUVEAU', couleur: '#b91c1c' },
+  aggrave: { texte: 'AGGRAVÉ', couleur: '#c2410c' },
+  ameliore: { texte: 'EN AMÉLIORATION', couleur: '#047857' },
+  stable: { texte: 'déjà signalé', couleur: '#71717a' },
+  resolu: { texte: 'RÉSOLU', couleur: '#047857' },
+};
+
+export function digestHtml(
+  nom: string, resume: any, items: Insight[], cur: string,
+  extra: { resolus?: Insight[]; fiabilite?: Fiabilite } = {},
+): string {
+  const montant = (n?: number) => (n != null ? `${grp(n)} ${cur}` : '');
+  const badge = (i: Insight) => {
+    if (!i.etat) return '';
+    const e = ETAT_LIB[i.etat];
+    const delta = i.variation && Math.abs(i.variation) > 0.5
+      ? ` de ${grp(Math.abs(i.variation))} ${cur}` : '';
+    return `<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:9px;background:${e.couleur}1a;color:${e.couleur};font-size:11px;font-weight:600">${e.texte}${i.etat === 'aggrave' || i.etat === 'ameliore' ? delta : ''}</span>`;
+  };
   const ligne = (i: Insight) => `<tr>
-    <td style="padding:6px 10px;border-bottom:1px solid #eee;white-space:nowrap;color:${COLOR[i.niveau]};font-weight:600;font-size:12px">${i.niveau.toUpperCase()}</td>
+    <td style="padding:6px 10px;border-bottom:1px solid #eee;white-space:nowrap;color:${COLOR[i.niveau]};font-weight:600;font-size:12px;vertical-align:top">${i.niveau.toUpperCase()}</td>
     <td style="padding:6px 10px;border-bottom:1px solid #eee">
-      <div style="font-weight:600;color:#111">${esc(i.titre)}</div>
+      <div style="font-weight:600;color:#111">${esc(i.titre)}${badge(i)}</div>
       ${i.detail ? `<div style="color:#555;font-size:13px">${esc(i.detail)}</div>` : ''}
       ${i.echeance ? `<div style="color:#777;font-size:12px">Échéance : ${esc(i.echeance)}</div>` : ''}
+      ${i.causes?.length ? `<div style="color:#777;font-size:12px;margin-top:3px">Ce qui pèse le plus : ${i.causes.map((x) => `${esc(x.libelle)} (${montant(x.montant)})`).join(' · ')}</div>` : ''}
     </td>
-    <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-family:monospace">${i.montant != null ? `${grp(i.montant)} ${cur}` : ''}</td>
+    <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-family:monospace;vertical-align:top">${montant(i.montant)}</td>
   </tr>`;
+
   const top = items.filter((i) => i.niveau !== 'info').slice(0, 15);
+  const nouveaux = top.filter((i) => i.etat === 'nouveau' || i.etat === 'aggrave').length;
+  const resolus = extra.resolus ?? [];
+  const f = extra.fiabilite;
+
+  // Le bandeau de fiabilité passe AVANT les chiffres : annoncer un point bas au
+  // franc près sur une comptabilité douteuse, c'est prêter à des montants faux
+  // l'autorité de la précision.
+  const bandeau = f && !f.fiable
+    ? `<div style="border:1px solid #fbbf24;background:#fffbeb;border-radius:8px;padding:10px 12px;margin:0 0 14px">
+         <div style="font-weight:600;color:#92400e">Chiffres à prendre avec réserve</div>
+         <div style="color:#92400e;font-size:13px">${esc(f.motifs.slice(0, 3).join(' ; '))}. Les montants ci-dessous en dépendent — à fiabiliser dans l'onglet Révision.</div>
+       </div>` : '';
+
+  const blocResolus = resolus.length
+    ? `<p style="color:#047857;font-size:13px;margin-top:14px">Réglé depuis hier : ${resolus.slice(0, 5).map((r) => esc(r.titre)).join(' · ')}${resolus.length > 5 ? ` (+${resolus.length - 5})` : ''}.</p>`
+    : '';
+
+  const chapeau = nouveaux > 0
+    ? `${nouveaux} point(s) nouveau(x) ou aggravé(s) depuis hier, sur ${resume.haute} prioritaire(s) et ${resume.moyenne} à surveiller.`
+    : `Rien de nouveau depuis hier : ${resume.haute} point(s) prioritaire(s) et ${resume.moyenne} à surveiller, déjà signalés.`;
+
+  const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#18181b">
     <h2 style="color:#047857;margin:0 0 4px">Veille de Lexa — ${esc(nom)}</h2>
-    <p style="color:#555;margin:0 0 14px">${resume.haute} point(s) prioritaire(s), ${resume.moyenne} à surveiller.</p>
+    <p style="color:#555;margin:0 0 14px">${chapeau}</p>
+    ${bandeau}
     <table style="border-collapse:collapse;width:100%">${top.map(ligne).join('')}</table>
-    <p style="color:#888;font-size:12px;margin-top:16px">Analyse automatique produite à partir de votre comptabilité. Lexa signale, elle ne comptabilise rien d'elle-même. Ouvrez Nova pour traiter ces points.</p>
+    ${blocResolus}
+    <p style="color:#888;font-size:12px;margin-top:16px">Analyse produite le ${date} à partir des écritures comptabilisées. Lexa signale, elle ne comptabilise rien d'elle-même. Ouvrez Nova pour traiter ces points.</p>
   </div>`;
 }

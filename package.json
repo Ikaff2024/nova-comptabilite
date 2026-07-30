@@ -21,6 +21,7 @@
     "test:production-immo": "tsx server/integration-test-production-immobilisee.ts",
     "test:bornes": "tsx server/integration-test-bornes.ts",
     "test:reclassement": "tsx server/integration-test-reclassement.ts",
+    "test:veille": "tsx server/veille.test.ts",
     "test:payroll": "tsx server/payroll/core/run-tests.ts"
   },
   "dependencies": {
