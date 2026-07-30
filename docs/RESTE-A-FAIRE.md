@@ -48,7 +48,7 @@ Trois options, jamais arbitrées :
 3. **On s'arrête là.**
 
 C'est un Journal Officiel vendu 20 000 FCFA : la question est autant juridique
-que technique. Sans arbitrage, le point 2.6 ci-dessous reste bloqué.
+que technique. Sans arbitrage, le point 2.7 ci-dessous reste bloqué.
 
 ---
 
@@ -86,23 +86,64 @@ quand le commercial a son propre périmètre.
 période de référence, et le calcul rendu **explicable** — « 3 % de 12 400 000
 encaissés sur la section ABIDJAN » — plutôt qu'un montant sorti de nulle part.
 
+Le vendeur appartient à la **facture**, pas à la ligne d'écriture — même le jour
+où Nova aura plusieurs axes analytiques (2.4). Trois raisons : une commission se
+calcule net des **avoirs**, et un avoir est un document qui doit annuler la
+commission de la facture d'origine, lien qu'une ligne comptable ne porte pas ; la
+justification attendue sur le bulletin est la **liste des factures**, pas une
+somme ; et le vendeur est connu à l'**émission** de la facture, par le commercial,
+alors que l'axe analytique se renseigne à la comptabilisation, souvent plus tard
+et par quelqu'un d'autre.
+
 Attention : commission sur CA facturé ou sur CA encaissé ? Les deux se
 pratiquent, la seconde protège la trésorerie. À rendre paramétrable.
 
-### 2.4 Réaffectation en masse des écritures mal rattachées
+### 2.4 Plusieurs axes analytiques
+
+Nova n'en a **qu'un** : `entry_lines.analytic_axis`, une colonne texte. Une
+entreprise qui suit ses agences ne peut donc pas suivre en plus ses chantiers ou
+ses activités — sauf à encoder les combinaisons dans le code de section
+(`ABIDJAN-NOVA`), ce qui explose en nombre et interdit toute agrégation par une
+seule dimension.
+
+Conception retenue :
+
+- une table `analytic_axes` par dossier — « Activité », « Agence », « Chantier ».
+  La plupart n'en déclareront qu'un ;
+- `analytic_sections` gagne son axe ; les sections existantes basculent sur un
+  axe par défaut ;
+- le lien ligne ↔ valeurs passe par une table de jointure, **pas** par des
+  colonnes supplémentaires : sinon le nombre d'axes est plafonné par le schéma ;
+- `entry_lines.analytic_axis` demeure comme axe principal, pour que tout
+  l'existant continue de fonctionner sans réécriture. Les axes suivants
+  s'ajoutent.
+
+Portée : dix-sept fichiers lisent ou écrivent l'axe, plus le déclencheur SQL de
+contre-passation qui le recopie. C'est un changement de structure du grand livre
+— il mérite sa propre passe, pas d'être glissé entre deux fonctionnalités.
+
+Question à trancher avant de commencer : **une ligne peut-elle être ventilée
+entre plusieurs valeurs d'un même axe** (60 % agence A, 40 % agence B) ? Je
+commencerais par non — une valeur par axe et par ligne — car la ventilation au
+pourcentage double la complexité de tous les états analytiques.
+
+À noter : cela ne change rien à la commission des vendeurs (2.3). Le vendeur
+appartient à la **facture**, pas à la ligne d'écriture — voir l'argument là-bas.
+
+### 2.5 Réaffectation en masse des écritures mal rattachées
 
 Le redressement **une par une** existe (Révision → Préparer, ou l'outil
 `reaffecter_exercice` de Lexa). Sur quinze écritures ou plus, il faut un écran de
 sélection avec l'aperçu de l'impact sur les **deux** exercices avant validation.
 
-### 2.5 Rattachement analytique d'une immobilisation acquise
+### 2.6 Rattachement analytique d'une immobilisation acquise
 
 La route existe (`PATCH /assets/:id/analytic`) et l'immobilisation produite en
 interne hérite de son chantier. Mais **aucun écran** ne permet de rattacher une
 immobilisation achetée à une activité — donc la rentabilité par activité ignore
 l'investissement des activités qui n'ont pas été construites en interne.
 
-### 2.6 Doctrine SYSCOHADA accessible à Lexa
+### 2.7 Doctrine SYSCOHADA accessible à Lexa
 
 Dépend de 1.3. Ordre de valeur retenu, à rebours de l'intuition première :
 
