@@ -130,33 +130,21 @@ la fiscalité ivoirienne à partir d'un texte OHADA.
 
 ## 3. Dettes repérées en chemin
 
-### 3.1 L'alerte « brouillons à valider » pointe au mauvais endroit
-
-Le tableau de bord renvoie vers l'onglet **Saisie**, où rien ne les affiche. Les
-brouillons vivent dans **Révision**. Une ligne à changer.
-
-### 3.2 Un diagnostic mal posé dans la veille
-
-« Masse salariale brute vs compte 661 » avec bulletins à **0** n'est pas un
-écart : c'est « aucun bulletin n'a été saisi ». Le libellé n'est pas seulement
-technique, le diagnostic est faux. À corriger dans le module de cohérence, pas
-dans le mail.
-
-### 3.3 Registre de la veille adapté au destinataire
+### 3.1 Registre de la veille adapté au destinataire
 
 Nova est vendue aux cabinets **et** aux PME. Le même mail part à un comptable et
 à un dirigeant. Lexa adapte déjà son registre à son interlocuteur dans le chat ;
 le mail devrait faire pareil — Nova connaît le rôle du destinataire. Adapter, pas
 niveler : « compte 661 » a du sens pour un comptable.
 
-### 3.4 Les quinze écritures d'IKAFFANAN
+### 3.2 Les quinze écritures d'IKAFFANAN
 
 Toujours rattachées à l'exercice 2025 alors qu'elles sont datées de juillet 2026.
 Le diagnostic les nomme (journaux et origines), la préparation du redressement
 existe. Reste à les traiter — c'est une décision comptable, pas une correction
 technique : réaffecter change le résultat de deux exercices.
 
-### 3.5 Configuration d'IKAFFANAN
+### 3.3 Configuration d'IKAFFANAN
 
 Sections analytiques par produit, chantiers de production interne, capitalisation
 de fin d'exercice. Ne peut pas se faire sans accès à la base de production, et ne
@@ -164,12 +152,12 @@ doit pas se faire sans décision sur la quote-part de salaire par produit — c'
 elle qui porte l'essentiel du montant capitalisable, et elle doit être
 justifiable.
 
-### 3.6 Mail d'accueil à l'inscription
+### 3.4 Mail d'accueil à l'inscription
 
 Un email de bienvenue automatique à chaque nouveau cabinet ou PME. Repéré de
 longue date, jamais urgent.
 
-### 3.7 Matrice rôle × action agentique
+### 3.5 Matrice rôle × action agentique
 
 Quels profils peuvent déclencher quelles actions de Lexa. Le gating par palier
 (`readonly` / `assist` / `assist_plus`) existe ; la matrice par rôle

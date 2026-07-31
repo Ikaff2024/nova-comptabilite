@@ -125,7 +125,9 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
 
   // --- Alertes ---
   const alerts: { level: 'info' | 'warn'; message: string; tab?: string }[] = [];
-  if (drafts > 0) alerts.push({ level: 'warn', message: `${drafts} écriture(s) en brouillon à valider`, tab: 'saisie' });
+  // Les brouillons se valident dans Révision, pas dans Saisie — l'onglet Saisie
+  // sert à créer une écriture, il n'affiche pas celles qui attendent.
+  if (drafts > 0) alerts.push({ level: 'warn', message: `${drafts} écriture(s) en brouillon à valider`, tab: 'revision' });
   if (vat.netDue > 0) alerts.push({ level: 'warn', message: `TVA à déclarer ce mois : ${Math.round(vat.netDue)}`, tab: 'fiscalite' });
   if (assetsPending > 0) alerts.push({ level: 'info', message: `${assetsPending} immobilisation(s) avec dotation en attente`, tab: 'immos' });
   if (overdue90 > 0) alerts.push({ level: 'warn', message: `Créances de plus de 90 jours : ${Math.round(overdue90)}`, tab: 'tiers' });

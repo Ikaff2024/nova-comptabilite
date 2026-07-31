@@ -56,16 +56,27 @@ export async function globalCoherence(c: Client, dossierId: string, fiscalYearId
   const brutCompta = round(balPrefix('661'));
   if (brutPaie > 0 || brutCompta > 0) {
     let niveau: Niveau = 'ok';
+    let libelle = 'Masse salariale brute vs compte 661';
     let expl = 'La masse salariale brute des bulletins correspond aux rémunérations comptabilisées (661).';
     if (brutPaie > 0 && brutCompta === 0) { niveau = 'haute'; expl = `Des bulletins existent (masse brute ${brutPaie}) mais aucune rémunération n'est comptabilisée en 661 : l'OD de paie n'a pas été passée.`; }
+    // Aucun bulletin en face d'un 661 mouvementé n'est PAS un écart : c'est une
+    // paie tenue hors de Nova. Annoncer « écart » ici, c'est poser un mauvais
+    // diagnostic — et le lecteur cherchera une erreur qui n'existe pas.
+    else if (brutPaie === 0) {
+      niveau = 'info';
+      libelle = 'Paie tenue hors de Nova';
+      expl = `Les rémunérations sont comptabilisées en 661 (${brutCompta}) sans aucun bulletin dans le module Paie : la paie est tenue ailleurs, ou les bulletins de l'exercice ${exercice ?? annee} n'ont pas été saisis. Rien à corriger si c'est voulu — mais le rapprochement paie ↔ comptabilité reste alors impossible.`;
+    }
     else if (Math.abs(brutCompta - brutPaie) > tol(brutPaie)) { niveau = 'moyenne'; expl = `Écart entre la masse salariale des bulletins (${brutPaie}) et le compte 661 (${brutCompta}) : paie partiellement comptabilisée ou écriture manuelle divergente.`; }
-    add({ module: 'Paie ↔ Comptabilité', regle: 'masse_salariale_661', libelle: 'Masse salariale brute vs compte 661', attendu: brutPaie, constate: brutCompta, niveau, explication: expl });
+    add({ module: 'Paie ↔ Comptabilité', regle: 'masse_salariale_661', libelle, attendu: brutPaie, constate: brutCompta, niveau, explication: expl });
   }
 
   // --- Paie ↔ Comptabilité : charges patronales (664) ----------------------
   const cnpsPat = round(py?.totals?.cnpsPatronal ?? 0);
   const compta664 = round(balPrefix('664'));
-  if (cnpsPat > 0 || compta664 > 0) {
+  // Sans aucun bulletin, ce contrôle n'a rien à dire de plus que celui du 661 :
+  // on ne répète pas le même constat sous un deuxième libellé.
+  if (brutPaie > 0 && (cnpsPat > 0 || compta664 > 0)) {
     let niveau: Niveau = 'ok';
     let expl = 'Les charges sociales patronales des bulletins correspondent au compte 664.';
     if (cnpsPat > 0 && compta664 === 0) { niveau = 'moyenne'; expl = `Charges sociales patronales des bulletins (${cnpsPat}) non comptabilisées en 664.`; }
