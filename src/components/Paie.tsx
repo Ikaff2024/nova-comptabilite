@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock, Send, AlertTriangle } from 'lucide-react';
+import { Loader2, Plus, Trash2, Pencil, Play, BookCheck, Users, ChevronRight, CheckCircle2, Printer, FileText, Banknote, ShieldCheck, CalendarClock, Lock, Unlock, Send, AlertTriangle, Upload } from 'lucide-react';
 import { api, fmtMoney, downloadAuthed, RUPTURE_LABELS, type PayrollEmployee, type Payslip, type PayrollAbsence, type PayrollAdvance, type PayrollTimeEntry, type RuptureType, type StcResult, type PayrollYear, type ValidationReport, type RhAnalysis, type RhAlerts, type BaremeAudit, type BaremePeriod, type OfficialExport } from '../lib/api';
 import { printDocument, nowStamp, downloadCsv } from '../lib/export';
 import { cn } from '../lib/utils';
 import AqmReportCard from './AqmReportCard';
 import CongesPanel from './CongesPanel';
+import PaieVariable, { ImportPointage } from './PaieVariable';
 
 const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
 const CATEGORIES = ['Ouvrier', 'Employe', 'Agent de Maitrise', 'Cadre'];
@@ -30,7 +31,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
   const [busy, setBusy] = useState<string | null>(null);
   const [declReport, setDeclReport] = useState<ValidationReport | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [sub, setSub] = useState<'paie' | 'analyse' | 'conges' | 'pointage' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
+  const [sub, setSub] = useState<'paie' | 'analyse' | 'conges' | 'pointage' | 'variable' | 'absences' | 'avances' | 'stc' | 'declarations'>('paie');
 
   // Formulaire salarié
   const [showForm, setShowForm] = useState(false);
@@ -195,7 +196,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
 
       <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-sm">
-        {([['paie', 'Bulletins & salariés'], ['analyse', 'Analyse RH'], ['conges', 'Congés'], ['pointage', 'Pointage'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte'], ['declarations', 'Déclarations']] as const).map(([k, label]) => (
+        {([['paie', 'Bulletins & salariés'], ['analyse', 'Analyse RH'], ['conges', 'Congés'], ['pointage', 'Pointage'], ['variable', 'Tâches & commissions'], ['absences', 'Absences'], ['avances', 'Avances & prêts'], ['stc', 'Solde de tout compte'], ['declarations', 'Déclarations']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setSub(k)}
             className={cn('rounded-lg px-3.5 py-1.5 font-medium transition-colors', sub === k ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
             {label}
@@ -413,6 +414,7 @@ export default function Paie({ dossierId, dossierName, currency }: { dossierId: 
       {sub === 'analyse' && <RhAnalysisPanel dossierId={dossierId} year={year} month={month} currency={currency} />}
       {sub === 'conges' && <CongesPanel dossierId={dossierId} employees={employees} />}
       {sub === 'pointage' && <TimePanel dossierId={dossierId} employees={employees} />}
+      {sub === 'variable' && <PaieVariable dossierId={dossierId} employees={employees} year={year} month={month} currency={currency} onChanged={loadPayslips} />}
       {sub === 'absences' && <AbsencesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'avances' && <AdvancesPanel dossierId={dossierId} employees={employees} currency={currency} />}
       {sub === 'stc' && <StcPanel dossierId={dossierId} dossierName={dossierName} employees={employees} currency={currency} />}
@@ -624,6 +626,8 @@ function TimePanel({ dossierId, employees }: { dossierId: string; employees: Pay
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   const empty = { employeeId: '', jour: today, heuresJour: 8, heuresNuit: 0, ferie: false };
   const [f, setForm] = useState<any>(empty);
@@ -644,10 +648,19 @@ function TimePanel({ dossierId, employees }: { dossierId: string; employees: Pay
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium text-zinc-200">Pointage ({rows.length})</div>
-        <button onClick={() => { setForm(empty); setShowForm((v) => !v); }} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Jour pointé</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowImport((v) => !v)} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10"><Upload className="h-4 w-4" /> Importer un fichier</button>
+          <button onClick={() => { setForm(empty); setShowForm((v) => !v); }} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Jour pointé</button>
+        </div>
       </div>
       <p className="text-xs text-zinc-500">Les heures au-delà de la durée normale sont <strong>ventilées automatiquement</strong> au calcul de paie : 15/50 % le jour, 75 % la nuit, 100 % le dimanche ou un jour férié.</p>
       {err && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{err}</p>}
+      {msg && <p className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300"><CheckCircle2 className="h-4 w-4" /> {msg}</p>}
+
+      {showImport && (
+        <ImportPointage dossierId={dossierId} onError={(s) => setErr(s || null)}
+          onDone={async (t) => { setMsg(t); setShowImport(false); await load(); }} />
+      )}
 
       {showForm && (
         <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -22,6 +22,7 @@
     "test:bornes": "tsx server/integration-test-bornes.ts",
     "test:reclassement": "tsx server/integration-test-reclassement.ts",
     "test:veille": "tsx server/veille.test.ts",
+    "test:paie-variable": "tsx server/integration-test-paie-variable.ts",
     "test:payroll": "tsx server/payroll/core/run-tests.ts"
   },
   "dependencies": {

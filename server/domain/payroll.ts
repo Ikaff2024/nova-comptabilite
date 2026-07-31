@@ -1,4 +1,5 @@
 import type { Client } from '../db.js';
+import { variableParSalarie } from './payrollvariable.js';
 import { calculatePayroll, getMonthName, unpaidAbsenceDaysInMonth, advanceDeductionForMonth, advanceRemaining, resolveRuleSet, ventilateOvertime, computeSTC, referenceSalaryFromPayslips, type Employee, type MonthlyVariables, type Absence, type SalaryAdvance, type TimeEntry, type STCInput } from '../payroll/core/index.js';
 import { postPayrollEntry } from '../payroll/bridge.js';
 import { buildCnpsTable, buildEtat301Table, buildFudpItsTable, officialFilename, type ExportTable, type SlipRow } from '../payroll/official-exports.js';
@@ -135,6 +136,9 @@ export async function runPayroll(
   const timeByEmp = new Map<string, TimeEntry[]>();
   for (const r of timeRows) { const t = toTimeEntry(r); (timeByEmp.get(t.employeeId) ?? timeByEmp.set(t.employeeId, []).get(t.employeeId)!).push(t); }
   const ruleSet = resolveRuleSet(year, month, 'CI');
+  // Tâches et commissions du mois : leur montant s'ajoute au brut, leur base
+  // les justifie sur le bulletin.
+  const variableParEmp = await variableParSalarie(c, dossierId, year, month).catch(() => new Map());
 
   let totalBrut = 0, totalNet = 0, totalCout = 0, count = 0;
   for (const e of emps) {
@@ -144,8 +148,23 @@ export async function runPayroll(
       remboursementAvance: advanceDeductionForMonth(advByEmp.get(e.id) ?? [], year, month),
       heuresSup15: ot.hs15, heuresSup50: ot.hs50, heuresSup75: ot.hs75, heuresSup100: ot.hs100,
     };
-    // Les variables manuelles éventuelles priment sur le dérivé.
-    const v = zeroVars(e.id, year, month, { ...derived, ...(varsMap[e.id] ?? {}) });
+    // Les variables manuelles éventuelles priment sur le dérivé — SAUF la
+    // rémunération variable, qui s'AJOUTE. Elle a sa propre justification
+    // (quantité × prix unitaire, ou taux × chiffre d'affaires) : la laisser
+    // écraser par une prime saisie à la main la ferait disparaître du bulletin
+    // sans que personne ne s'en aperçoive.
+    //
+    // Elle transite par « primesExceptionnelles » afin que tous les calculs
+    // sociaux et fiscaux la prennent en compte, sans modifier le moteur de paie
+    // — qui est un portage d'IvoirePaie et doit rester synchronisable. Le détail
+    // ligne à ligne voyage à côté, pour le bulletin.
+    const manuel = varsMap[e.id] ?? {};
+    const varia = variableParEmp.get(e.id);
+    const v = zeroVars(e.id, year, month, {
+      ...derived, ...manuel,
+      primesExceptionnelles: num(manuel.primesExceptionnelles ?? derived.primesExceptionnelles ?? 0) + (varia?.total ?? 0),
+    });
+    if (varia?.detail?.length) (v as any).detailVariable = varia.detail;
     const calc = calculatePayroll(toEmployee(e), v, 'CI');
     // On horodate la VERSION du jeu de règles utilisé : c'est ce qui permet de
     // repérer plus tard les bulletins calculés avec un barème périmé (baremeAudit).
@@ -163,14 +182,20 @@ export async function runPayroll(
 
 export async function listPayslips(c: Client, dossierId: string, year: number, month: number): Promise<any[]> {
   const { rows } = await c.query(
-    `select p.id, p.employee_id, e.matricule, e.nom, e.prenoms, p.calculation, p.entry_id
+    `select p.id, p.employee_id, e.matricule, e.nom, e.prenoms, p.calculation, p.variables, p.entry_id
        from payroll_payslips p join payroll_employees e on e.id=p.employee_id
       where p.dossier_id=$1 and p.period_year=$2 and p.period_month=$3
       order by e.nom, e.prenoms`, [dossierId, year, month]);
   return rows.map((r: any) => ({
     id: r.id, employeeId: r.employee_id, matricule: r.matricule, nom: r.nom, prenoms: r.prenoms,
     brut: r.calculation.salaireBrutTotal, net: r.calculation.salaireNetPaye, cout: r.calculation.totalCoutEmployeur,
-    calculation: r.calculation, comptabilise: !!r.entry_id, entryId: r.entry_id,
+    calculation: r.calculation,
+    // Les variables du mois accompagnent le bulletin : c'est là que vit la
+    // justification d'une rémunération variable (quantité × prix unitaire,
+    // taux × chiffre d'affaires). Un montant sans sa base n'est pas défendable.
+    variables: r.variables ?? {},
+    remunerationVariable: Array.isArray(r.variables?.detailVariable) ? r.variables.detailVariable : [],
+    comptabilise: !!r.entry_id, entryId: r.entry_id,
   }));
 }
 

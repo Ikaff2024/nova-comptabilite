@@ -74,6 +74,7 @@ import * as relances from './domain/relances.js';
 import * as officiels from './domain/etats-officiels.js';
 import * as wip from './domain/assetswip.js';
 import * as reclass from './domain/reclassement.js';
+import * as pvar from './domain/payrollvariable.js';
 import * as rentab from './domain/rentabilite.js';
 
 // ============================================================================
@@ -1937,6 +1938,46 @@ export function createApi() {
     await withUser(userId, (c) => payroll.deleteTimeEntry(c, req.params.id, req.params.tid));
     res.status(204).end();
   }));
+  // RH : import du pointage (analyse puis validation, comme les autres imports)
+  app.post('/api/dossiers/:id/payroll/time/analyze', h(async (req, res) => {
+    const userId = requireUser(req);
+    const csv = String(req.body?.csv ?? '');
+    if (!csv.trim()) { const e: any = new Error('Fichier vide.'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => pvar.analyserPointage(c, req.params.id, csv)));
+  }));
+  app.post('/api/dossiers/:id/payroll/time/import', h(async (req, res) => {
+    const userId = requireUser(req);
+    const csv = String(req.body?.csv ?? '');
+    if (!csv.trim()) { const e: any = new Error('Fichier vide.'); e.status = 400; throw e; }
+    res.status(201).json(await withUser(userId, (c) => pvar.importerPointage(c, req.params.id, csv, userId)));
+  }));
+
+  // RH : rémunération variable du mois (tâches et commissions)
+  app.get('/api/dossiers/:id/payroll/variable', h(async (req, res) => {
+    const userId = requireUser(req);
+    const y = Number(req.query.year), m = Number(req.query.month);
+    if (!Number.isFinite(y) || !Number.isFinite(m)) { const e: any = new Error('year et month requis'); e.status = 400; throw e; }
+    res.json(await withUser(userId, (c) => pvar.listerElements(c, req.params.id, y, m)));
+  }));
+  app.post('/api/dossiers/:id/payroll/variable', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => pvar.ajouterElement(c, req.params.id, req.body ?? {}, userId)));
+  }));
+  app.delete('/api/dossiers/:id/payroll/variable/:vid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => pvar.supprimerElement(c, req.params.id, req.params.vid));
+    res.status(204).end();
+  }));
+  // Chiffre d'affaires d'un vendeur sur une période — l'assiette d'une commission,
+  // avec les factures qui la composent : un montant sans sa liste n'est pas défendable.
+  app.get('/api/dossiers/:id/payroll/ca-vendeur', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { employeeId, from, to } = req.query as any;
+    if (!employeeId || !from || !to) { const e: any = new Error('employeeId, from et to requis'); e.status = 400; throw e; }
+    const base = req.query.base === 'encaisse' ? 'encaisse' : 'facture';
+    res.json(await withUser(userId, (c) => pvar.caDuVendeur(c, req.params.id, String(employeeId), String(from), String(to), base)));
+  }));
+
   // RH : solde de tout compte (calcul à la demande)
   app.post('/api/dossiers/:id/payroll/stc', h(async (req, res) => {
     const userId = requireUser(req);

@@ -12,3 +12,8 @@ reference/
 
 # Fichiers de travail temporaires
 scratchpad/
+
+# Texte intégral du SYSCOHADA révisé : Journal Officiel de l'OHADA, document
+# payant. Tant que son statut n'est pas arbitré (docs/RESTE-A-FAIRE.md § 1.3),
+# il reste hors dépôt — on ne redistribue pas une publication vendue.
+SYSCOHADA_revise_2017*

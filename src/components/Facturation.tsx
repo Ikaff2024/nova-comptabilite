@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Loader2, Plus, Trash2, FileCheck2, Send, Printer, ShieldCheck, ArrowRightLeft, Undo2, FileClock, ReceiptText } from 'lucide-react';
-import { api, fmtMoney, type Invoice, type InvoiceLine, type InvoiceTemplate, type AnalyticSection, type CatalogItem, type ValidationReport } from '../lib/api';
+import { api, fmtMoney, type Invoice, type InvoiceLine, type InvoiceTemplate, type AnalyticSection, type CatalogItem, type ValidationReport, type PayrollEmployee } from '../lib/api';
 import { printDocument, printHtml, nowStamp } from '../lib/export';
 import { invoiceDocumentHtml } from '../lib/invoiceDoc';
 import { cn } from '../lib/utils';
@@ -37,10 +37,14 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
 
   const [sections, setSections] = useState<AnalyticSection[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  // Vendeurs : la liste des salariés. Le champ n'apparaît que s'il y en a — une
+  // entreprise sans paie n'a pas à voir un sélecteur qui ne lui sert à rien.
+  const [vendeurs, setVendeurs] = useState<PayrollEmployee[]>([]);
   const load = async () => { setLoading(true); try { setRows(await api.invoices(dossierId, docType)); } finally { setLoading(false); } };
   useEffect(() => { load(); setCreating(false); }, [dossierId, docType]);
   useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
   useEffect(() => { api.catalog(dossierId).then(setCatalog).catch(() => {}); }, [dossierId]);
+  useEffect(() => { api.payrollEmployees(dossierId).then(setVendeurs).catch(() => {}); }, [dossierId]);
 
   // Choix d'un article du catalogue → pré-remplit la ligne (désignation, prix, TVA, compte).
   const pickCatalog = (k: number, itemId: string) => {
@@ -53,6 +57,7 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [due, setDue] = useState('');
   const [template, setTemplate] = useState<InvoiceTemplate>('standard');
+  const [vendeurId, setVendeurId] = useState('');
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [checking, setChecking] = useState(false);
@@ -65,8 +70,8 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
     if (!client.trim()) { setError('Client requis'); return; }
     setBusy('create');
     try {
-      await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, template, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code, analytic_axis: l.analytic_axis || undefined })) });
-      setCreating(false); setClient(''); setDue(''); setLines([blankLine()]); setReport(null); await load();
+      await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, template, vendeurId: vendeurId || undefined, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code, analytic_axis: l.analytic_axis || undefined })) });
+      setCreating(false); setClient(''); setDue(''); setVendeurId(''); setLines([blankLine()]); setReport(null); await load();
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
 
@@ -116,6 +121,15 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
             <div className="sm:col-span-1"><label className="mb-1 block text-xs text-zinc-500">Client</label><input value={client} onChange={(e) => setClient(e.target.value)} placeholder="Raison sociale" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
             <div><label className="mb-1 block text-xs text-zinc-500">Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
             <div><label className="mb-1 block text-xs text-zinc-500">{docType === 'quote' ? 'Valable jusqu\'au' : 'Échéance'}</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>
+            {vendeurs.length > 0 && (
+              <div className="sm:col-span-3">
+                <label className="mb-1 block text-xs text-zinc-500">Vendeur <span className="text-zinc-600">— sert au calcul des commissions ; l'avoir en hérite</span></label>
+                <select value={vendeurId} onChange={(e) => setVendeurId(e.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50">
+                  <option value="">— aucun —</option>
+                  {vendeurs.map((v) => <option key={v.id} value={v.id}>{v.matricule} — {v.nom} {v.prenoms}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs text-zinc-500">Modèle de document (mise en forme à l'impression)</label>

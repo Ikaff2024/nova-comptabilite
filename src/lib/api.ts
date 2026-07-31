@@ -164,6 +164,35 @@ export interface Brouillon {
   lignes: { compte: string; intitule: string; debit: number; credit: number; libelle: string | null }[];
 }
 
+
+// Pointage importé en masse : l'analyse précède toujours la validation, et
+// chaque rejet dit pourquoi — un import muet oblige à deviner.
+export interface LignePointage {
+  ligne: number; matricule: string; jour: string;
+  heuresJour: number; heuresNuit: number; ferie: boolean;
+  employeeId?: string; nom?: string; erreur?: string;
+}
+export interface AnalysePointage {
+  lignes: LignePointage[]; valides: number; rejetees: number; remplacees: number;
+  totalHeures: number; periode: { debut: string; fin: string } | null;
+}
+
+// Rémunération variable : la BASE fait foi, le montant en dérive. C'est elle qui
+// rend le bulletin justifiable six mois plus tard.
+export interface ElementVariable {
+  id: string; employeeId: string; salarie: string; matricule: string;
+  type: 'tache' | 'commission'; libelle: string;
+  quantite: number | null; prixUnitaire: number | null;
+  taux: number | null; assiette: number | null;
+  baseCa?: 'facture' | 'encaisse';
+  periodeDebut?: string; periodeFin?: string;
+  montant: number; note: string | null; justification: string;
+}
+export interface CaVendeur {
+  total: number; base: 'facture' | 'encaisse';
+  factures: { id: string; numero: string; date: string; client: string | null; montant: number; sens: 'facture' | 'avoir' }[];
+}
+
 export interface AnomaliesExercices {
   chevauchements: { a: string; b: string; du: string; au: string }[];
   ecrituresHorsBornes: { exercice: string; bornes: string; nb: number; premiere: string; derniere: string; journaux: string[]; sources: string[] }[];
@@ -313,6 +342,7 @@ export interface FixedAssetDetail {
 export interface Invoice {
   id: string; number: string | null; client_name: string; invoice_date: string; status: string; doc_type: string;
   total_ht: number; total_tva: number; total_ttc: number; fne_status: string; fne_reference: string | null; currency: string; source_document_id?: string | null;
+  vendeur_id?: string | null;
 }
 export interface InvoiceLine { id?: string; line_no?: number; description: string; quantity: number; unit_price: number; vat_rate: number; account_code: string; analytic_axis?: string | null; amount_ht?: number; amount_tva?: number; }
 export type InvoiceTemplate = 'standard' | 'goods' | 'services';
@@ -624,6 +654,19 @@ export const api = {
     const s = q.toString();
     return req<BalanceRow[]>(`/api/dossiers/${dossierId}/trial-balance${s ? `?${s}` : ''}`);
   },
+  // --- Paie : pointage importé et rémunération variable ---
+  analyserPointage: (dossierId: string, csv: string) =>
+    req<AnalysePointage>(`/api/dossiers/${dossierId}/payroll/time/analyze`, { method: 'POST', body: JSON.stringify({ csv }) }),
+  importerPointage: (dossierId: string, csv: string) =>
+    req<{ importees: number; remplacees: number; rejetees: number }>(`/api/dossiers/${dossierId}/payroll/time/import`, { method: 'POST', body: JSON.stringify({ csv }) }),
+  elementsVariables: (dossierId: string, year: number, month: number) =>
+    req<ElementVariable[]>(`/api/dossiers/${dossierId}/payroll/variable?year=${year}&month=${month}`),
+  ajouterElementVariable: (dossierId: string, body: any) =>
+    req<{ id: string; montant: number; assiette?: number }>(`/api/dossiers/${dossierId}/payroll/variable`, { method: 'POST', body: JSON.stringify(body) }),
+  supprimerElementVariable: (dossierId: string, id: string) =>
+    req<void>(`/api/dossiers/${dossierId}/payroll/variable/${id}`, { method: 'DELETE' }),
+  caVendeur: (dossierId: string, employeeId: string, from: string, to: string, base: 'facture' | 'encaisse' = 'facture') =>
+    req<CaVendeur>(`/api/dossiers/${dossierId}/payroll/ca-vendeur?employeeId=${employeeId}&from=${from}&to=${to}&base=${base}`),
   reclassements: (dossierId: string, fiscalYearId?: string) =>
     req<CandidatReclassement[]>(`/api/dossiers/${dossierId}/reclassements${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
   preparerReclassement: (dossierId: string, body: { compteSource: string; compteCible: string; montant: number; date: string; motif: string; counterpartyId?: string }) =>
@@ -726,7 +769,7 @@ export const api = {
     req<{ entryId: string; vnc: number; plusValue: number; salePrice: number }>(`/api/dossiers/${dossierId}/assets/${aid}/dispose`, { method: 'POST', body: JSON.stringify(body) }),
   invoices: (dossierId: string, docType?: string, status?: string) => req<Invoice[]>(`/api/dossiers/${dossierId}/invoices?docType=${docType || 'invoice'}${status ? `&status=${status}` : ''}`),
   invoice: (dossierId: string, iid: string) => req<InvoiceDetail>(`/api/dossiers/${dossierId}/invoices/${iid}`),
-  createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; docType?: string; template?: InvoiceTemplate; lines: InvoiceLine[] }) =>
+  createInvoice: (dossierId: string, body: { clientName: string; invoiceDate: string; dueDate?: string; notes?: string; docType?: string; template?: InvoiceTemplate; vendeurId?: string; lines: InvoiceLine[] }) =>
     req<{ id: string }>(`/api/dossiers/${dossierId}/invoices`, { method: 'POST', body: JSON.stringify(body) }),
   convertQuote: (dossierId: string, iid: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/convert`, { method: 'POST', body: '{}' }),
   creditNoteFromInvoice: (dossierId: string, iid: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/invoices/${iid}/credit-note`, { method: 'POST', body: '{}' }),
