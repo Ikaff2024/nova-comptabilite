@@ -87,15 +87,18 @@ EXCEPTION WHEN others THEN
   RAISE NOTICE 'PASS 6 : suppression du posted rejetée.';
 END $$;
 
--- 7) Contre-passation : crée l'extourne et marque l'original 'reversed'
+-- 7) Contre-passation : crée l'extourne et marque l'original SANS le retirer
+-- des comptes. Les deux écritures restent 'posted' et s'annulent — une origine
+-- écartée du grand livre laisserait le compte au montant OPPOSÉ (défaut 0075).
 DO $$
-DECLARE v_e uuid; v_rev uuid; v_status entry_status;
+DECLARE v_e uuid; v_rev uuid; v_status entry_status; v_link uuid;
 BEGIN
   select id into v_e from entries where status='posted' and reverses_entry_id is null limit 1;
   v_rev := reverse_entry(v_e);
-  select status into v_status from entries where id=v_e;
-  IF v_status <> 'reversed' THEN RAISE EXCEPTION 'FAIL 7 : original non marqué reversed'; END IF;
-  RAISE NOTICE 'PASS 7 : contre-passation OK (original=reversed, extourne créée %).', left(v_rev::text,8);
+  select status, reversed_by_entry_id into v_status, v_link from entries where id=v_e;
+  IF v_status <> 'posted' THEN RAISE EXCEPTION 'FAIL 7 : origine retirée du grand livre (%)', v_status; END IF;
+  IF v_link IS DISTINCT FROM v_rev THEN RAISE EXCEPTION 'FAIL 7 : origine non marquée comme contre-passée'; END IF;
+  RAISE NOTICE 'PASS 7 : contre-passation OK (origine conservée et marquée, extourne %).', left(v_rev::text,8);
 END $$;
 
 -- 8) Balance : après vente + extourne, le solde net doit être nul

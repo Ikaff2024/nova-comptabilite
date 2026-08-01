@@ -4,12 +4,12 @@ import { api, fmtMoney, fetchDocumentUrl, downloadAuthed, type Journal, type Fis
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 
-interface Entry { entry_id: string; piece_ref: string | null; entry_date: string; entry_description: string; journal_code: string; document_url: string | null; lines: JournalLine[]; debit: number; credit: number; }
+interface Entry { entry_id: string; piece_ref: string | null; entry_date: string; entry_description: string; journal_code: string; document_url: string | null; is_reversed?: boolean; is_reversal?: boolean; lines: JournalLine[]; debit: number; credit: number; }
 
 function group(lines: JournalLine[]): Entry[] {
   const out: Entry[] = []; let cur: Entry | null = null;
   for (const l of lines) {
-    if (!cur || cur.entry_id !== l.entry_id) { cur = { entry_id: l.entry_id, piece_ref: l.piece_ref, entry_date: l.entry_date, entry_description: l.entry_description, journal_code: l.journal_code, document_url: l.document_url, lines: [], debit: 0, credit: 0 }; out.push(cur); }
+    if (!cur || cur.entry_id !== l.entry_id) { cur = { entry_id: l.entry_id, piece_ref: l.piece_ref, entry_date: l.entry_date, entry_description: l.entry_description, journal_code: l.journal_code, document_url: l.document_url, is_reversed: l.is_reversed, is_reversal: l.is_reversal, lines: [], debit: 0, credit: 0 }; out.push(cur); }
     cur.lines.push(l); cur.debit += l.debit; cur.credit += l.credit;
   }
   return out;
@@ -177,10 +177,13 @@ export default function Journaux({ dossierId, dossierName, currency, onCorrect }
           {entries.map((e) => (
             <div key={e.entry_id} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
               <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-2 text-sm">
-                <span className="font-mono text-emerald-400">{e.piece_ref}<span className="ml-3 font-sans text-zinc-400">{e.entry_date} · {e.entry_description}</span></span>
+                <span className="font-mono text-emerald-400">{e.piece_ref}<span className="ml-3 font-sans text-zinc-400">{e.entry_date} · {e.entry_description}</span>
+                  {/* Une écriture contre-passée reste au grand livre : elle se signale, elle ne se cache pas. */}
+                  {e.is_reversed && <span className="ml-2 rounded-md bg-amber-500/15 px-1.5 py-0.5 font-sans text-[10px] text-amber-300">contre-passée</span>}
+                </span>
                 <span className="flex items-center gap-3">
                   {e.document_url && <button onClick={() => openDocument(e.document_url!)} title="Voir la pièce jointe" className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300"><Paperclip className="h-3.5 w-3.5" /> pièce</button>}
-                  {!/^extourne/i.test(String(e.entry_description ?? '')) && (
+                  {!e.is_reversal && !e.is_reversed && (
                     <>
                       {onCorrect && <button onClick={() => correct(e)} disabled={acting === e.entry_id} title="Extourner puis corriger" className="text-xs text-amber-400 hover:text-amber-300 disabled:opacity-40">corriger</button>}
                       <button onClick={() => reverse(e)} disabled={acting === e.entry_id} title="Extourner (contre-passation)" className="flex items-center gap-1 text-xs text-zinc-400 hover:text-rose-400 disabled:opacity-40">{acting === e.entry_id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} extourner</button>

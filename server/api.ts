@@ -1600,14 +1600,36 @@ export function createApi() {
   }));
 
   // --- Comptabilité analytique ----------------------------------------------
+  // `axis` (id ou code) est facultatif partout : à défaut, l'axe principal —
+  // donc un client qui ignore les axes obtient exactement ce qu'il obtenait.
+  app.get('/api/dossiers/:id/analytic/axes', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => analytic.listAxes(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/analytic/axes', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { code, label } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => analytic.createAxe(c, req.params.id, code, label)));
+  }));
+  app.patch('/api/dossiers/:id/analytic/axes/:aid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => analytic.renameAxe(c, req.params.id, req.params.aid, (req.body ?? {}).label));
+    res.status(204).end();
+  }));
+  app.delete('/api/dossiers/:id/analytic/axes/:aid', h(async (req, res) => {
+    const userId = requireUser(req);
+    await withUser(userId, (c) => analytic.deleteAxe(c, req.params.id, req.params.aid));
+    res.status(204).end();
+  }));
   app.get('/api/dossiers/:id/analytic/sections', h(async (req, res) => {
     const userId = requireUser(req);
-    res.json(await withUser(userId, (c) => analytic.listSections(c, req.params.id)));
+    const axis = (req.query.axis as string) || undefined;
+    res.json(await withUser(userId, (c) => analytic.listSections(c, req.params.id, axis)));
   }));
   app.post('/api/dossiers/:id/analytic/sections', h(async (req, res) => {
     const userId = requireUser(req);
-    const { code, label } = req.body ?? {};
-    res.status(201).json(await withUser(userId, (c) => analytic.createSection(c, req.params.id, code, label)));
+    const { code, label, axis } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => analytic.createSection(c, req.params.id, code, label, axis)));
   }));
   app.delete('/api/dossiers/:id/analytic/sections/:sid', h(async (req, res) => {
     const userId = requireUser(req);
@@ -1617,18 +1639,41 @@ export function createApi() {
   app.get('/api/dossiers/:id/analytic/report', h(async (req, res) => {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
-    res.json(await withUser(userId, (c) => analytic.analyticReport(c, req.params.id, fy)));
+    const axis = (req.query.axis as string) || undefined;
+    res.json(await withUser(userId, (c) => analytic.analyticReport(c, req.params.id, fy, axis)));
   }));
   app.get('/api/dossiers/:id/analytic/detail', h(async (req, res) => {
     const userId = requireUser(req);
     const section = (req.query.section as string) || '—';
     const fy = (req.query.fiscalYearId as string) || undefined;
-    res.json(await withUser(userId, (c) => analytic.analyticDetail(c, req.params.id, section, fy)));
+    const axis = (req.query.axis as string) || undefined;
+    res.json(await withUser(userId, (c) => analytic.analyticDetail(c, req.params.id, section, fy, axis)));
   }));
   app.get('/api/dossiers/:id/analytic/monthly', h(async (req, res) => {
     const userId = requireUser(req);
     const fy = (req.query.fiscalYearId as string) || undefined;
-    res.json(await withUser(userId, (c) => analytic.analyticMonthly(c, req.params.id, fy)));
+    const axis = (req.query.axis as string) || undefined;
+    res.json(await withUser(userId, (c) => analytic.analyticMonthly(c, req.params.id, fy, axis)));
+  }));
+  app.get('/api/dossiers/:id/analytic/cross', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    const a = (req.query.axisA as string) || '';
+    const b = (req.query.axisB as string) || '';
+    if (!a || !b) throw new Error('Deux axes sont nécessaires pour un croisement.');
+    res.json(await withUser(userId, (c) => analytic.analyticCross(c, req.params.id, a, b, fy)));
+  }));
+  // Ventilation d'une ligne d'écriture sur un axe SECONDAIRE (l'axe principal se
+  // renseigne avec la ligne elle-même, à la saisie).
+  app.put('/api/dossiers/:id/analytic/line/:lineId', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { axis, section } = req.body ?? {};
+    await withUser(userId, (c) => analytic.setLineAxis(c, req.params.id, req.params.lineId, axis, section || null));
+    res.status(204).end();
+  }));
+  app.get('/api/dossiers/:id/analytic/entry/:entryId', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => analytic.entryAxes(c, req.params.id, req.params.entryId)));
   }));
 
   // --- Assistant comptable agentique (lecture seule) -------------------------

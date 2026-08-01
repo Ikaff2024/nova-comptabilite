@@ -30,7 +30,15 @@ export interface EntryLineInput {
   paymentChannel?: PaymentChannel;
   counterpartyId?: string;
   taxCodeId?: string;
+  /** Section de l'axe analytique PRINCIPAL (colonne historique). */
   analyticAxis?: string;
+  /**
+   * Sections des axes SECONDAIRES : { CODE_AXE: CODE_SECTION }. Facultatif —
+   * un dossier mono-axe n'a jamais à le renseigner. Un axe ou une section
+   * inconnus font échouer l'écriture entière : une ventilation silencieusement
+   * perdue vaut moins qu'une saisie refusée.
+   */
+  axes?: Record<string, string>;
   externalRef?: string;
   /** Date d'origine de la pièce (reprise d'antériorité) — sert à l'ancienneté. */
   operationDate?: string;
@@ -474,16 +482,32 @@ export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id:
     if (!counterpartyId && input.counterpartyName && isCollective(l.accountCode, acc.collective)) {
       counterpartyId = await resolveCounterparty(c, input.dossierId, input.counterpartyName, tiersTypeForCode(l.accountCode));
     }
-    await c.query(
+    const { rows: lr } = await c.query(
       `insert into entry_lines(entry_id, dossier_id, account_id, line_no, amount_debit, amount_credit,
                                label, payment_channel, counterparty_id, tax_code_id, analytic_axis, external_ref, operation_date)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
       [
         entryId, input.dossierId, acc.id, lineNo++,
         l.debit ?? 0, l.credit ?? 0, l.label ?? null, l.paymentChannel ?? 'none',
         counterpartyId, l.taxCodeId ?? null, l.analyticAxis ?? null, l.externalRef ?? null, l.operationDate ?? null,
       ],
     );
+    // Axes secondaires. Résolus par CODE, et refusés s'ils ne correspondent à
+    // rien : une section rattachée au mauvais axe fausserait un état sans jamais
+    // le dire.
+    for (const [axeCode, sectionCode] of Object.entries(l.axes ?? {})) {
+      if (!sectionCode) continue;
+      const { rows: ax } = await c.query(
+        `select s.id from analytic_sections s join analytic_axes a on a.id = s.axis_id
+          where s.dossier_id=$1 and a.code=$2 and s.code=$3 and not a.is_primary`,
+        [input.dossierId, String(axeCode).toUpperCase(), sectionCode]);
+      if (!ax[0]) throw new Error(`Section analytique « ${sectionCode} » inconnue sur l'axe « ${axeCode} ».`);
+      await c.query(
+        `insert into entry_line_analytics(entry_line_id, dossier_id, axis_id, section_id)
+         select $1, $2, s.axis_id, s.id from analytic_sections s where s.id=$3
+         on conflict (entry_line_id, axis_id) do update set section_id = excluded.section_id`,
+        [lr[0].id, input.dossierId, ax[0].id]);
+    }
   }
 
   // Un brouillon reste en l'état : il n'entre ni en balance ni dans les états,
@@ -721,29 +745,47 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
       [{ accountCode: '601', debit: achat, analyticAxis: 'COCODY' }, { accountCode: '521', credit: achat, paymentChannel: 'bank' }]);
   }
 
-  // Sections analytiques de démo (deux points de vente) — pour illustrer les
-  // restitutions par section et la vue mensuelle.
+  // Sections analytiques de démo. DEUX axes, parce que c'est exactement ce que
+  // le mono-axe interdisait : « Point de vente » (où l'on vend) croisé avec
+  // « Activité » (ce que l'on vend). Encoder la combinaison dans un seul code
+  // — COCODY-NEGOCE — aurait donné quatre sections illisibles et aucune
+  // agrégation possible par activité seule.
+  await c.query("update analytic_axes set label='Point de vente' where dossier_id=$1 and is_primary", [id]);
   await c.query(
-    "insert into analytic_sections(dossier_id, code, label) values ($1,'COCODY','Boutique Cocody'),($1,'YOPOUGON','Boutique Yopougon')",
+    `insert into analytic_sections(dossier_id, code, label, axis_id)
+     select $1, v.code, v.label, a.id
+       from (values ('COCODY','Boutique Cocody'),('YOPOUGON','Boutique Yopougon')) as v(code,label),
+            analytic_axes a
+      where a.dossier_id=$1 and a.is_primary`,
+    [id]);
+  await c.query(
+    "insert into analytic_axes(dossier_id, code, label, is_primary, position) values ($1,'ACTIVITE','Activité',false,1)",
+    [id]);
+  await c.query(
+    `insert into analytic_sections(dossier_id, code, label, axis_id)
+     select $1, v.code, v.label, a.id
+       from (values ('NEGOCE','Négoce de marchandises'),('SERVICES','Prestations de services')) as v(code,label),
+            analytic_axes a
+      where a.dossier_id=$1 and a.code='ACTIVITE'`,
     [id]);
 
   // Ventes ventilées, réparties sur plusieurs mois (saisonnalité par point de vente).
   await post('VE', '2026-05-08', 'Vente marchandises comptant', 'ocr', 'Client Awa',
-    [{ accountCode: '521', debit: 380000, paymentChannel: 'bank' }, { accountCode: '701', credit: 380000, analyticAxis: 'COCODY' }]);
+    [{ accountCode: '521', debit: 380000, paymentChannel: 'bank' }, { accountCode: '701', credit: 380000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }]);
   await post('VE', '2026-06-14', 'Prestation de service', 'mobile_money', 'Société TechCorp',
-    [{ accountCode: '521', debit: 300000, paymentChannel: 'om' }, { accountCode: '706', credit: 300000, analyticAxis: 'YOPOUGON' }]);
+    [{ accountCode: '521', debit: 300000, paymentChannel: 'om' }, { accountCode: '706', credit: 300000, analyticAxis: 'YOPOUGON', axes: { ACTIVITE: 'SERVICES' } }]);
   await post('VE', '2026-06-20', 'Vente marchandises comptant', 'ocr', 'Client Kouassi',
-    [{ accountCode: '521', debit: 250000, paymentChannel: 'bank' }, { accountCode: '701', credit: 250000, analyticAxis: 'COCODY' }]);
+    [{ accountCode: '521', debit: 250000, paymentChannel: 'bank' }, { accountCode: '701', credit: 250000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }]);
   await post('VE', '2026-07-02', 'Vente marchandises comptant', 'ocr', 'Client Awa',
-    [{ accountCode: '521', debit: 450000, paymentChannel: 'bank' }, { accountCode: '701', credit: 450000, analyticAxis: 'COCODY' }]);
+    [{ accountCode: '521', debit: 450000, paymentChannel: 'bank' }, { accountCode: '701', credit: 450000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }]);
   await post('VE', '2026-07-05', 'Prestation de service (Orange Money)', 'mobile_money', 'Société TechCorp',
-    [{ accountCode: '521', debit: 200000, paymentChannel: 'om' }, { accountCode: '706', credit: 200000, analyticAxis: 'YOPOUGON' }]);
+    [{ accountCode: '521', debit: 200000, paymentChannel: 'om' }, { accountCode: '706', credit: 200000, analyticAxis: 'YOPOUGON', axes: { ACTIVITE: 'SERVICES' } }]);
   await post('AC', '2026-07-06', 'Achat marchandises', 'ocr', 'Grossiste Adjamé',
-    [{ accountCode: '601', debit: 180000, analyticAxis: 'COCODY' }, { accountCode: '401', credit: 180000 }]);
+    [{ accountCode: '601', debit: 180000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }, { accountCode: '401', credit: 180000 }]);
   await post('AC', '2026-07-08', 'Facture Orange Internet', 'ocr', 'Orange CI',
-    [{ accountCode: '628', debit: 29661, analyticAxis: 'YOPOUGON' }, { accountCode: '445', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
+    [{ accountCode: '628', debit: 29661, analyticAxis: 'YOPOUGON', axes: { ACTIVITE: 'SERVICES' } }, { accountCode: '445', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
   await post('AC', '2026-07-10', 'Loyer boutique', 'manual', 'Bailleur Cocody',
-    [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY' }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
+    [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
   await post('AC', '2026-07-30', 'Frais Mobile Money', 'mobile_money', 'Wave',
     [{ accountCode: '631', debit: 1200 }, { accountCode: '521', credit: 1200, paymentChannel: 'wave' }]);
   // NB : pas d'écriture de salaire « à la main » ici — la paie est réellement
@@ -754,12 +796,15 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   // résultat positif et une tendance lisible (score, budget, prévisionnel).
   const y = String(curYear);
   for (const [mois, ca, achat] of [['01', 1850000, 1020000], ['02', 1720000, 960000], ['03', 2050000, 1130000], ['04', 2240000, 1210000]] as [string, number, number][]) {
+    // Ventilée sur les DEUX axes : sans cela, la vue croisée du dossier de
+    // démonstration serait un tableau à moitié vide, qui donnerait l'impression
+    // que la fonctionnalité ne marche pas.
     await post('VE', `${y}-${mois}-16`, 'Ventes du mois', 'ocr', 'Clients divers',
-      [{ accountCode: '521', debit: ca, paymentChannel: 'bank' }, { accountCode: '701', credit: ca, analyticAxis: mois === '02' || mois === '04' ? 'YOPOUGON' : 'COCODY' }]);
+      [{ accountCode: '521', debit: ca, paymentChannel: 'bank' }, { accountCode: '701', credit: ca, analyticAxis: mois === '02' || mois === '04' ? 'YOPOUGON' : 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }]);
     await post('AC', `${y}-${mois}-22`, 'Achats de marchandises', 'ocr', 'Grossiste Adjamé',
-      [{ accountCode: '601', debit: achat, analyticAxis: 'COCODY' }, { accountCode: '521', credit: achat, paymentChannel: 'bank' }]);
+      [{ accountCode: '601', debit: achat, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }, { accountCode: '521', credit: achat, paymentChannel: 'bank' }]);
     await post('AC', `${y}-${mois}-28`, 'Loyer des boutiques', 'manual', 'Bailleur Cocody',
-      [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY' }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
+      [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
   }
 
   // Cycle achats fournisseurs : factures de démo (statuts variés + balance âgée).
@@ -1099,6 +1144,10 @@ export async function journalEntries(
   const { rows } = await c.query(
     `select e.id as entry_id, to_char(e.entry_date, 'YYYY-MM-DD') as entry_date, j.code as journal_code,
             e.piece_ref, e.description as entry_description, e.source, e.document_url,
+            -- Une écriture contre-passée RESTE au grand livre : on la signale
+            -- plutôt que de la cacher, et on n'en propose pas une seconde extourne.
+            (e.reversed_by_entry_id is not null) as is_reversed,
+            (e.reverses_entry_id is not null) as is_reversal,
             a.account_code, coalesce(l.label, e.description) as label,
             l.amount_debit as debit, l.amount_credit as credit
        from entries e

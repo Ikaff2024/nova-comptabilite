@@ -11,6 +11,13 @@ export class ApiError extends Error {
   constructor(message: string, status: number, code?: string) { super(message); this.status = status; this.code = code; }
 }
 
+/** Query string : les paramètres absents ou vides sont omis, pas envoyés vides. */
+function qs(params: Record<string, string | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+  return q.toString();
+}
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(BASE + path, {
@@ -365,6 +372,8 @@ export interface SupplierAging {
 export interface JournalLine {
   entry_id: string; entry_date: string; journal_code: string; piece_ref: string | null;
   entry_description: string; source: string; document_url: string | null; account_code: string; label: string; debit: number; credit: number;
+  // Une écriture contre-passée reste au grand livre, marquée ; son extourne aussi.
+  is_reversed?: boolean; is_reversal?: boolean;
 }
 export interface LedgerRow {
   account_code: string; account_label: string;
@@ -379,6 +388,8 @@ export interface BalanceRow {
 }
 export interface EntryLineInput {
   accountCode: string; debit?: number; credit?: number; label?: string; paymentChannel?: string; analyticAxis?: string;
+  /** Sections des axes SECONDAIRES : { CODE_AXE: CODE_SECTION }. */
+  axes?: Record<string, string>;
 }
 export interface FinancingRequest {
   id: string; amount: number; score: number | null; rating: string | null; status: string; note: string | null;
@@ -429,18 +440,35 @@ export interface RollingForecast {
   totals: BudgetReport['totals'] & { produitsProjete: number; chargesProjete: number; resultatProjete: number };
   hasBudget: boolean;
 }
-export interface AnalyticSection { id: string; code: string; label: string; }
+// Un dossier a un axe PRINCIPAL, créé d'office, plus autant d'axes secondaires
+// qu'il en déclare. Sans axe demandé, tout se comporte comme avant.
+export interface AnalyticAxe { id: string; code: string; label: string; isPrimary: boolean; position: number; sections: number }
+export interface AnalyticSection {
+  id: string; code: string; label: string;
+  axisId?: string; axisCode?: string; axisLabel?: string; axisIsPrimary?: boolean;
+}
+export interface AnalyticAxeRef { id: string; code: string; label: string; isPrimary: boolean }
 export interface AnalyticReport {
+  axe?: AnalyticAxeRef;
   sections: { code: string; label: string; produits: number; charges: number; resultat: number }[];
   totals: { produits: number; charges: number; resultat: number };
 }
+export interface AnalyticCross {
+  axeA: { id: string; code: string; label: string };
+  axeB: { id: string; code: string; label: string };
+  colonnes: { code: string; label: string }[];
+  lignes: { code: string; label: string; cells: number[]; total: number }[];
+  totauxColonnes: number[]; total: number;
+}
 export interface AnalyticDetail {
+  axe?: AnalyticAxeRef;
   code: string; label: string;
   lines: { date: string; journal: string; pieceRef: string | null; accountCode: string; accountLabel: string; classNo: number; label: string; debit: number; credit: number; montant: number }[];
   byAccount: { accountCode: string; accountLabel: string; classNo: number; montant: number; count: number }[];
   totals: { produits: number; charges: number; resultat: number };
 }
 export interface AnalyticMonthly {
+  axe?: AnalyticAxeRef;
   months: string[];
   sections: { code: string; label: string; monthly: number[]; total: number }[];
   monthTotals: number[];
@@ -872,12 +900,18 @@ export const api = {
   importBudget: (dossierId: string, fiscalYearId: string, csv: string) =>
     req<{ imported: number; errors: { accountCode: string; reason: string }[] }>(`/api/dossiers/${dossierId}/budget/import`, { method: 'POST', body: JSON.stringify({ fiscalYearId, csv }) }),
   deleteBudget: (dossierId: string, fiscalYearId: string, accountCode: string) => req<void>(`/api/dossiers/${dossierId}/budget`, { method: 'DELETE', body: JSON.stringify({ fiscalYearId, accountCode }) }),
-  analyticSections: (dossierId: string) => req<AnalyticSection[]>(`/api/dossiers/${dossierId}/analytic/sections`),
-  createAnalyticSection: (dossierId: string, code: string, label: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/analytic/sections`, { method: 'POST', body: JSON.stringify({ code, label }) }),
+  analyticAxes: (dossierId: string) => req<AnalyticAxe[]>(`/api/dossiers/${dossierId}/analytic/axes`),
+  createAnalyticAxe: (dossierId: string, code: string, label: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/analytic/axes`, { method: 'POST', body: JSON.stringify({ code, label }) }),
+  renameAnalyticAxe: (dossierId: string, aid: string, label: string) => req<void>(`/api/dossiers/${dossierId}/analytic/axes/${aid}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
+  deleteAnalyticAxe: (dossierId: string, aid: string) => req<void>(`/api/dossiers/${dossierId}/analytic/axes/${aid}`, { method: 'DELETE' }),
+  analyticSections: (dossierId: string, axis?: string) => req<AnalyticSection[]>(`/api/dossiers/${dossierId}/analytic/sections${axis ? `?axis=${encodeURIComponent(axis)}` : ''}`),
+  createAnalyticSection: (dossierId: string, code: string, label: string, axis?: string) => req<{ id: string }>(`/api/dossiers/${dossierId}/analytic/sections`, { method: 'POST', body: JSON.stringify({ code, label, axis }) }),
   deleteAnalyticSection: (dossierId: string, sid: string) => req<void>(`/api/dossiers/${dossierId}/analytic/sections/${sid}`, { method: 'DELETE' }),
-  analyticReport: (dossierId: string, fiscalYearId?: string) => req<AnalyticReport>(`/api/dossiers/${dossierId}/analytic/report${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
-  analyticDetail: (dossierId: string, section: string, fiscalYearId?: string) => req<AnalyticDetail>(`/api/dossiers/${dossierId}/analytic/detail?section=${encodeURIComponent(section)}${fiscalYearId ? `&fiscalYearId=${fiscalYearId}` : ''}`),
-  analyticMonthly: (dossierId: string, fiscalYearId?: string) => req<AnalyticMonthly>(`/api/dossiers/${dossierId}/analytic/monthly${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ''}`),
+  analyticReport: (dossierId: string, fiscalYearId?: string, axis?: string) => req<AnalyticReport>(`/api/dossiers/${dossierId}/analytic/report?${qs({ fiscalYearId, axis })}`),
+  analyticDetail: (dossierId: string, section: string, fiscalYearId?: string, axis?: string) => req<AnalyticDetail>(`/api/dossiers/${dossierId}/analytic/detail?${qs({ section, fiscalYearId, axis })}`),
+  analyticMonthly: (dossierId: string, fiscalYearId?: string, axis?: string) => req<AnalyticMonthly>(`/api/dossiers/${dossierId}/analytic/monthly?${qs({ fiscalYearId, axis })}`),
+  analyticCross: (dossierId: string, axisA: string, axisB: string, fiscalYearId?: string) => req<AnalyticCross>(`/api/dossiers/${dossierId}/analytic/cross?${qs({ axisA, axisB, fiscalYearId })}`),
+  setLineAxis: (dossierId: string, lineId: string, axis: string, section: string | null) => req<void>(`/api/dossiers/${dossierId}/analytic/line/${lineId}`, { method: 'PUT', body: JSON.stringify({ axis, section }) }),
   agentStatus: (dossierId: string) => req<AgentStatus>(`/api/dossiers/${dossierId}/agent/status`),
   agentChat: (dossierId: string, messages: AgentMessage[]) => req<AgentResult>(`/api/dossiers/${dossierId}/agent/chat`, { method: 'POST', body: JSON.stringify({ messages }) }),
   agentHistory: (dossierId: string) => req<AgentMessage[]>(`/api/dossiers/${dossierId}/agent/history`),

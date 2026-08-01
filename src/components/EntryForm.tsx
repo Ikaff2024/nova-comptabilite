@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Loader2, CheckCircle2, Save, ShieldCheck, Activity } from 'lucide-react';
-import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type EntryTemplate, type ValidationReport, type Account, type SimulationResult, currentFiscalYear } from '../lib/api';
+import { api, fmtMoney, type FiscalYear, type Journal, type EntryLineInput, type ProposedLine, type AnalyticSection, type AnalyticAxe, type EntryTemplate, type ValidationReport, type Account, type SimulationResult, currentFiscalYear } from '../lib/api';
 import AqmReportCard from './AqmReportCard';
 
 const CHANNELS = [
@@ -41,7 +41,19 @@ export default function EntryForm({
   const [checking, setChecking] = useState(false);
   const [sim, setSim] = useState<SimulationResult | null>(null);
   const [sections, setSections] = useState<AnalyticSection[]>([]);
-  useEffect(() => { api.analyticSections(dossierId).then(setSections).catch(() => {}); }, [dossierId]);
+  const [axes, setAxes] = useState<AnalyticAxe[]>([]);
+  useEffect(() => {
+    api.analyticSections(dossierId, 'all').then(setSections).catch(() => {});
+    api.analyticAxes(dossierId).then(setAxes).catch(() => {});
+  }, [dossierId]);
+  // Une colonne par axe. L'axe principal alimente analytic_axis (colonne
+  // historique) ; les suivants alimentent l.axes. Un axe sans section n'ouvre
+  // pas de colonne : on ne demande pas de choisir dans une liste vide.
+  const axePrincipal = axes.find((a) => a.isPrimary);
+  const sectionsDe = (axisId?: string) => sections.filter((x) => (axisId ? x.axisId === axisId : x.axisIsPrimary !== false));
+  const axesAffiches = axes.filter((a) => sectionsDe(a.id).length > 0);
+  const axesSecondaires = axesAffiches.filter((a) => !a.isPrimary);
+  const montrerPrincipal = sectionsDe(axePrincipal?.id).length > 0 || (!axes.length && sections.length > 0);
   // Plan de comptes chargé une fois → suggestions par préfixe pendant la saisie.
   const [accts, setAccts] = useState<Account[]>([]);
   const [acOpen, setAcOpen] = useState<number | null>(null); // ligne dont le menu est ouvert
@@ -116,6 +128,7 @@ export default function EntryForm({
           accountCode: l.accountCode.trim(),
           debit: Number(l.debit) || undefined, credit: Number(l.credit) || undefined,
           paymentChannel: l.paymentChannel, label: l.label, analyticAxis: l.analyticAxis || undefined,
+          axes: Object.fromEntries(Object.entries(l.axes ?? {}).filter(([, v]) => v)),
         })),
       });
       setOk(true);
@@ -173,7 +186,8 @@ export default function EntryForm({
               <th className="pb-2 pr-2 font-medium">Compte</th>
               <th className="pb-2 px-2 font-medium">Libellé</th>
               <th className="pb-2 px-2 font-medium">Canal</th>
-              {sections.length > 0 && <th className="pb-2 px-2 font-medium">Analytique</th>}
+              {montrerPrincipal && <th className="pb-2 px-2 font-medium">{axePrincipal && axes.length > 1 ? axePrincipal.label : 'Analytique'}</th>}
+              {axesSecondaires.map((a) => <th key={a.id} className="pb-2 px-2 font-medium">{a.label}</th>)}
               <th className="pb-2 px-2 text-right font-medium">Débit</th>
               <th className="pb-2 px-2 text-right font-medium">Crédit</th>
               <th className="pb-2"></th>
@@ -214,15 +228,25 @@ export default function EntryForm({
                     {CHANNELS.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
                   </select>
                 </td>
-                {sections.length > 0 && (
+                {montrerPrincipal && (
                   <td className="py-1 px-2">
                     <select value={l.analyticAxis ?? ''} onChange={(e) => setLine(l._key, { analyticAxis: e.target.value })}
                       className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 outline-none focus:border-emerald-500/50">
                       <option value="">—</option>
-                      {sections.map((s) => <option key={s.id} value={s.code}>{s.code}</option>)}
+                      {sectionsDe(axePrincipal?.id).map((s) => <option key={s.id} value={s.code}>{s.code}</option>)}
                     </select>
                   </td>
                 )}
+                {axesSecondaires.map((a) => (
+                  <td key={a.id} className="py-1 px-2">
+                    <select value={l.axes?.[a.code] ?? ''}
+                      onChange={(e) => setLine(l._key, { axes: { ...(l.axes ?? {}), [a.code]: e.target.value } })}
+                      className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 outline-none focus:border-sky-500/50">
+                      <option value="">—</option>
+                      {sectionsDe(a.id).map((s) => <option key={s.id} value={s.code}>{s.code}</option>)}
+                    </select>
+                  </td>
+                ))}
                 <td className="py-1 px-2">
                   <input type="number" min="0" step="any" value={l.debit ?? ''} onChange={(e) => setLine(l._key, { debit: e.target.value === '' ? undefined : Number(e.target.value), credit: undefined })}
                     className="w-28 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-right font-mono outline-none focus:border-emerald-500/50" />

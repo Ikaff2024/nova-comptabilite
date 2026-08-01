@@ -24,6 +24,7 @@
     "test:veille": "tsx server/veille.test.ts",
     "test:paie-variable": "tsx server/integration-test-paie-variable.ts",
     "test:coherence": "tsx server/integration-test-coherence.ts",
+    "test:axes": "tsx server/integration-test-axes.ts",
     "test:payroll": "tsx server/payroll/core/run-tests.ts"
   },
   "dependencies": {
