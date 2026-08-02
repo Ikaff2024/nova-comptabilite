@@ -2095,6 +2095,21 @@ export function createApi() {
     const entryId = String(req.body?.entryId ?? '');
     res.status(201).json(await withUser(userId, (c) => reclass.preparerReaffectationExercice(c, req.params.id, entryId, userId)));
   }));
+  // Redressement en masse : lister, chiffrer l'impact, puis exécuter. Trois
+  // routes distinctes parce que l'aperçu doit pouvoir être consulté sans
+  // engager quoi que ce soit.
+  app.get('/api/dossiers/:id/reclassements/mal-rattachees', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => reclass.ecrituresMalRattachees(c, req.params.id)));
+  }));
+  app.post('/api/dossiers/:id/reclassements/impact', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => reclass.impactRedressement(c, req.params.id, (req.body ?? {}).choix ?? [])));
+  }));
+  app.post('/api/dossiers/:id/reclassements/masse', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => reclass.redresserEnMasse(c, req.params.id, (req.body ?? {}).choix ?? [], userId)));
+  }));
   app.get('/api/dossiers/:id/brouillons', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => reclass.listerBrouillons(c, req.params.id)));

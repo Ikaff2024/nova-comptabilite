@@ -166,6 +166,28 @@ export interface CandidatReclassement {
   tiers?: { id: string; nom: string } | null;
   entryIds?: string[]; explication: string;
 }
+// « Mal rattachée » ne dit pas laquelle des deux données est fausse : la date ou
+// l'exercice. `indice` porte le seul signal déterministe que Nova possède — une
+// pièce datée du jour de sa saisie, arrivée par un canal automatique.
+export type IndiceRattachement = 'date_suspecte' | 'exercice_suspect';
+export interface EcritureMalRattachee {
+  id: string; date: string; description: string; journal: string; source: string;
+  montant: number; resultat: number;
+  exercice: { id: string; label: string; debut: string; fin: string; statut: string };
+  exerciceDeLaDate: { id: string; label: string; statut: string } | null;
+  dateDeSaisie: string;
+  indice: IndiceRattachement;
+  raison: string;
+}
+export type ModeRedressement = 'exercice' | 'date';
+export interface ChoixRedressement { entryId: string; mode: ModeRedressement; nouvelleDate?: string }
+export interface ImpactRedressement {
+  lignes: { entryId: string; description: string; mode: ModeRedressement; de: string; vers: string; date: string; dateAvant: string; resultat: number }[];
+  parExercice: { label: string; delta: number; nb: number }[];
+  sansEffetSurLeResultat: number;
+  total: number;
+}
+
 export interface Brouillon {
   id: string; date: string; journal: string; description: string; exercice: string | null; montant: number;
   // Rattachement : modifiable tant que l'écriture est un brouillon. Les bornes
@@ -705,6 +727,13 @@ export const api = {
     req<{ entryId: string; montant: number; exercice: string }>(`/api/dossiers/${dossierId}/reclassements`, { method: 'POST', body: JSON.stringify(body) }),
   reaffecterExercice: (dossierId: string, entryId: string) =>
     req<{ extourneId: string; brouillonId: string; exercice: string; montant: number }>(`/api/dossiers/${dossierId}/reclassements/exercice`, { method: 'POST', body: JSON.stringify({ entryId }) }),
+  // Redressement en masse : lister, chiffrer, puis exécuter. L'aperçu s'obtient
+  // sans rien engager — c'est tout l'intérêt d'un traitement en lot.
+  malRattachees: (dossierId: string) => req<EcritureMalRattachee[]>(`/api/dossiers/${dossierId}/reclassements/mal-rattachees`),
+  impactRedressement: (dossierId: string, choix: ChoixRedressement[]) =>
+    req<ImpactRedressement>(`/api/dossiers/${dossierId}/reclassements/impact`, { method: 'POST', body: JSON.stringify({ choix }) }),
+  redresserEnMasse: (dossierId: string, choix: ChoixRedressement[]) =>
+    req<{ traitees: number; brouillons: string[]; extournes: string[] }>(`/api/dossiers/${dossierId}/reclassements/masse`, { method: 'POST', body: JSON.stringify({ choix }) }),
   brouillons: (dossierId: string) => req<Brouillon[]>(`/api/dossiers/${dossierId}/brouillons`),
   modifierBrouillon: (dossierId: string, entryId: string, modif: { fiscalYearId?: string; entryDate?: string }) =>
     req<{ date: string; exercice: string; couvreLaDate: boolean; exerciceAjuste: boolean }>(`/api/dossiers/${dossierId}/brouillons/${entryId}`, { method: 'PATCH', body: JSON.stringify(modif) }),

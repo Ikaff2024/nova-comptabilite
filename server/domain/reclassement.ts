@@ -194,41 +194,59 @@ export async function preparerReclassement(
   return { entryId, montant, exercice };
 }
 
-// Écriture rattachée au mauvais exercice : contre-passation dans l'exercice
-// erroné (obligatoire, il est immuable) puis réécriture À L'IDENTIQUE dans le
-// bon, en brouillon. Deux exercices sont touchés : rien n'est comptabilisé.
-export async function preparerReaffectationExercice(
-  c: Client, dossierId: string, entryId: string, userId?: string,
-): Promise<{ extourneId: string; brouillonId: string; exercice: string; montant: number }> {
+/**
+ * Redressement d'une écriture mal rattachée : contre-passation dans l'exercice
+ * où elle a été comptabilisée (obligatoire, le grand livre est immuable), puis
+ * réécriture À L'IDENTIQUE avec la date et l'exercice corrigés — en BROUILLON.
+ *
+ * Attention à ce qui est immédiat et à ce qui ne l'est pas : la contre-passation
+ * est COMPTABILISÉE tout de suite (une extourne ne se prépare pas, elle
+ * s'enregistre), la réécriture attend la validation humaine. Entre les deux,
+ * l'écriture n'est plus nulle part — c'est voulu, et ça doit se dire.
+ */
+async function redresser(
+  c: Client, dossierId: string, entryId: string,
+  cible: { fiscalYearId: string; date: string; label: string },
+  userId?: string,
+): Promise<{ extourneId: string; brouillonId: string; montant: number }> {
   const { rows } = await c.query(
-    `select e.*, to_char(e.entry_date,'YYYY-MM-DD') as d, j.code as jcode, f.label as exercice,
-            to_char(f.start_date,'YYYY-MM-DD') as d1, to_char(f.end_date,'YYYY-MM-DD') as d2
+    `select e.*, to_char(e.entry_date,'YYYY-MM-DD') as d, j.code as jcode, f.label as exercice
        from entries e join journals j on j.id = e.journal_id
        join fiscal_years f on f.id = e.fiscal_year_id
       where e.dossier_id=$1 and e.id=$2`, [dossierId, entryId]);
   const e = rows[0];
-  if (!e) throw new Error('Écriture introuvable.');
-  if (e.status !== 'posted') throw new Error('Seule une écriture validée se réaffecte : un brouillon se corrige directement.');
-  if (e.d >= e.d1 && e.d <= e.d2) throw new Error(`L'écriture est déjà dans les bornes de « ${e.exercice} » : rien à réaffecter.`);
-
-  const { rows: cible } = await c.query(
-    'select id, label from fiscal_years where dossier_id=$1 and $2::date between start_date and end_date limit 1',
-    [dossierId, e.d]);
-  if (!cible[0]) throw new Error(`Aucun exercice ne couvre le ${e.d} : créez-le avant de réaffecter.`);
 
   const { rows: lignes } = await c.query(
-    `select a.account_code, l.amount_debit, l.amount_credit, l.label, l.counterparty_id, l.analytic_axis
+    `select a.account_code, l.amount_debit, l.amount_credit, l.label, l.counterparty_id, l.analytic_axis, l.id as line_id
        from entry_lines l join accounts a on a.id = l.account_id
       where l.entry_id = $1 order by l.line_no`, [entryId]);
 
-  // La contre-passation reste dans l'exercice erroné : c'est là que l'écriture
-  // a été comptabilisée, c'est là qu'elle doit être annulée.
+  // Les axes secondaires suivent la réécriture : les perdre viderait l'analytique
+  // de l'exercice d'arrivée sans que le total, lui, ne bouge.
+  const { rows: ax } = await c.query(
+    `select ela.entry_line_id, a.code as axe, s.code as section
+       from entry_line_analytics ela
+       join analytic_axes a on a.id = ela.axis_id
+       join analytic_sections s on s.id = ela.section_id
+      where ela.dossier_id=$1 and ela.entry_line_id = any($2::uuid[])`,
+    [dossierId, lignes.map((l: any) => l.line_id)]);
+  const axesDe = new Map<string, Record<string, string>>();
+  for (const a of ax) {
+    const cur = axesDe.get(a.entry_line_id) ?? {};
+    cur[a.axe] = a.section;
+    axesDe.set(a.entry_line_id, cur);
+  }
+
   const { reversalId } = await reverseEntry(c, entryId);
 
   const { rows: j } = await c.query('select id from journals where dossier_id=$1 and code=$2 limit 1', [dossierId, e.jcode]);
+  const memeExercice = cible.fiscalYearId === e.fiscal_year_id;
+  const mention = memeExercice
+    ? `date corrigée, était ${e.d}`
+    : `réaffecté depuis « ${e.exercice} »`;
   const { id: brouillonId } = await postEntry(c, {
-    dossierId, fiscalYearId: cible[0].id, journalId: j[0]?.id ?? e.journal_id, entryDate: e.d,
-    description: `${e.description} (réaffecté depuis « ${e.exercice} »)`,
+    dossierId, fiscalYearId: cible.fiscalYearId, journalId: j[0]?.id ?? e.journal_id, entryDate: cible.date,
+    description: `${e.description} (${mention})`,
     source: e.source, status: 'draft', createdBy: userId,
     lines: lignes.map((l: any) => ({
       accountCode: l.account_code,
@@ -237,15 +255,228 @@ export async function preparerReaffectationExercice(
       label: l.label ?? undefined,
       counterpartyId: l.counterparty_id ?? undefined,
       analyticAxis: l.analytic_axis ?? undefined,
+      axes: axesDe.get(l.line_id),
     })),
   });
 
   const montant = r2(lignes.reduce((s: number, l: any) => s + Number(l.amount_debit), 0));
   await recordAudit(c, {
     dossierId, action: 'reclassement.exercice', entity: 'entry', entityId: entryId,
-    detail: { extourneId: reversalId, brouillonId, de: e.exercice, vers: cible[0].label, montant },
+    detail: { extourneId: reversalId, brouillonId, de: e.exercice, vers: cible.label, dateAvant: e.d, dateApres: cible.date, montant },
   });
-  return { extourneId: reversalId, brouillonId, exercice: cible[0].label, montant };
+  return { extourneId: reversalId, brouillonId, montant };
+}
+
+// Écriture rattachée au mauvais exercice : on la remet dans celui qui couvre sa
+// date, à date inchangée.
+export async function preparerReaffectationExercice(
+  c: Client, dossierId: string, entryId: string, userId?: string,
+): Promise<{ extourneId: string; brouillonId: string; exercice: string; montant: number }> {
+  const { rows } = await c.query(
+    `select e.status, to_char(e.entry_date,'YYYY-MM-DD') as d, f.label as exercice,
+            to_char(f.start_date,'YYYY-MM-DD') as d1, to_char(f.end_date,'YYYY-MM-DD') as d2
+       from entries e join fiscal_years f on f.id = e.fiscal_year_id
+      where e.dossier_id=$1 and e.id=$2`, [dossierId, entryId]);
+  const e = rows[0];
+  if (!e) throw new Error('Écriture introuvable.');
+  if (e.status !== 'posted') throw new Error('Seule une écriture validée se réaffecte : un brouillon se corrige directement.');
+  if (e.d >= e.d1 && e.d <= e.d2) throw new Error(`L'écriture est déjà dans les bornes de « ${e.exercice} » : rien à réaffecter.`);
+
+  const { rows: cible } = await c.query(
+    "select id, label from fiscal_years where dossier_id=$1 and status <> 'closed' and $2::date between start_date and end_date limit 1",
+    [dossierId, e.d]);
+  if (!cible[0]) throw new Error(`Aucun exercice ouvert ne couvre le ${e.d} : créez-le ou rouvrez-le avant de réaffecter.`);
+
+  const r = await redresser(c, dossierId, entryId, { fiscalYearId: cible[0].id, date: e.d, label: cible[0].label }, userId);
+  return { ...r, exercice: cible[0].label };
+}
+
+// --- Redressement en masse ---------------------------------------------------
+//
+// Quinze écritures mal rattachées se redressent une par une : c'est long, et
+// surtout on ne voit jamais l'effet d'ensemble avant de s'être engagé. D'où cet
+// écran : sélection, APERÇU DE L'IMPACT SUR LES DEUX EXERCICES, puis exécution.
+//
+// Le point qui compte, et qu'un traitement en lot rend dangereux s'il est tu :
+// « mal rattachée » ne dit PAS laquelle des deux données est fausse.
+//
+//   · la date est bonne, l'exercice est faux  → on déplace l'écriture ;
+//   · l'exercice est bon, la DATE est fausse  → on corrige la date, sur place.
+//
+// Le second cas est le plus fréquent quand les pièces arrivent par capture ou
+// par import : l'outil date la pièce du jour de la saisie. Déplacer l'écriture
+// serait alors doublement faux — elle partirait dans un exercice où elle n'a
+// rien à faire, en changeant le résultat de deux années.
+//
+// Nova ne tranche pas à la place du comptable. Elle donne l'indice qu'elle a :
+// quand la date d'écriture est exactement la date de SAISIE et que la pièce
+// vient d'un canal automatique, c'est la date qui est suspecte, pas l'exercice.
+
+export type IndiceRattachement = 'date_suspecte' | 'exercice_suspect';
+
+export interface EcritureMalRattachee {
+  id: string; date: string; description: string; journal: string; source: string;
+  montant: number; resultat: number;
+  exercice: { id: string; label: string; debut: string; fin: string; statut: string };
+  exerciceDeLaDate: { id: string; label: string; statut: string } | null;
+  dateDeSaisie: string;
+  indice: IndiceRattachement;
+  raison: string;
+}
+
+export async function ecrituresMalRattachees(c: Client, dossierId: string): Promise<EcritureMalRattachee[]> {
+  const { rows } = await c.query(
+    `select e.id, to_char(e.entry_date,'YYYY-MM-DD') as date, e.description, e.source,
+            j.code as journal,
+            f.id as fy_id, f.label as fy_label, f.status as fy_statut,
+            to_char(f.start_date,'YYYY-MM-DD') as fy_debut, to_char(f.end_date,'YYYY-MM-DD') as fy_fin,
+            to_char(e.created_at,'YYYY-MM-DD') as saisie,
+            coalesce((select sum(l.amount_debit) from entry_lines l where l.entry_id = e.id), 0) as montant,
+            -- Contribution au RÉSULTAT : produits (cl.7) moins charges (cl.6).
+            -- C'est elle qui bouge d'un exercice à l'autre, pas le montant brut.
+            coalesce((select sum(case a.class_no
+                        when 7 then l.amount_credit - l.amount_debit
+                        when 6 then l.amount_credit - l.amount_debit
+                        else 0 end)
+                        from entry_lines l join accounts a on a.id = l.account_id
+                       where l.entry_id = e.id and a.class_no in (6,7)), 0) as resultat,
+            cible.id as cible_id, cible.label as cible_label, cible.status as cible_statut
+       from entries e
+       join journals j on j.id = e.journal_id
+       join fiscal_years f on f.id = e.fiscal_year_id
+       left join lateral (
+            select fy.id, fy.label, fy.status from fiscal_years fy
+             where fy.dossier_id = e.dossier_id and e.entry_date between fy.start_date and fy.end_date
+             order by fy.start_date limit 1) cible on true
+      where e.dossier_id = $1 and e.status = 'posted'
+        and e.reversed_by_entry_id is null
+        and (e.entry_date < f.start_date or e.entry_date > f.end_date)
+      order by e.entry_date, e.created_at`, [dossierId]);
+
+  const AUTO = new Set(['ocr', 'bank_import', 'mobile_money', 'api', 'recurring']);
+  return rows.map((r: any) => {
+    const dateEgaleSaisie = r.date === r.saisie;
+    const auto = AUTO.has(r.source);
+    const indice: IndiceRattachement = dateEgaleSaisie && auto ? 'date_suspecte' : 'exercice_suspect';
+    return {
+      id: r.id, date: r.date, description: r.description, journal: r.journal, source: r.source,
+      montant: r2(Number(r.montant)), resultat: r2(Number(r.resultat)),
+      exercice: { id: r.fy_id, label: r.fy_label, debut: r.fy_debut, fin: r.fy_fin, statut: r.fy_statut },
+      exerciceDeLaDate: r.cible_id ? { id: r.cible_id, label: r.cible_label, statut: r.cible_statut } : null,
+      dateDeSaisie: r.saisie,
+      indice,
+      raison: indice === 'date_suspecte'
+        ? `La date de l'écriture (${r.date}) est exactement celle de sa saisie, et la pièce vient d'un canal automatique : c'est la DATE qui est probablement fausse, pas l'exercice. Corrigez-la à la date réelle de l'opération — l'écriture reste alors dans « ${r.fy_label} ».`
+        : `L'écriture est datée du ${r.date}, hors de « ${r.fy_label} » (${r.fy_debut} → ${r.fy_fin})${r.cible_label ? `, alors que « ${r.cible_label} » couvre cette date` : ", et aucun exercice ne couvre cette date"}.`,
+    };
+  });
+}
+
+export type ModeRedressement = 'exercice' | 'date';
+export interface ChoixRedressement { entryId: string; mode: ModeRedressement; nouvelleDate?: string }
+
+interface Plan {
+  ecriture: EcritureMalRattachee;
+  mode: ModeRedressement;
+  date: string;
+  fiscalYearId: string;
+  exercice: string;
+}
+
+/** Valide chaque choix et calcule la cible. Lève à la PREMIÈRE incohérence. */
+async function planifier(c: Client, dossierId: string, choix: ChoixRedressement[]): Promise<Plan[]> {
+  if (!choix?.length) throw new Error('Aucune écriture sélectionnée.');
+  const toutes = await ecrituresMalRattachees(c, dossierId);
+  const parId = new Map(toutes.map((e) => [e.id, e]));
+  const plans: Plan[] = [];
+
+  for (const ch of choix) {
+    const e = parId.get(ch.entryId);
+    if (!e) throw new Error(`Écriture ${ch.entryId.slice(0, 8)} introuvable ou déjà redressée — rechargez la liste.`);
+
+    if (ch.mode === 'exercice') {
+      if (!e.exerciceDeLaDate) throw new Error(`Aucun exercice ne couvre le ${e.date} (« ${e.description} ») : créez-le avant de redresser.`);
+      if (e.exerciceDeLaDate.statut === 'closed') throw new Error(`« ${e.exerciceDeLaDate.label} » est clôturé : on n'y déplace pas d'écriture. Corrigez plutôt la date, ou passez une régularisation.`);
+      plans.push({ ecriture: e, mode: 'exercice', date: e.date, fiscalYearId: e.exerciceDeLaDate.id, exercice: e.exerciceDeLaDate.label });
+    } else {
+      const d = normaliseDate(ch.nouvelleDate);
+      if (!d) throw new Error(`Date invalide pour « ${e.description} » : « ${ch.nouvelleDate ?? ''} ». Format attendu AAAA-MM-JJ.`);
+      // Corriger la date, c'est garder l'exercice. Si la date proposée tombe
+      // ailleurs, ce n'est plus une correction de date mais un déplacement : on
+      // le dit au lieu de faire l'un en croyant faire l'autre.
+      if (d < e.exercice.debut || d > e.exercice.fin) {
+        throw new Error(`Le ${d} est hors de « ${e.exercice.label} » (${e.exercice.debut} → ${e.exercice.fin}) : ce n'est plus une correction de date mais une réaffectation d'exercice. Choisissez l'autre traitement pour « ${e.description} ».`);
+      }
+      if (e.exercice.statut === 'closed') throw new Error(`« ${e.exercice.label} » est clôturé : la date ne s'y corrige plus.`);
+      plans.push({ ecriture: e, mode: 'date', date: d, fiscalYearId: e.exercice.id, exercice: e.exercice.label });
+    }
+  }
+  return plans;
+}
+
+export interface ImpactRedressement {
+  lignes: { entryId: string; description: string; mode: ModeRedressement; de: string; vers: string; date: string; dateAvant: string; resultat: number }[];
+  parExercice: { label: string; delta: number; nb: number }[];
+  sansEffetSurLeResultat: number;
+  total: number;
+}
+
+/** Ce que ça change, exercice par exercice, AVANT de s'engager. */
+export async function impactRedressement(
+  c: Client, dossierId: string, choix: ChoixRedressement[],
+): Promise<ImpactRedressement> {
+  const plans = await planifier(c, dossierId, choix);
+  const delta = new Map<string, { delta: number; nb: number }>();
+  const bouge = (label: string, v: number) => {
+    const cur = delta.get(label) ?? { delta: 0, nb: 0 };
+    cur.delta = r2(cur.delta + v); cur.nb += 1;
+    delta.set(label, cur);
+  };
+
+  let sansEffet = 0;
+  for (const p of plans) {
+    if (p.mode === 'date') {
+      // Même exercice : le résultat ne bouge pas d'un franc, seule la date change.
+      sansEffet += 1;
+      continue;
+    }
+    bouge(p.ecriture.exercice.label, -p.ecriture.resultat);
+    bouge(p.exercice, p.ecriture.resultat);
+  }
+
+  return {
+    lignes: plans.map((p) => ({
+      entryId: p.ecriture.id, description: p.ecriture.description, mode: p.mode,
+      de: p.ecriture.exercice.label, vers: p.exercice, date: p.date, dateAvant: p.ecriture.date,
+      resultat: p.ecriture.resultat,
+    })),
+    parExercice: [...delta.entries()].map(([label, v]) => ({ label, delta: v.delta, nb: v.nb }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    sansEffetSurLeResultat: sansEffet,
+    total: plans.length,
+  };
+}
+
+/**
+ * Exécute le lot. Tout est validé AVANT la première écriture : une erreur sur la
+ * dix-septième ligne ne laisse pas seize redressements à moitié faits. La
+ * transaction de l'appelant garantit le tout-ou-rien.
+ */
+export async function redresserEnMasse(
+  c: Client, dossierId: string, choix: ChoixRedressement[], userId?: string,
+): Promise<{ traitees: number; brouillons: string[]; extournes: string[] }> {
+  const plans = await planifier(c, dossierId, choix);
+  const brouillons: string[] = [];
+  const extournes: string[] = [];
+  for (const p of plans) {
+    const r = await redresser(c, dossierId, p.ecriture.id, { fiscalYearId: p.fiscalYearId, date: p.date, label: p.exercice }, userId);
+    brouillons.push(r.brouillonId); extournes.push(r.extourneId);
+  }
+  await recordAudit(c, {
+    dossierId, action: 'reclassement.masse', entity: 'entry',
+    detail: { traitees: plans.length, modes: plans.map((p) => p.mode), ecritures: plans.map((p) => p.ecriture.id) },
+  });
+  return { traitees: plans.length, brouillons, extournes };
 }
 
 // --- Brouillons --------------------------------------------------------------

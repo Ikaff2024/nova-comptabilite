@@ -3,7 +3,7 @@
 Relevé de ce qui a été décidé ou repéré sans être livré. Tenu à jour au fil des
 sessions — quand un point est fait, il sort d'ici et vit dans le code.
 
-Dernière mise à jour : 1er août 2026.
+Dernière mise à jour : 2 août 2026.
 
 ---
 
@@ -48,26 +48,20 @@ Trois options, jamais arbitrées :
 3. **On s'arrête là.**
 
 C'est un Journal Officiel vendu 20 000 FCFA : la question est autant juridique
-que technique. Sans arbitrage, le point 2.3 ci-dessous reste bloqué.
+que technique. Sans arbitrage, le point 2.2 ci-dessous reste bloqué.
 
 ---
 
 ## 2. Prêt à construire
 
-### 2.1 Réaffectation en masse des écritures mal rattachées
-
-Le redressement **une par une** existe (Révision → Préparer, ou l'outil
-`reaffecter_exercice` de Lexa). Sur quinze écritures ou plus, il faut un écran de
-sélection avec l'aperçu de l'impact sur les **deux** exercices avant validation.
-
-### 2.2 Rattachement analytique d'une immobilisation acquise
+### 2.1 Rattachement analytique d'une immobilisation acquise
 
 La route existe (`PATCH /assets/:id/analytic`) et l'immobilisation produite en
 interne hérite de son chantier. Mais **aucun écran** ne permet de rattacher une
 immobilisation achetée à une activité — donc la rentabilité par activité ignore
 l'investissement des activités qui n'ont pas été construites en interne.
 
-### 2.3 Doctrine SYSCOHADA accessible à Lexa
+### 2.2 Doctrine SYSCOHADA accessible à Lexa
 
 Dépend de 1.3. Ordre de valeur retenu, à rebours de l'intuition première :
 
@@ -99,12 +93,21 @@ Nova est vendue aux cabinets **et** aux PME. Le même mail part à un comptable 
 le mail devrait faire pareil — Nova connaît le rôle du destinataire. Adapter, pas
 niveler : « compte 661 » a du sens pour un comptable.
 
-### 3.2 Les quinze écritures d'IKAFFANAN
+### 3.2 Les dix-neuf écritures d'IKAFFANAN
 
-Toujours rattachées à l'exercice 2025 alors qu'elles sont datées de juillet 2026.
-Le diagnostic les nomme (journaux et origines), la préparation du redressement
-existe. Reste à les traiter — c'est une décision comptable, pas une correction
-technique : réaffecter change le résultat de deux exercices.
+Rattachées à l'exercice 2025 alors qu'elles sont **datées de juillet 2026**.
+L'écran de redressement en masse existe désormais, avec l'aperçu de l'impact.
+
+Ce qui reste est une **décision comptable**, et elle n'est pas celle qu'on
+croyait : ces pièces portent la date de leur IMPORT, pas celle de l'opération —
+le relevé « période du 01/03/2025 au 31/03/2025 » est daté du 22/07/2026.
+L'exercice 2025 est donc juste, c'est la date qui est fausse. Le traitement à
+retenir est « corriger la date », pas « changer d'exercice » : déplacer ces
+écritures vers 2026 fausserait deux exercices au lieu d'un.
+
+Nova le signale maintenant (indice « date suspecte »), mais la date réelle de
+chaque pièce doit être lue sur la pièce. Personne d'autre que le teneur du
+dossier ne peut la donner.
 
 ### 3.3 Configuration d'IKAFFANAN
 

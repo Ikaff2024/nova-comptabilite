@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Wand2, CheckCircle2, Trash2, AlertTriangle, Info, FileClock, Lock } from 'lucide-react';
 import { api, fmtMoney, type CandidatReclassement, type Brouillon, type FiscalYear } from '../lib/api';
+import RedressementMasse from './RedressementMasse';
 import { cn } from '../lib/utils';
 
 // Reclassements et brouillons. Deux principes tenus par l'écran :
@@ -96,8 +97,12 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
     catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
 
-  const auto = (cands ?? []).filter((x) => x.automatisable);
-  const manuels = (cands ?? []).filter((x) => !x.automatisable);
+  // Les écritures mal rattachées ont leur propre écran : il demande LAQUELLE des
+  // deux données est fausse, la date ou l'exercice. Les garder aussi dans la
+  // liste unitaire les montrerait deux fois, avec un traitement unique — celui
+  // qui déplace, alors que c'est souvent la date qu'il faut corriger.
+  const auto = (cands ?? []).filter((x) => x.automatisable && x.nature !== 'exercice_errone');
+  const manuels = (cands ?? []).filter((x) => !x.automatisable && x.nature !== 'exercice_errone');
 
   return (
     <div className="space-y-5">
@@ -172,9 +177,11 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
         </section>
       )}
 
+      <RedressementMasse dossierId={dossierId} currency={currency} onDone={load} />
+
       {cands === null ? (
         <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Recherche des reclassements…</div>
-      ) : cands.length === 0 ? (
+      ) : auto.length + manuels.length === 0 ? (
         <p className="flex items-center gap-2 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" /> Aucun reclassement à envisager.</p>
       ) : (
         <>

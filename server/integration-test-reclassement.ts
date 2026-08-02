@@ -159,6 +159,143 @@ async function main() {
   try { await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, r.entryId, { fiscalYearId: fy })); } catch { refusPosted = true; }
   check('une écriture comptabilisée ne se modifie pas', refusPosted);
 
+  // ==========================================================================
+  // REDRESSEMENT EN MASSE
+  //
+  // « Mal rattachée » ne dit pas laquelle des deux données est fausse. Une pièce
+  // capturée porte souvent la date de sa SAISIE : c'est alors la date qu'il faut
+  // corriger, pas l'exercice qu'il faut changer. Déplacer l'écriture serait
+  // doublement faux — elle partirait dans un exercice où elle n'a rien à faire,
+  // en changeant le résultat de deux années.
+  // ==========================================================================
+  const u2 = randomUUID();
+  const cab2 = await withUser(u2, (c) => acc.onboardCabinet(c, u2, 'Cab2', 'CI'));
+  const d2 = await withUser(u2, (c) => acc.openDossier(c, { cabinetId: cab2, raisonSociale: 'PME retard', country: 'CI' }));
+  const f25 = await withUser(u2, (c) => acc.createFiscalYear(c, d2.id, 'Exercice 2025', '2025-01-01', '2025-12-31'));
+  const f26 = await withUser(u2, (c) => acc.createFiscalYear(c, d2.id, 'Exercice 2026', '2026-01-01', '2026-12-31'));
+  const jb = await withUser(u2, (c) => acc.createJournal(c, d2.id, 'BQ', 'Banque', 'banque'));
+  await withUser(u2, (c) => acc.createJournal(c, d2.id, 'OD', 'Opérations diverses', 'operations_diverses'));
+
+  // Fabrication de l'état à redresser. postEntry refuse aujourd'hui une date
+  // hors des bornes de son exercice — c'est bien, mais ce garde-fou est récent :
+  // les dossiers réels portent des écritures entrées quand il ne fonctionnait
+  // pas. On reproduit donc l'état par le seul chemin resté ouvert : un
+  // BROUILLON se modifie, puis se valide. L'écriture posée est identique à
+  // celle qu'on trouve en production.
+  const poserHorsBornes = async (
+    fyPose: string, date: string, dateFinale: string, description: string,
+    source: any, lines: any[], fyFinal?: string, saisieLe?: string,
+  ) => {
+    const e = await withUser(u2, (c) => acc.postEntry(c, {
+      dossierId: d2.id, fiscalYearId: fyPose, journalId: jb, entryDate: date,
+      description, source, status: 'draft', lines,
+    }));
+    await withUser(u2, (c) => c.query(
+      `update entries set entry_date=$3, fiscal_year_id=$4, created_at=$5::timestamptz
+        where dossier_id=$1 and id=$2`,
+      [d2.id, e.id, dateFinale, fyFinal ?? fyPose, saisieLe ?? `${dateFinale} 10:00`]));
+    await withUser(u2, (c) => c.query("update entries set status='posted' where dossier_id=$1 and id=$2", [d2.id, e.id]));
+    return e;
+  };
+
+  // (a) Le cas IKAFFANAN : relevé de mars 2025, rattaché à 2025 (bon), mais daté
+  //     du jour de l'import (faux). L'exercice est juste, la date ne l'est pas.
+  const releve = await poserHorsBornes(f25, '2025-03-31', '2026-07-22', 'Relevé de compte mars 2025', 'ocr',
+    [{ accountCode: '6318', debit: 40000 }, { accountCode: '5211', credit: 40000 }]);
+
+  // (b) Une vraie erreur d'exercice : opération de 2026 saisie à la main dans 2025.
+  const vente = await poserHorsBornes(f26, '2026-02-10', '2026-02-10', 'Vente février 2026', 'manual',
+    [{ accountCode: '5211', debit: 900000 }, { accountCode: '701', credit: 900000 }], f25, '2026-03-05 09:00');
+
+  const mal = await withUser(u2, (c) => reclass.ecrituresMalRattachees(c, d2.id));
+  check('les deux écritures mal rattachées sont vues', mal.length === 2, `(${mal.length})`);
+
+  const mRel = mal.find((x: any) => x.description.startsWith('Relevé'));
+  const mVen = mal.find((x: any) => x.description.startsWith('Vente'));
+  check('une pièce datée du jour de sa saisie : c\'est la DATE qui est suspecte',
+    mRel?.indice === 'date_suspecte', `(${mRel?.indice})`);
+  check('et la raison le dit au lieu de proposer un déplacement',
+    /DATE qui est probablement fausse/.test(mRel?.raison ?? ''), `(${mRel?.raison?.slice(0, 60)}…)`);
+  check('une saisie manuelle hors bornes : c\'est l\'exercice qui est suspect',
+    mVen?.indice === 'exercice_suspect', `(${mVen?.indice})`);
+  check('la contribution au résultat est chiffrée', mVen?.resultat === 900000, `(${mVen?.resultat})`);
+  check('une charge compte en négatif dans le résultat', mRel?.resultat === -40000, `(${mRel?.resultat})`);
+
+  // --- L'aperçu, avant de s'engager ---
+  const impact = await withUser(u2, (c) => reclass.impactRedressement(c, d2.id, [
+    { entryId: mRel!.id, mode: 'date', nouvelleDate: '2025-03-31' },
+    { entryId: mVen!.id, mode: 'exercice' },
+  ]));
+  check('corriger une date ne touche AUCUN résultat', impact.sansEffetSurLeResultat === 1, `(${impact.sansEffetSurLeResultat})`);
+  const d25 = impact.parExercice.find((x: any) => x.label === 'Exercice 2025');
+  const d26 = impact.parExercice.find((x: any) => x.label === 'Exercice 2026');
+  check('2025 perd la vente mal rattachée', d25?.delta === -900000, `(${d25?.delta})`);
+  check('2026 la reçoit', d26?.delta === 900000, `(${d26?.delta})`);
+  check('les deux exercices bougent du même montant, en sens inverse',
+    (d25?.delta ?? 0) + (d26?.delta ?? 0) === 0);
+  check('rien n\'a encore été touché : les écritures sont toujours là',
+    (await withUser(u2, (c) => reclass.ecrituresMalRattachees(c, d2.id))).length === 2);
+
+  // --- Les refus, chacun avec son motif ---
+  let refusHorsBornes = false; let motif = '';
+  try {
+    await withUser(u2, (c) => reclass.impactRedressement(c, d2.id, [{ entryId: mRel!.id, mode: 'date', nouvelleDate: '2024-05-05' }]));
+  } catch (e: any) { refusHorsBornes = true; motif = e.message; }
+  check('une « correction de date » qui sort de l\'exercice est refusée', refusHorsBornes);
+  check('et elle renvoie vers le bon traitement', /réaffectation d'exercice/.test(motif), `(${motif.slice(0, 70)}…)`);
+
+  await withUser(u2, (c) => c.query("update fiscal_years set status='closed' where dossier_id=$1 and id=$2", [d2.id, f26]));
+  let refusClot = false;
+  try { await withUser(u2, (c) => reclass.impactRedressement(c, d2.id, [{ entryId: mVen!.id, mode: 'exercice' }])); } catch { refusClot = true; }
+  check('on ne déplace pas une écriture vers un exercice clôturé', refusClot);
+  await withUser(u2, (c) => c.query("update fiscal_years set status='open' where dossier_id=$1 and id=$2", [d2.id, f26]));
+
+  // --- Exécution du lot ---
+  const lot = await withUser(u2, (c) => reclass.redresserEnMasse(c, d2.id, [
+    { entryId: mRel!.id, mode: 'date', nouvelleDate: '2025-03-31' },
+    { entryId: mVen!.id, mode: 'exercice' },
+  ], u2));
+  check('les deux écritures sont traitées', lot.traitees === 2, `(${lot.traitees})`);
+  check('chacune produit une extourne et un brouillon',
+    lot.extournes.length === 2 && lot.brouillons.length === 2);
+
+  const malApres = await withUser(u2, (c) => reclass.ecrituresMalRattachees(c, d2.id));
+  check('plus aucune écriture mal rattachée', malApres.length === 0,
+    `(${malApres.map((x: any) => `${x.description} @${x.date}/${x.exercice.label}`).join(' | ')})`);
+
+  // Le redressement ne doit pas fabriquer l'anomalie qu'il traite : une extourne
+  // datée du jour tout en étant rattachée à un exercice antérieur ressortirait
+  // indéfiniment en révision, et le lot ne se terminerait jamais.
+  const extournes = await withUser(u2, (c) => c.query(
+    `select to_char(e.entry_date,'YYYY-MM-DD') as d, f.label,
+            to_char(f.start_date,'YYYY-MM-DD') as d1, to_char(f.end_date,'YYYY-MM-DD') as d2
+       from entries e join fiscal_years f on f.id = e.fiscal_year_id
+      where e.dossier_id=$1 and e.reverses_entry_id is not null`, [d2.id]));
+  check('chaque extourne est datée DANS l\'exercice qu\'elle neutralise',
+    extournes.rows.every((r: any) => r.d >= r.d1 && r.d <= r.d2),
+    `(${extournes.rows.map((r: any) => `${r.d} dans ${r.label}`).join(' | ')})`);
+
+  const brs = await withUser(u2, (c) => reclass.listerBrouillons(c, d2.id));
+  const brRel = brs.find((x: any) => x.description.startsWith('Relevé'));
+  const brVen = brs.find((x: any) => x.description.startsWith('Vente'));
+  check('la réécriture du relevé porte la date corrigée', brRel?.date === '2025-03-31', `(${brRel?.date})`);
+  check('et reste dans son exercice d\'origine', brRel?.exercice === 'Exercice 2025', `(${brRel?.exercice})`);
+  check('son libellé dit ce qui a changé', /date corrigée/.test(brRel?.description ?? ''), `(${brRel?.description})`);
+  check('la vente part dans l\'exercice de sa date', brVen?.exercice === 'Exercice 2026', `(${brVen?.exercice})`);
+  check('à date inchangée', brVen?.date === '2026-02-10', `(${brVen?.date})`);
+
+  // L'extourne est comptabilisée tout de suite : entre les deux, l'écriture
+  // n'est plus nulle part. C'est voulu, et le test le fige pour qu'on ne le
+  // découvre pas en production.
+  const tb25 = await withUser(u2, (c) => acc.trialBalance(c, d2.id, f25));
+  const solde701 = Number(tb25.find((r: any) => r.account_code === '701')?.balance ?? 0);
+  check('la contre-passation a déjà vidé 2025 de la vente (le brouillon, lui, attend)',
+    solde701 === 0, `(${solde701})`);
+
+  let refusVide = false;
+  try { await withUser(u2, (c) => reclass.redresserEnMasse(c, d2.id, [], u2)); } catch { refusVide = true; }
+  check('un lot vide est refusé', refusVide);
+
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;
   await closePool();
