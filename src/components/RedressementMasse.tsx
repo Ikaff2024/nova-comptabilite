@@ -30,9 +30,13 @@ export default function RedressementMasse({ dossierId, currency, onDone }: {
       setRows(r);
       // Pré-sélection par l'indice : le défaut proposé est celui que Nova sait
       // défendre. Rien n'est coché — c'est au comptable de choisir.
+      //
+      // La date pré-remplie vient du LIBELLÉ, pas de la base : celle de la base
+      // est justement celle qu'on soupçonne d'être fausse. À défaut de lecture,
+      // le champ reste vide plutôt que de proposer l'erreur.
       setChoix(Object.fromEntries(r.map((e) => [e.id, {
         mode: (e.indice === 'date_suspecte' ? 'date' : 'exercice') as ModeRedressement,
-        date: e.indice === 'date_suspecte' ? '' : e.date,
+        date: e.indice === 'date_suspecte' ? (e.dateProposee ?? '') : e.date,
       }])));
     } catch (e: any) { setError(e.message); setRows([]); }
   };
@@ -103,6 +107,8 @@ export default function RedressementMasse({ dossierId, currency, onDone }: {
         Une écriture hors des bornes de son exercice a <strong>deux</strong> explications possibles, et Nova ne peut pas
         trancher à votre place : ou la date est bonne et l'exercice est faux, ou l'exercice est bon et c'est la date
         qui est fausse — le cas des pièces importées, datées du jour de l'import.
+        Quand le libellé porte une date exploitable, elle est proposée : <strong>vérifiez-la sur la pièce</strong>,
+        elle n'est lue que dans le texte.
       </p>
 
       {error && <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</p>}
@@ -158,6 +164,10 @@ export default function RedressementMasse({ dossierId, currency, onDone }: {
                           <input type="date" value={c.date} min={e.exercice.debut} max={e.exercice.fin}
                             onChange={(ev) => { setImpact(null); setChoix((p) => ({ ...p, [e.id]: { ...c, date: ev.target.value } })); }}
                             className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1 font-mono text-xs text-zinc-200 outline-none focus:border-emerald-500/50" />
+                          {e.dateProposee && c.date === e.dateProposee && (
+                            <span title={`Proposition déterministe : ${e.motifDateProposee}. Vérifiez-la sur la pièce.`}
+                              className="rounded-md bg-sky-500/15 px-1.5 py-0.5 text-[10px] text-sky-300">{e.motifDateProposee}</span>
+                          )}
                           <span className="text-xs text-zinc-600">dans « {e.exercice.label} », qui ne change pas</span>
                         </>
                       )}

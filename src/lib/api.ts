@@ -178,6 +178,9 @@ export interface EcritureMalRattachee {
   dateDeSaisie: string;
   indice: IndiceRattachement;
   raison: string;
+  /** Date lue dans le libellé, proposée seulement si elle résout l'anomalie. */
+  dateProposee: string | null;
+  motifDateProposee: string | null;
 }
 export type ModeRedressement = 'exercice' | 'date';
 export interface ChoixRedressement { entryId: string; mode: ModeRedressement; nouvelleDate?: string }

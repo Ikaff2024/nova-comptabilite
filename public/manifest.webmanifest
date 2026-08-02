@@ -1,0 +1,13 @@
+{
+  "name": "Nova Comptabilité",
+  "short_name": "Nova",
+  "description": "Comptabilité SYSCOHADA révisé pour les cabinets et les PME de la zone OHADA.",
+  "lang": "fr",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ]
+}

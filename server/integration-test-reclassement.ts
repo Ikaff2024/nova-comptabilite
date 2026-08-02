@@ -207,6 +207,29 @@ async function main() {
   const vente = await poserHorsBornes(f26, '2026-02-10', '2026-02-10', 'Vente février 2026', 'manual',
     [{ accountCode: '5211', debit: 900000 }, { accountCode: '701', credit: 900000 }], f25, '2026-03-05 09:00');
 
+  // --- Lecture d'une date dans le libellé (fonction pure) -------------------
+  // Le libellé porte souvent la date que la pièce n'a pas su donner. La lire
+  // évite dix-neuf ressaisies ; encore faut-il qu'elle lise juste.
+  const lu = (s: string) => reclass.dateDuLibelle(s)?.date ?? null;
+  check('une période : c\'est la date de FIN qui date l\'opération',
+    lu('Relevé de compte BDA pour la période du 01/03/2025 au 31/03/2025') === '2025-03-31',
+    `(${lu('Relevé de compte BDA pour la période du 01/03/2025 au 31/03/2025')})`);
+  check('un mois sans jour donne la fin du mois',
+    lu('Relevé de compte mars 2025') === '2025-03-31', `(${lu('Relevé de compte mars 2025')})`);
+  check('les accents ne gênent pas', lu('Honoraires février 2025') === '2025-02-28', `(${lu('Honoraires février 2025')})`);
+  check('une année bissextile est comptée juste', lu('Loyer fevrier 2024') === '2024-02-29', `(${lu('Loyer fevrier 2024')})`);
+  check('le mois abrégé est compris', lu('Commission sept. 2025') === '2025-09-30', `(${lu('Commission sept. 2025')})`);
+  check('MM/AAAA donne aussi la fin du mois', lu('Abonnement 04/2025') === '2025-04-30', `(${lu('Abonnement 04/2025')})`);
+  check('le format ISO est lu tel quel', lu('Facture du 2025-06-15') === '2025-06-15');
+  check('un jour ne se fait pas relire comme un mois',
+    lu('Facture du 01/03/2025 réglée le 15/04/2025') === '2025-04-15',
+    `(${lu('Facture du 01/03/2025 réglée le 15/04/2025')})`);
+  check('un numéro de pièce ne devient pas une date', lu('Facture FV-2026-0004 Client Awa') === null,
+    `(${lu('Facture FV-2026-0004 Client Awa')})`);
+  check('une date impossible est ignorée', lu('Opération du 32/13/2025') === null, `(${lu('Opération du 32/13/2025')})`);
+  check('un libellé sans date ne propose rien', lu('Achat de fournitures de bureau') === null);
+  check('une année invraisemblable est écartée', lu('Réf 12/1856 archive') === null, `(${lu('Réf 12/1856 archive')})`);
+
   const mal = await withUser(u2, (c) => reclass.ecrituresMalRattachees(c, d2.id));
   check('les deux écritures mal rattachées sont vues', mal.length === 2, `(${mal.length})`);
 

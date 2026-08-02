@@ -12,6 +12,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nova Comptabilité</title>
+    <meta name="description" content="Comptabilité SYSCOHADA révisé pour les cabinets et les PME de la zone OHADA." />
+
+    <!--
+      Icône d'onglet. Sans elle, le navigateur affiche un globe générique : dans
+      une barre d'onglets chargée, l'application devient impossible à retrouver
+      à l'œil, et c'est l'icône, pas le titre, qu'on cherche.
+      Le SVG couvre Chrome, Edge, Firefox et Safari ; mask-icon sert l'onglet
+      épinglé de Safari, qui n'accepte que du monochrome.
+    -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="mask-icon" href="/icon-mask.svg" color="#10b981" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Teinte la barre du navigateur sur mobile, au fond de l'application. -->
+    <meta name="theme-color" content="#09090b" />
   </head>
   <body>
     <div id="root"></div>

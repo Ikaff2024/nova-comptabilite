@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    Onglet épinglé Safari : monochrome imposé, la couleur vient de mask-icon.
+    L'hexagone est donc plein, sans tuile — c'est la silhouette qui identifie.
+  -->
+  <polygon points="16,3 27.26,9.5 27.26,22.5 16,29 4.74,22.5 4.74,9.5" fill="black"/>
+</svg>

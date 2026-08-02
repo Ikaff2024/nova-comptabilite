@@ -314,6 +314,86 @@ export async function preparerReaffectationExercice(
 
 export type IndiceRattachement = 'date_suspecte' | 'exercice_suspect';
 
+// --- Lire une date dans le libellé -------------------------------------------
+//
+// « Relevé de compte BDA pour la période du 01/03/2025 au 31/03/2025 » : le
+// libellé porte la date que la pièce n'a pas su donner. La lire évite de
+// ressaisir dix-neuf dates à la main — et c'est déterministe, donc vérifiable,
+// contrairement à une déduction par modèle.
+//
+// Deux règles :
+//   · quand plusieurs dates apparaissent, on retient la DERNIÈRE. Une période
+//     s'écrit « du X au Y » : c'est Y qui date l'opération, comme pour un
+//     relevé où l'écriture se pose en fin de période ;
+//   · un mois sans jour (« mars 2025 », « 03/2025 ») donne la FIN du mois.
+//
+// La proposition n'est retenue par l'appelant que si elle tombe dans l'exercice
+// de l'écriture : proposer une date qui laisserait l'anomalie en place n'aurait
+// aucun intérêt.
+
+const MOIS_FR: Record<string, number> = {
+  janvier: 1, janv: 1, jan: 1,
+  fevrier: 2, fevr: 2, fev: 2,
+  mars: 3,
+  avril: 4, avr: 4,
+  mai: 5,
+  juin: 6,
+  juillet: 7, juil: 7,
+  aout: 8,
+  septembre: 9, sept: 9, sep: 9,
+  octobre: 10, oct: 10,
+  novembre: 11, nov: 11,
+  decembre: 12, dec: 12,
+};
+
+const anneePlausible = (y: number) => y >= 1990 && y <= 2100;
+const joursDuMois = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+function jour(y: number, m: number, d: number): string | null {
+  if (!anneePlausible(y) || m < 1 || m > 12 || d < 1 || d > joursDuMois(y, m)) return null;
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function finDeMois(y: number, m: number): string | null {
+  if (!anneePlausible(y) || m < 1 || m > 12) return null;
+  return `${y}-${String(m).padStart(2, '0')}-${joursDuMois(y, m)}`;
+}
+
+export function dateDuLibelle(description: string): { date: string; motif: string } | null {
+  // Accents retirés pour que « février » et « fevrier » se lisent pareil ; on
+  // travaille sur cette copie de bout en bout, seul l'ORDRE des trouvailles
+  // compte, pas leur position dans le texte d'origine.
+  let reste = String(description ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const trouvees: { i: number; date: string; motif: string }[] = [];
+
+  const noms = Object.keys(MOIS_FR).sort((a, b) => b.length - a.length).join('|');
+  const passes: { re: RegExp; date: (m: RegExpMatchArray) => string | null; motif: string }[] = [
+    { re: /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g, date: (m) => jour(+m[1], +m[2], +m[3]), motif: 'date lue dans le libellé' },
+    { re: /\b(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})\b/g, date: (m) => jour(+m[3], +m[2], +m[1]), motif: 'date lue dans le libellé' },
+    { re: /\b(\d{1,2})[/.\-](\d{4})\b/g, date: (m) => finDeMois(+m[2], +m[1]), motif: 'fin du mois cité dans le libellé' },
+    { re: new RegExp(`\\b(${noms})\\.?\\s+(\\d{4})\\b`, 'g'), date: (m) => finDeMois(+m[2], MOIS_FR[m[1]]), motif: 'fin du mois cité dans le libellé' },
+  ];
+
+  // Chaque passe masque ce qu'elle a consommé (à longueur constante, pour que
+  // les positions restent valides). Sans cela, le « 03/2025 » contenu dans
+  // « 15/03/2025 » serait relu comme un mois et écraserait le jour.
+  for (const p of passes) {
+    const ms = [...reste.matchAll(p.re)];
+    for (const m of ms) {
+      const d = p.date(m);
+      if (d) trouvees.push({ i: m.index ?? 0, date: d, motif: p.motif });
+    }
+    for (const m of ms) {
+      const i = m.index ?? 0;
+      reste = reste.slice(0, i) + ' '.repeat(m[0].length) + reste.slice(i + m[0].length);
+    }
+  }
+
+  if (!trouvees.length) return null;
+  trouvees.sort((a, b) => a.i - b.i);
+  const dernier = trouvees[trouvees.length - 1];
+  return { date: dernier.date, motif: dernier.motif };
+}
+
 export interface EcritureMalRattachee {
   id: string; date: string; description: string; journal: string; source: string;
   montant: number; resultat: number;
@@ -322,6 +402,9 @@ export interface EcritureMalRattachee {
   dateDeSaisie: string;
   indice: IndiceRattachement;
   raison: string;
+  /** Date lue dans le libellé, retenue seulement si elle résout l'anomalie. */
+  dateProposee: string | null;
+  motifDateProposee: string | null;
 }
 
 export async function ecrituresMalRattachees(c: Client, dossierId: string): Promise<EcritureMalRattachee[]> {
@@ -358,6 +441,14 @@ export async function ecrituresMalRattachees(c: Client, dossierId: string): Prom
     const dateEgaleSaisie = r.date === r.saisie;
     const auto = AUTO.has(r.source);
     const indice: IndiceRattachement = dateEgaleSaisie && auto ? 'date_suspecte' : 'exercice_suspect';
+
+    // Proposition de date, lue dans le libellé. On ne la retient que si elle
+    // tombe dans l'exercice de l'écriture ET diffère de la date actuelle :
+    // sinon elle ne résoudrait rien, et une case pré-remplie inutile se valide
+    // sans se relire.
+    const lu = dateDuLibelle(r.description);
+    const utile = lu && lu.date >= r.fy_debut && lu.date <= r.fy_fin && lu.date !== r.date;
+
     return {
       id: r.id, date: r.date, description: r.description, journal: r.journal, source: r.source,
       montant: r2(Number(r.montant)), resultat: r2(Number(r.resultat)),
@@ -365,6 +456,8 @@ export async function ecrituresMalRattachees(c: Client, dossierId: string): Prom
       exerciceDeLaDate: r.cible_id ? { id: r.cible_id, label: r.cible_label, statut: r.cible_statut } : null,
       dateDeSaisie: r.saisie,
       indice,
+      dateProposee: utile ? lu!.date : null,
+      motifDateProposee: utile ? lu!.motif : null,
       raison: indice === 'date_suspecte'
         ? `La date de l'écriture (${r.date}) est exactement celle de sa saisie, et la pièce vient d'un canal automatique : c'est la DATE qui est probablement fausse, pas l'exercice. Corrigez-la à la date réelle de l'opération — l'écriture reste alors dans « ${r.fy_label} ».`
         : `L'écriture est datée du ${r.date}, hors de « ${r.fy_label} » (${r.fy_debut} → ${r.fy_fin})${r.cible_label ? `, alors que « ${r.cible_label} » couvre cette date` : ", et aucun exercice ne couvre cette date"}.`,
