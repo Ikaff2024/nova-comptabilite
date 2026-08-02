@@ -706,8 +706,8 @@ export const api = {
   reaffecterExercice: (dossierId: string, entryId: string) =>
     req<{ extourneId: string; brouillonId: string; exercice: string; montant: number }>(`/api/dossiers/${dossierId}/reclassements/exercice`, { method: 'POST', body: JSON.stringify({ entryId }) }),
   brouillons: (dossierId: string) => req<Brouillon[]>(`/api/dossiers/${dossierId}/brouillons`),
-  changerExerciceBrouillon: (dossierId: string, entryId: string, fiscalYearId: string) =>
-    req<{ exercice: string; couvreLaDate: boolean }>(`/api/dossiers/${dossierId}/brouillons/${entryId}`, { method: 'PATCH', body: JSON.stringify({ fiscalYearId }) }),
+  modifierBrouillon: (dossierId: string, entryId: string, modif: { fiscalYearId?: string; entryDate?: string }) =>
+    req<{ date: string; exercice: string; couvreLaDate: boolean; exerciceAjuste: boolean }>(`/api/dossiers/${dossierId}/brouillons/${entryId}`, { method: 'PATCH', body: JSON.stringify(modif) }),
   validerBrouillon: (dossierId: string, entryId: string) =>
     req<void>(`/api/dossiers/${dossierId}/brouillons/${entryId}/valider`, { method: 'POST', body: '{}' }),
   supprimerBrouillon: (dossierId: string, entryId: string) =>

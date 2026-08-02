@@ -2099,13 +2099,14 @@ export function createApi() {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => reclass.listerBrouillons(c, req.params.id)));
   }));
-  // Rattachement d'un brouillon : le comptable garde la main sur l'exercice,
-  // parce que l'indépendance des exercices relève du jugement, pas de la date.
+  // Date et rattachement d'un brouillon : le comptable garde la main. Une
+  // comptabilité tenue en retard se rattrape, et l'indépendance des exercices
+  // relève du jugement, pas de la date d'import.
   app.patch('/api/dossiers/:id/brouillons/:entryId', h(async (req, res) => {
     const userId = requireUser(req);
-    const { fiscalYearId } = req.body ?? {};
-    if (!fiscalYearId) throw new Error('Exercice requis.');
-    res.json(await withUser(userId, (c) => reclass.changerExerciceBrouillon(c, req.params.id, req.params.entryId, fiscalYearId)));
+    const { fiscalYearId, entryDate } = req.body ?? {};
+    if (!fiscalYearId && !entryDate) throw new Error('Rien à modifier : donnez une date ou un exercice.');
+    res.json(await withUser(userId, (c) => reclass.modifierBrouillon(c, req.params.id, req.params.entryId, { fiscalYearId, entryDate })));
   }));
   app.post('/api/dossiers/:id/brouillons/:entryId/valider', h(async (req, res) => {
     const userId = requireUser(req);

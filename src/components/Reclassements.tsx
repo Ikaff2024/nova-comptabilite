@@ -22,6 +22,9 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
   const [cands, setCands] = useState<CandidatReclassement[] | null>(null);
   const [drafts, setDrafts] = useState<Brouillon[]>([]);
   const [fys, setFys] = useState<FiscalYear[]>([]);
+  // Saisie de date en cours, par brouillon. On ne valide qu'à la sortie du champ
+  // ou sur Entrée : recharger la liste à chaque frappe ferait perdre le focus.
+  const [dateSaisie, setDateSaisie] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -63,18 +66,27 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
     catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
 
-  // Le rattachement relève du jugement, pas de la date : une facture du 3 janvier
-  // pour une prestation de décembre appartient à l'exercice précédent. Tant que
-  // l'écriture est un brouillon, le comptable garde la main.
-  const changerExercice = async (b: Brouillon, fyId: string) => {
+  // Deux corrections que seul le comptable peut faire, tant que l'écriture est
+  // un brouillon : la DATE (une compta tenue en retard se rattrape, et les
+  // imports datent souvent la pièce du jour de l'import) et l'EXERCICE (une
+  // facture du 3 janvier pour une prestation de décembre appartient au
+  // précédent).
+  const modifier = async (b: Brouillon, modif: { entryDate?: string; fiscalYearId?: string }) => {
     setBusy(b.id); setError(null); setMsg(null);
     try {
-      const r = await api.changerExerciceBrouillon(dossierId, b.id, fyId);
-      setMsg(r.couvreLaDate
-        ? `Brouillon rattaché à « ${r.exercice} ».`
-        : `Brouillon rattaché à « ${r.exercice} », qui ne couvre pas le ${b.date}. C'est accepté — un rattachement peut être volontaire — mais l'écriture sera signalée en révision comme mal bornée.`);
+      const r = await api.modifierBrouillon(dossierId, b.id, modif);
+      const bornes = r.couvreLaDate
+        ? ''
+        : ` L'exercice « ${r.exercice} » ne couvre pas le ${r.date} : c'est accepté, mais l'écriture sera signalée en révision comme mal bornée.`;
+      setMsg(modif.entryDate
+        ? `Date portée au ${r.date}.${r.exerciceAjuste ? ` L'exercice a suivi : « ${r.exercice} ».` : ''}${bornes}`
+        : `Brouillon rattaché à « ${r.exercice} ».${bornes}`);
+      setDateSaisie((p) => { const n = { ...p }; delete n[b.id]; return n; });
       await load();
-    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
+    } catch (e: any) {
+      setError(e.message);
+      setDateSaisie((p) => { const n = { ...p }; delete n[b.id]; return n; });
+    } finally { setBusy(null); }
   };
 
   const supprimer = async (b: Brouillon) => {
@@ -105,10 +117,16 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
                   <div>
                     <div className="text-sm text-zinc-200">{b.description}</div>
                     <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-zinc-500">
-                      <span>{b.date} · {b.journal}</span>
+                      <input type="date" value={dateSaisie[b.id] ?? b.date} disabled={busy === b.id}
+                        onChange={(e) => setDateSaisie((p) => ({ ...p, [b.id]: e.target.value }))}
+                        onBlur={(e) => e.target.value && e.target.value !== b.date && modifier(b, { entryDate: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                        title="Date de comptabilisation — modifiable tant que l'écriture est un brouillon"
+                        className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1 font-mono text-xs text-zinc-200 outline-none focus:border-emerald-500/50 disabled:opacity-50" />
+                      <span>· {b.journal}</span>
                       {fys.length > 0 ? (
                         <select value={b.fiscal_year_id ?? ''} disabled={busy === b.id}
-                          onChange={(e) => e.target.value && e.target.value !== b.fiscal_year_id && changerExercice(b, e.target.value)}
+                          onChange={(e) => e.target.value && e.target.value !== b.fiscal_year_id && modifier(b, { fiscalYearId: e.target.value })}
                           title="Exercice de rattachement — modifiable tant que l'écriture est un brouillon"
                           className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1 font-sans text-xs text-zinc-200 outline-none focus:border-emerald-500/50 disabled:opacity-50">
                           {fys.map((f) => (

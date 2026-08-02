@@ -381,7 +381,7 @@ export async function deleteAccount(c: Client, dossierId: string, id: string): P
 // Ramène une date à la forme 'AAAA-MM-JJ', quelle que soit sa provenance :
 // littéral saisi, chaîne ISO complète, ou objet Date restitué par le pilote pg
 // pour une colonne `date`. Renvoie '' si la valeur n'est pas une date.
-function normaliseDate(v: unknown): string {
+export function normaliseDate(v: unknown): string {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? '' : v.toISOString().slice(0, 10);
   const s = String(v ?? '').trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;

@@ -1,5 +1,5 @@
 import type { Client } from '../db.js';
-import { postEntry, reverseEntry } from './accounting.js';
+import { postEntry, reverseEntry, normaliseDate } from './accounting.js';
 import { recordAudit } from './audit.js';
 
 // ============================================================================
@@ -273,46 +273,89 @@ export async function listerBrouillons(c: Client, dossierId: string): Promise<an
 }
 
 /**
- * Change l'exercice de rattachement d'un BROUILLON.
+ * Corrige la DATE et/ou l'EXERCICE d'un brouillon, avant validation.
  *
- * La réaffectation déduit l'exercice de la date de la pièce — c'est le bon
- * défaut, ce n'est pas une règle absolue. Le rattachement relève du principe
- * d'indépendance des exercices, donc du jugement : une facture datée du 3
- * janvier pour une prestation de décembre se rattache à l'exercice précédent.
- * Le comptable doit pouvoir trancher avant de valider ; sans cela il n'a que
- * deux choix, tous deux mauvais — valider un rattachement qu'il sait faux, ou
- * supprimer le brouillon et tout ressaisir à la main.
+ * Deux besoins réels, tous deux du ressort du comptable et d'aucune règle :
  *
- * Deux garde-fous seulement :
- *   · un exercice CLÔTURÉ reste fermé — on n'y injecte rien, même en brouillon
- *     destiné à être validé ;
- *   · si l'exercice choisi ne couvre pas la date, on l'accepte mais on le DIT :
- *     l'écriture ressortira en révision comme mal rattachée, et c'est normal.
+ *  · La DATE. Une comptabilité tenue en retard se rattrape : on saisit en août
+ *    2026 un relevé de mars 2025. Les imports datent souvent la pièce du jour
+ *    de l'import, pas de l'opération — c'est même la cause première des
+ *    écritures « mal rattachées » que la révision signale ensuite. Corriger la
+ *    date à la source vaut mieux que déplacer l'écriture d'exercice en
+ *    exercice.
+ *
+ *  · L'EXERCICE. Le rattachement relève de l'indépendance des exercices, donc
+ *    du jugement : une facture du 3 janvier pour une prestation de décembre
+ *    appartient à l'exercice précédent.
+ *
+ * Sans cette main, le comptable n'a que deux choix, tous deux mauvais : valider
+ * ce qu'il sait faux, ou supprimer le brouillon et tout ressaisir.
+ *
+ * Confort assumé : si la date change et que l'exercice attaché ne la couvre
+ * plus, on bascule sur l'exercice OUVERT qui la couvre — et on le dit. Sinon il
+ * faudrait deux gestes pour une seule correction, et l'oubli du second
+ * fabriquerait justement l'anomalie qu'on cherche à supprimer.
+ *
+ * Garde-fous :
+ *   · un exercice CLÔTURÉ reste fermé — on n'y rattache rien, même un brouillon ;
+ *   · un exercice qui ne couvre pas la date est accepté mais DIT : l'écriture
+ *     ressortira en révision comme mal bornée, et c'est normal.
  */
-export async function changerExerciceBrouillon(
-  c: Client, dossierId: string, entryId: string, fiscalYearId: string,
-): Promise<{ exercice: string; couvreLaDate: boolean }> {
+export interface ModifBrouillon { entryDate?: string; fiscalYearId?: string }
+
+export async function modifierBrouillon(
+  c: Client, dossierId: string, entryId: string, modif: ModifBrouillon,
+): Promise<{ date: string; exercice: string; couvreLaDate: boolean; exerciceAjuste: boolean }> {
   const { rows } = await c.query(
     "select status, to_char(entry_date,'YYYY-MM-DD') as d, fiscal_year_id from entries where dossier_id=$1 and id=$2",
     [dossierId, entryId]);
   if (!rows[0]) throw new Error('Écriture introuvable.');
-  if (rows[0].status !== 'draft') throw new Error("Seul un brouillon change d'exercice : une écriture validée se contre-passe.");
-
-  const { rows: fy } = await c.query(
-    `select id, label, status, to_char(start_date,'YYYY-MM-DD') as d1, to_char(end_date,'YYYY-MM-DD') as d2
-       from fiscal_years where dossier_id=$1 and id=$2`, [dossierId, fiscalYearId]);
-  if (!fy[0]) throw new Error('Exercice introuvable dans ce dossier.');
-  if (fy[0].status === 'closed') {
-    throw new Error(`« ${fy[0].label} » est clôturé : on n'y rattache plus d'écriture. Passez plutôt une régularisation de cut-off dans l'exercice ouvert.`);
+  if (rows[0].status !== 'draft') {
+    throw new Error('Seul un brouillon se modifie : une écriture comptabilisée est immuable, elle se contre-passe.');
   }
 
-  await c.query('update entries set fiscal_year_id=$3 where dossier_id=$1 and id=$2', [dossierId, entryId, fiscalYearId]);
-  const couvreLaDate = rows[0].d >= fy[0].d1 && rows[0].d <= fy[0].d2;
+  // Date : normalisée, jamais devinée. Une chaîne qui n'est pas une date est
+  // refusée plutôt que silencieusement ignorée.
+  let date: string = rows[0].d;
+  if (modif.entryDate !== undefined) {
+    const n = normaliseDate(modif.entryDate);
+    if (!n) throw new Error(`Date invalide : « ${modif.entryDate} ». Format attendu : AAAA-MM-JJ.`);
+    date = n;
+  }
+
+  const lireExercice = async (id: string) => {
+    const { rows: f } = await c.query(
+      `select id, label, status, to_char(start_date,'YYYY-MM-DD') as d1, to_char(end_date,'YYYY-MM-DD') as d2
+         from fiscal_years where dossier_id=$1 and id=$2`, [dossierId, id]);
+    return f[0];
+  };
+
+  let fy = await lireExercice(modif.fiscalYearId ?? rows[0].fiscal_year_id);
+  if (!fy) throw new Error('Exercice introuvable dans ce dossier.');
+  if (modif.fiscalYearId && fy.status === 'closed') {
+    throw new Error(`« ${fy.label} » est clôturé : on n'y rattache plus d'écriture. Passez plutôt une régularisation de cut-off dans l'exercice ouvert.`);
+  }
+
+  // La date a bougé hors des bornes, et l'exercice n'a pas été imposé : on suit.
+  let exerciceAjuste = false;
+  if (!modif.fiscalYearId && (date < fy.d1 || date > fy.d2)) {
+    const { rows: cible } = await c.query(
+      `select id from fiscal_years
+        where dossier_id=$1 and status <> 'closed' and $2::date between start_date and end_date
+        order by start_date limit 1`, [dossierId, date]);
+    if (cible[0] && cible[0].id !== fy.id) { fy = await lireExercice(cible[0].id); exerciceAjuste = true; }
+  }
+
+  await c.query(
+    'update entries set entry_date=$3, fiscal_year_id=$4 where dossier_id=$1 and id=$2',
+    [dossierId, entryId, date, fy.id]);
+
+  const couvreLaDate = date >= fy.d1 && date <= fy.d2;
   await recordAudit(c, {
-    dossierId, action: 'entry.draft_fiscal_year_changed', entity: 'entry', entityId: entryId,
-    detail: { vers: fy[0].label, date: rows[0].d, couvreLaDate },
+    dossierId, action: 'entry.draft_amended', entity: 'entry', entityId: entryId,
+    detail: { date, exercice: fy.label, couvreLaDate, exerciceAjuste, avant: { date: rows[0].d } },
   });
-  return { exercice: fy[0].label, couvreLaDate };
+  return { date, exercice: fy.label, couvreLaDate, exerciceAjuste };
 }
 
 export async function validerBrouillon(c: Client, dossierId: string, entryId: string): Promise<void> {

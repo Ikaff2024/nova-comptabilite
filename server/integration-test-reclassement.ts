@@ -115,25 +115,49 @@ async function main() {
     avant?.exercice_debut === '2026-01-01' && avant?.exercice_fin === '2026-12-31',
     `(${avant?.exercice_debut} → ${avant?.exercice_fin})`);
 
-  const chg = await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, br2.entryId, fy2025));
+  const chg = await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, br2.entryId, { fiscalYearId: fy2025 }));
   check('le comptable peut rattacher le brouillon à l\'exercice précédent', chg.exercice === 'Exercice 2025', `(${chg.exercice})`);
   check('et il est prévenu que cet exercice ne couvre pas la date', chg.couvreLaDate === false);
   const apres = (await withUser(u, (c) => reclass.listerBrouillons(c, d.id))).find((x: any) => x.id === br2.entryId);
   check('le changement est bien enregistré', apres?.exercice === 'Exercice 2025', `(${apres?.exercice})`);
 
-  const retour = await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, br2.entryId, fy));
+  const retour = await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, br2.entryId, { fiscalYearId: fy }));
   check('revenir à l\'exercice qui couvre la date ne lève aucune réserve', retour.couvreLaDate === true);
 
+  // --- La DATE de comptabilisation, pour une compta tenue en retard ---------
+  // Les imports datent souvent la pièce du JOUR DE L'IMPORT : c'est la cause
+  // première des écritures « mal rattachées ». Corriger la date à la source vaut
+  // mieux que déplacer l'écriture d'exercice en exercice.
+  const dm = await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, br2.entryId, { entryDate: '2025-03-31' }));
+  check('la date de comptabilisation se corrige', dm.date === '2025-03-31', `(${dm.date})`);
+  check('et l\'exercice suit tout seul, sans second geste',
+    dm.exerciceAjuste === true && dm.exercice === 'Exercice 2025', `(${dm.exercice}, ajusté=${dm.exerciceAjuste})`);
+  check('le rattachement redevient cohérent', dm.couvreLaDate === true);
+  const apresDate = (await withUser(u, (c) => reclass.listerBrouillons(c, d.id))).find((x: any) => x.id === br2.entryId);
+  check('la nouvelle date est bien en base', apresDate?.date === '2025-03-31', `(${apresDate?.date})`);
+
+  let refusDate = false;
+  try { await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, br2.entryId, { entryDate: 'hier' })); } catch { refusDate = true; }
+  check('une date illisible est refusée, jamais ignorée', refusDate);
+  const inchange = (await withUser(u, (c) => reclass.listerBrouillons(c, d.id))).find((x: any) => x.id === br2.entryId);
+  check('et le brouillon n\'a pas bougé', inchange?.date === '2025-03-31', `(${inchange?.date})`);
+
   // Un exercice clôturé reste fermé : on n'y injecte rien, même en brouillon.
+  await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, br2.entryId, { entryDate: '2026-01-03', fiscalYearId: fy }));
   await withUser(u, (c) => c.query("update fiscal_years set status='closed' where dossier_id=$1 and id=$2", [d.id, fy2025]));
   let refusClos = false;
-  try { await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, br2.entryId, fy2025)); } catch { refusClos = true; }
+  try { await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, br2.entryId, { fiscalYearId: fy2025 })); } catch { refusClos = true; }
   check('un exercice clôturé refuse le rattachement', refusClos);
+
+  // Et la date ne sert pas de porte dérobée vers un exercice clôturé.
+  const versClos = await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, br2.entryId, { entryDate: '2025-06-15' }));
+  check('une date tombant dans un exercice clôturé n\'y fait pas basculer l\'écriture',
+    versClos.exercice === 'Exercice 2026' && versClos.couvreLaDate === false, `(${versClos.exercice})`);
 
   // Une écriture validée ne se déplace pas : elle se contre-passe.
   let refusPosted = false;
-  try { await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, r.entryId, fy)); } catch { refusPosted = true; }
-  check('une écriture comptabilisée ne change pas d\'exercice', refusPosted);
+  try { await withUser(u, (c) => reclass.modifierBrouillon(c, d.id, r.entryId, { fiscalYearId: fy })); } catch { refusPosted = true; }
+  check('une écriture comptabilisée ne se modifie pas', refusPosted);
 
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;
