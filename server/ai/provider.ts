@@ -61,7 +61,10 @@ Logique de l'écriture :
 - VENTE / encaissement : crédit du/des compte(s) de produit (classe 7) pour le HT ; crédit du compte de TVA facturée (classe 4) ; débit du moyen de paiement (classe 5) ou du compte clients (classe 4).
 - journalCode : 'AC' pour un achat, 'VE' pour une vente, 'BQ'/'CA' si purement trésorerie.
 - Si la TVA n'est pas visible, n'invente pas de ligne de TVA.
-- entryDate au format YYYY-MM-DD. confidence entre 0 et 1.
+- entryDate au format YYYY-MM-DD : la date qui figure SUR LA PIÈCE (date de facture, date de reçu, date d'opération). N'utilise JAMAIS la date du jour, et ne déduis jamais l'année du contexte : une comptabilité se tient souvent en retard, une pièce de mars 2025 peut être saisie en août 2026.
+- Si la pièce couvre une PÉRIODE (relevé bancaire, décompte mensuel, facture d'abonnement), prends la date de FIN de période.
+- Si AUCUNE date n'est lisible, laisse entryDate vide. Une date inventée coûte plus cher qu'une date manquante : elle rattache l'écriture au mauvais exercice sans que personne ne s'en aperçoive.
+- confidence entre 0 et 1.
 - recipientName : recopie le nom du DESTINATAIRE/CLIENT figurant sur la pièce (mentions « À : », « Client : », « Facturé à », « Doit : »). Laisse vide si absent.
 
 DESTINATAIRE : si la pièce indique un destinataire/client dont le nom NE correspond PAS à l'entreprise du dossier (fournie dans le message), ajoute un warning explicite du type « Pièce au nom de "X", pas de l'entreprise — à vérifier ». Ne bloque rien : propose quand même l'écriture.`;
@@ -71,7 +74,7 @@ const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     description: { type: 'string' },
-    entryDate: { type: 'string', description: 'YYYY-MM-DD' },
+    entryDate: { type: 'string', description: "YYYY-MM-DD — date figurant SUR LA PIÈCE, jamais la date du jour. Pour un document couvrant une période (relevé), la date de FIN de période. Vide si aucune date n'est lisible." },
     journalCode: { type: 'string' },
     counterpartyName: { type: 'string' },
     recipientName: { type: 'string', description: "Nom du destinataire/client indiqué sur la pièce (À : / Client : / Facturé à). Vide si non visible." },
@@ -158,11 +161,11 @@ export async function extractDocument(
   const primary = selectProvider();
   if (primary === 'demo') return demoProposal(input.context);
   try {
-    return normalize(await callProvider(primary, input), input.context);
+    return normaliseProposition(await callProvider(primary, input), input.context);
   } catch (e: any) {
     if (!fallbackEnabled(primary)) throw e;
     // Bascule automatique sur OpenRouter (quota/panne du fournisseur principal).
-    const p = normalize(await extractViaOpenRouter(input), input.context);
+    const p = normaliseProposition(await extractViaOpenRouter(input), input.context);
     p.warnings = [...(p.warnings ?? []), `Fournisseur principal indisponible (${String(e?.message ?? '').slice(0, 80)}) — bascule automatique sur OpenRouter (${OPENROUTER_MODEL}).`];
     return p;
   }
@@ -282,10 +285,47 @@ async function extractViaGemini(
 
 // --- Normalisation commune ---------------------------------------------------
 
-function normalize(parsed: any, ctx: CaptureContext): CaptureProposal {
+/**
+ * Date de la PIÈCE, ramenée en AAAA-MM-JJ. Tolère le format français, qui est
+ * celui de la plupart des documents ivoiriens. Rend '' si rien n'est lisible —
+ * on ne devine pas.
+ */
+function dateDeLaPiece(v: unknown): string {
+  const s = String(v ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (iso) return iso[1];
+  const fr = s.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/); // 01/03/2025
+  if (fr) {
+    const [, j, m, a] = fr;
+    if (Number(m) >= 1 && Number(m) <= 12 && Number(j) >= 1 && Number(j) <= 31) {
+      return `${a}-${m.padStart(2, '0')}-${j.padStart(2, '0')}`;
+    }
+  }
+  return '';
+}
+
+export function normaliseProposition(parsed: any, ctx: CaptureContext): CaptureProposal {
+  // La date décide de l'exercice. Sans elle, le formulaire propose la date du
+  // jour — ce qui, pour une comptabilité tenue en retard, rattache la pièce au
+  // mauvais exercice, silencieusement, et ne se découvre qu'en révision des
+  // mois plus tard. On ne peut pas empêcher le repli, mais on peut refuser
+  // qu'il passe inaperçu.
+  const entryDate = dateDeLaPiece(parsed.entryDate);
+  const warnings = [...(parsed.warnings ?? [])];
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  if (!entryDate) {
+    warnings.push(
+      parsed.entryDate
+        ? `Date illisible sur la pièce (« ${String(parsed.entryDate).slice(0, 20)} ») : la date du jour est proposée par défaut. Corrigez-la avant de valider — elle décide de l'exercice.`
+        : "Aucune date lue sur la pièce : la date du jour est proposée par défaut. Corrigez-la avant de valider — elle décide de l'exercice de rattachement.");
+  } else if (entryDate > aujourdhui) {
+    warnings.push(`La date lue sur la pièce (${entryDate}) est dans le futur : vérifiez-la avant de valider.`);
+  }
+
   return {
     description: parsed.description ?? 'Pièce capturée',
-    entryDate: parsed.entryDate,
+    entryDate: entryDate || undefined,
     journalCode: parsed.journalCode,
     counterpartyName: parsed.counterpartyName,
     recipientName: parsed.recipientName || undefined,
@@ -298,7 +338,7 @@ function normalize(parsed: any, ctx: CaptureContext): CaptureProposal {
       credit: l.credit ? Number(l.credit) : undefined,
       label: l.label,
     })),
-    warnings: parsed.warnings,
+    warnings: warnings.length ? warnings : undefined,
   };
 }
 

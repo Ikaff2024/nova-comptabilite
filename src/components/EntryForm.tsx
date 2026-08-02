@@ -30,6 +30,16 @@ export default function EntryForm({
     || journals.find((j) => j.code === 'VE')?.id || journals[0]?.id || '',
   );
   const [date, setDate] = useState(initial?.entryDate || new Date().toISOString().slice(0, 10));
+  // L'exercice suit la date. Une pièce de mars 2025 capturée en août 2026 se
+  // présenterait sinon sur l'exercice courant, et la validation la refuserait —
+  // en laissant l'utilisateur deviner qu'il fallait aussi changer l'exercice.
+  useEffect(() => {
+    if (!date) return;
+    const courant = fiscalYears.find((f) => f.id === fy);
+    if (courant && date >= courant.start_date.slice(0, 10) && date <= courant.end_date.slice(0, 10)) return;
+    const couvrant = fiscalYears.find((f) => f.status !== 'closed' && date >= f.start_date.slice(0, 10) && date <= f.end_date.slice(0, 10));
+    if (couvrant && couvrant.id !== fy) setFy(couvrant.id);
+  }, [date, fiscalYears]);
   const [description, setDescription] = useState(initial?.description ?? '');
   const [lines, setLines] = useState<Line[]>(
     initial?.lines?.length ? initial.lines.map(toLine) : [blank(), blank()],
