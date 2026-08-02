@@ -2099,6 +2099,14 @@ export function createApi() {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => reclass.listerBrouillons(c, req.params.id)));
   }));
+  // Rattachement d'un brouillon : le comptable garde la main sur l'exercice,
+  // parce que l'indépendance des exercices relève du jugement, pas de la date.
+  app.patch('/api/dossiers/:id/brouillons/:entryId', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { fiscalYearId } = req.body ?? {};
+    if (!fiscalYearId) throw new Error('Exercice requis.');
+    res.json(await withUser(userId, (c) => reclass.changerExerciceBrouillon(c, req.params.id, req.params.entryId, fiscalYearId)));
+  }));
   app.post('/api/dossiers/:id/brouillons/:entryId/valider', h(async (req, res) => {
     const userId = requireUser(req);
     await withUser(userId, (c) => reclass.validerBrouillon(c, req.params.id, req.params.entryId));

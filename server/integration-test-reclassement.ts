@@ -98,7 +98,45 @@ async function main() {
   } catch { refusMotif = true; }
   check('reclassement sans motif refusé', refusMotif);
 
+  // ---------------- Le rattachement d'un brouillon reste au comptable --------
+  // L'exercice se déduit de la date, c'est un bon défaut mais pas une règle :
+  // une facture du 3 janvier pour une prestation de décembre appartient à
+  // l'exercice précédent. Sans la main, le comptable n'a que deux mauvais choix
+  // — valider ce qu'il sait faux, ou tout ressaisir.
+  const fy2025 = await withUser(u, (c) => acc.createFiscalYear(c, d.id, 'Exercice 2025', '2025-01-01', '2025-12-31'));
+  const br2 = await withUser(u, (c) => reclass.preparerReclassement(c, d.id, {
+    compteSource: '401', compteCible: '409', montant: 12000, date: '2026-01-03',
+    motif: 'prestation de décembre facturée en janvier', counterpartyId: frs.id,
+  }, u));
+
+  const avant = (await withUser(u, (c) => reclass.listerBrouillons(c, d.id))).find((x: any) => x.id === br2.entryId);
+  check('le brouillon naît dans l\'exercice de sa date', avant?.exercice === 'Exercice 2026', `(${avant?.exercice})`);
+  check('les bornes de l\'exercice accompagnent le brouillon',
+    avant?.exercice_debut === '2026-01-01' && avant?.exercice_fin === '2026-12-31',
+    `(${avant?.exercice_debut} → ${avant?.exercice_fin})`);
+
+  const chg = await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, br2.entryId, fy2025));
+  check('le comptable peut rattacher le brouillon à l\'exercice précédent', chg.exercice === 'Exercice 2025', `(${chg.exercice})`);
+  check('et il est prévenu que cet exercice ne couvre pas la date', chg.couvreLaDate === false);
+  const apres = (await withUser(u, (c) => reclass.listerBrouillons(c, d.id))).find((x: any) => x.id === br2.entryId);
+  check('le changement est bien enregistré', apres?.exercice === 'Exercice 2025', `(${apres?.exercice})`);
+
+  const retour = await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, br2.entryId, fy));
+  check('revenir à l\'exercice qui couvre la date ne lève aucune réserve', retour.couvreLaDate === true);
+
+  // Un exercice clôturé reste fermé : on n'y injecte rien, même en brouillon.
+  await withUser(u, (c) => c.query("update fiscal_years set status='closed' where dossier_id=$1 and id=$2", [d.id, fy2025]));
+  let refusClos = false;
+  try { await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, br2.entryId, fy2025)); } catch { refusClos = true; }
+  check('un exercice clôturé refuse le rattachement', refusClos);
+
+  // Une écriture validée ne se déplace pas : elle se contre-passe.
+  let refusPosted = false;
+  try { await withUser(u, (c) => reclass.changerExerciceBrouillon(c, d.id, r.entryId, fy)); } catch { refusPosted = true; }
+  check('une écriture comptabilisée ne change pas d\'exercice', refusPosted);
+
   console.log(`\n${ok} PASS / ${ko} FAIL`);
+  if (ko) process.exitCode = 1;
   await closePool();
 }
 main().catch(async (e) => { console.error('ERREUR', e); process.exitCode = 1; await closePool(); });

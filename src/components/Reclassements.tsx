@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Wand2, CheckCircle2, Trash2, AlertTriangle, Info, FileClock } from 'lucide-react';
-import { api, fmtMoney, type CandidatReclassement, type Brouillon } from '../lib/api';
+import { Loader2, Wand2, CheckCircle2, Trash2, AlertTriangle, Info, FileClock, Lock } from 'lucide-react';
+import { api, fmtMoney, type CandidatReclassement, type Brouillon, type FiscalYear } from '../lib/api';
 import { cn } from '../lib/utils';
 
 // Reclassements et brouillons. Deux principes tenus par l'écran :
@@ -21,6 +21,7 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
 }) {
   const [cands, setCands] = useState<CandidatReclassement[] | null>(null);
   const [drafts, setDrafts] = useState<Brouillon[]>([]);
+  const [fys, setFys] = useState<FiscalYear[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -28,11 +29,12 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
 
   const load = async () => {
     setError(null);
-    const [c, b] = await Promise.all([
+    const [c, b, f] = await Promise.all([
       api.reclassements(dossierId, fiscalYearId).catch(() => [] as CandidatReclassement[]),
       api.brouillons(dossierId).catch(() => [] as Brouillon[]),
+      api.fiscalYears(dossierId).catch(() => [] as FiscalYear[]),
     ]);
-    setCands(c); setDrafts(b);
+    setCands(c); setDrafts(b); setFys(f);
   };
   useEffect(() => { load(); }, [dossierId, fiscalYearId]);
 
@@ -59,6 +61,20 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
     setBusy(b.id); setError(null); setMsg(null);
     try { await api.validerBrouillon(dossierId, b.id); setMsg('Écriture comptabilisée.'); await load(); }
     catch (e: any) { setError(e.message); } finally { setBusy(null); }
+  };
+
+  // Le rattachement relève du jugement, pas de la date : une facture du 3 janvier
+  // pour une prestation de décembre appartient à l'exercice précédent. Tant que
+  // l'écriture est un brouillon, le comptable garde la main.
+  const changerExercice = async (b: Brouillon, fyId: string) => {
+    setBusy(b.id); setError(null); setMsg(null);
+    try {
+      const r = await api.changerExerciceBrouillon(dossierId, b.id, fyId);
+      setMsg(r.couvreLaDate
+        ? `Brouillon rattaché à « ${r.exercice} ».`
+        : `Brouillon rattaché à « ${r.exercice} », qui ne couvre pas le ${b.date}. C'est accepté — un rattachement peut être volontaire — mais l'écriture sera signalée en révision comme mal bornée.`);
+      await load();
+    } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
 
   const supprimer = async (b: Brouillon) => {
@@ -88,7 +104,31 @@ export default function Reclassements({ dossierId, fiscalYearId, currency }: {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-sm text-zinc-200">{b.description}</div>
-                    <div className="font-mono text-xs text-zinc-500">{b.date} · {b.journal}{b.exercice && ` · ${b.exercice}`}</div>
+                    <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-zinc-500">
+                      <span>{b.date} · {b.journal}</span>
+                      {fys.length > 0 ? (
+                        <select value={b.fiscal_year_id ?? ''} disabled={busy === b.id}
+                          onChange={(e) => e.target.value && e.target.value !== b.fiscal_year_id && changerExercice(b, e.target.value)}
+                          title="Exercice de rattachement — modifiable tant que l'écriture est un brouillon"
+                          className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1 font-sans text-xs text-zinc-200 outline-none focus:border-emerald-500/50 disabled:opacity-50">
+                          {fys.map((f) => (
+                            <option key={f.id} value={f.id} disabled={f.status === 'closed'}>
+                              {f.label}{f.status === 'closed' ? ' (clôturé)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      ) : b.exercice && <span>· {b.exercice}</span>}
+                      {b.exercice_debut && b.exercice_fin && (b.date < b.exercice_debut || b.date > b.exercice_fin) && (
+                        <span className="flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 font-sans text-[10px] text-amber-300">
+                          <AlertTriangle className="h-3 w-3" /> hors bornes ({b.exercice_debut} → {b.exercice_fin})
+                        </span>
+                      )}
+                      {b.exercice_statut === 'closed' && (
+                        <span className="flex items-center gap-1 rounded-md bg-rose-500/15 px-1.5 py-0.5 font-sans text-[10px] text-rose-300">
+                          <Lock className="h-3 w-3" /> exercice clôturé
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-sm text-zinc-200">{m(b.montant)}</span>

@@ -253,7 +253,13 @@ export async function preparerReaffectationExercice(
 export async function listerBrouillons(c: Client, dossierId: string): Promise<any[]> {
   const { rows } = await c.query(
     `select e.id, to_char(e.entry_date,'YYYY-MM-DD') as date, j.code as journal, e.description,
-            f.label as exercice, e.created_at,
+            f.label as exercice, e.fiscal_year_id, f.status as exercice_statut,
+            -- Les bornes servent à dire, AVANT validation, si l'exercice choisi
+            -- couvre bien la date : c'est le seul moyen de rendre un
+            -- rattachement volontaire distinguable d'une erreur.
+            to_char(f.start_date,'YYYY-MM-DD') as exercice_debut,
+            to_char(f.end_date,'YYYY-MM-DD') as exercice_fin,
+            e.created_at,
             coalesce((select sum(amount_debit) from entry_lines where entry_id = e.id), 0) as montant,
             (select json_agg(json_build_object('compte', a.account_code, 'intitule', a.label,
                     'debit', l.amount_debit, 'credit', l.amount_credit, 'libelle', l.label) order by l.line_no)
@@ -264,6 +270,49 @@ export async function listerBrouillons(c: Client, dossierId: string): Promise<an
       where e.dossier_id = $1 and e.status = 'draft'
       order by e.created_at desc`, [dossierId]);
   return rows.map((r: any) => ({ ...r, montant: r2(Number(r.montant)), lignes: r.lignes ?? [] }));
+}
+
+/**
+ * Change l'exercice de rattachement d'un BROUILLON.
+ *
+ * La réaffectation déduit l'exercice de la date de la pièce — c'est le bon
+ * défaut, ce n'est pas une règle absolue. Le rattachement relève du principe
+ * d'indépendance des exercices, donc du jugement : une facture datée du 3
+ * janvier pour une prestation de décembre se rattache à l'exercice précédent.
+ * Le comptable doit pouvoir trancher avant de valider ; sans cela il n'a que
+ * deux choix, tous deux mauvais — valider un rattachement qu'il sait faux, ou
+ * supprimer le brouillon et tout ressaisir à la main.
+ *
+ * Deux garde-fous seulement :
+ *   · un exercice CLÔTURÉ reste fermé — on n'y injecte rien, même en brouillon
+ *     destiné à être validé ;
+ *   · si l'exercice choisi ne couvre pas la date, on l'accepte mais on le DIT :
+ *     l'écriture ressortira en révision comme mal rattachée, et c'est normal.
+ */
+export async function changerExerciceBrouillon(
+  c: Client, dossierId: string, entryId: string, fiscalYearId: string,
+): Promise<{ exercice: string; couvreLaDate: boolean }> {
+  const { rows } = await c.query(
+    "select status, to_char(entry_date,'YYYY-MM-DD') as d, fiscal_year_id from entries where dossier_id=$1 and id=$2",
+    [dossierId, entryId]);
+  if (!rows[0]) throw new Error('Écriture introuvable.');
+  if (rows[0].status !== 'draft') throw new Error("Seul un brouillon change d'exercice : une écriture validée se contre-passe.");
+
+  const { rows: fy } = await c.query(
+    `select id, label, status, to_char(start_date,'YYYY-MM-DD') as d1, to_char(end_date,'YYYY-MM-DD') as d2
+       from fiscal_years where dossier_id=$1 and id=$2`, [dossierId, fiscalYearId]);
+  if (!fy[0]) throw new Error('Exercice introuvable dans ce dossier.');
+  if (fy[0].status === 'closed') {
+    throw new Error(`« ${fy[0].label} » est clôturé : on n'y rattache plus d'écriture. Passez plutôt une régularisation de cut-off dans l'exercice ouvert.`);
+  }
+
+  await c.query('update entries set fiscal_year_id=$3 where dossier_id=$1 and id=$2', [dossierId, entryId, fiscalYearId]);
+  const couvreLaDate = rows[0].d >= fy[0].d1 && rows[0].d <= fy[0].d2;
+  await recordAudit(c, {
+    dossierId, action: 'entry.draft_fiscal_year_changed', entity: 'entry', entityId: entryId,
+    detail: { vers: fy[0].label, date: rows[0].d, couvreLaDate },
+  });
+  return { exercice: fy[0].label, couvreLaDate };
 }
 
 export async function validerBrouillon(c: Client, dossierId: string, entryId: string): Promise<void> {

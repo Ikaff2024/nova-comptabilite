@@ -168,6 +168,10 @@ export interface CandidatReclassement {
 }
 export interface Brouillon {
   id: string; date: string; journal: string; description: string; exercice: string | null; montant: number;
+  // Rattachement : modifiable tant que l'écriture est un brouillon. Les bornes
+  // servent à dire si l'exercice choisi couvre bien la date de la pièce.
+  fiscal_year_id?: string | null; exercice_statut?: string | null;
+  exercice_debut?: string | null; exercice_fin?: string | null;
   lignes: { compte: string; intitule: string; debit: number; credit: number; libelle: string | null }[];
 }
 
@@ -702,6 +706,8 @@ export const api = {
   reaffecterExercice: (dossierId: string, entryId: string) =>
     req<{ extourneId: string; brouillonId: string; exercice: string; montant: number }>(`/api/dossiers/${dossierId}/reclassements/exercice`, { method: 'POST', body: JSON.stringify({ entryId }) }),
   brouillons: (dossierId: string) => req<Brouillon[]>(`/api/dossiers/${dossierId}/brouillons`),
+  changerExerciceBrouillon: (dossierId: string, entryId: string, fiscalYearId: string) =>
+    req<{ exercice: string; couvreLaDate: boolean }>(`/api/dossiers/${dossierId}/brouillons/${entryId}`, { method: 'PATCH', body: JSON.stringify({ fiscalYearId }) }),
   validerBrouillon: (dossierId: string, entryId: string) =>
     req<void>(`/api/dossiers/${dossierId}/brouillons/${entryId}/valider`, { method: 'POST', body: '{}' }),
   supprimerBrouillon: (dossierId: string, entryId: string) =>
