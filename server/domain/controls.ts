@@ -24,12 +24,51 @@ export async function coherenceChecks(c: Client, dossierId: string, fiscalYearId
   const devise = dr[0]?.base_currency ?? 'XOF';
   const rows = await acc.trialBalance(c, dossierId, fiscalYearId);
   const anomalies: Anomalie[] = [];
+
+  // Comptes de TÊTE : un compte qui a des subdivisions ne se saisit pas
+  // lui-même (`is_postable` est posé à false à l'instanciation du plan). Y
+  // imputer une écriture éclate le compte réel en deux — le solde part d'un
+  // côté, les mouvements de l'autre — et fabrique des soldes impossibles :
+  // une caisse créditrice, par exemple, alors que sa subdivision est
+  // débitrice. C'est une erreur d'imputation, pas une erreur de montant, donc
+  // rien dans les totaux ne la trahit.
+  const { rows: plan } = await c.query(
+    `select a.account_code, a.is_postable,
+            (select string_agg(s.account_code, ', ' order by s.account_code)
+               from accounts s
+              where s.dossier_id = a.dossier_id and s.is_active
+                and s.account_code <> a.account_code
+                and s.account_code like a.account_code || '%') as subdivisions
+       from accounts a where a.dossier_id = $1 and a.is_postable = false`, [dossierId]);
+  const teteAvecSubdivisions = new Map<string, string>(
+    plan.filter((p: any) => p.subdivisions).map((p: any) => [p.account_code, p.subdivisions]));
   const push = (niveau: Niveau, regle: string, r: any, explication: string) =>
     anomalies.push({ niveau, regle, compte: r.account_code, intitule: r.account_label ?? '', solde: Math.round(r.balance), sens: r.balance >= 0 ? 'débiteur' : 'créditeur', explication });
 
   for (const r of rows) {
     const code = String(r.account_code); const bal = Number(r.balance);
+
+    // Imputation sur un compte de tête : signalée même quand le solde est
+    // faible, car c'est la CAUSE d'autres anomalies (caisse créditrice,
+    // trésorerie éclatée), et le montant n'a rien à voir avec la gravité.
+    const subs = teteAvecSubdivisions.get(code);
+    if (subs && (r.total_debit !== 0 || r.total_credit !== 0)) {
+      push('haute', 'ecriture_sur_compte_de_tete', r,
+        `Le compte ${code} regroupe des subdivisions (${subs}) : on n'y impute pas d'écriture directement. Les mouvements passés ici sont séparés de ceux de la subdivision, ce qui coupe le compte réel en deux et peut produire un solde impossible. À réimputer sur la subdivision qui convient.`);
+      continue;
+    }
+
     if (Math.abs(bal) < SEUIL) continue;
+
+    // Virements de fonds (58) : compte de PASSAGE entre deux comptes de
+    // trésorerie. Il doit être soldé — un reliquat veut dire qu'un transfert
+    // n'a qu'une moitié : l'argent est parti d'un compte sans arriver dans
+    // l'autre, ou l'inverse. Il gonfle alors la trésorerie d'un côté du bilan.
+    if (code.startsWith('58')) {
+      push('haute', 'virement_fonds_non_solde', r,
+        "Les virements de fonds (58) sont un compte de passage : il doit être soldé à zéro. Un reliquat signale un transfert enregistré d'un seul côté — la trésorerie du bilan s'en trouve faussée.");
+      continue;
+    }
 
     // Fournisseurs 401 débiteurs (hors 409 = avances/fournisseurs débiteurs, normal).
     if (code.startsWith('401') && bal > 0)

@@ -27,6 +27,7 @@
     "test:axes": "tsx server/integration-test-axes.ts",
     "test:capture": "tsx server/ai/provider.test.ts",
     "test:notes": "tsx server/integration-test-notes.ts",
+    "test:controles": "tsx server/integration-test-controles.ts",
     "test:payroll": "tsx server/payroll/core/run-tests.ts"
   },
   "dependencies": {

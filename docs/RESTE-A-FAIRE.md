@@ -86,6 +86,22 @@ la fiscalité ivoirienne à partir d'un texte OHADA.
 
 ## 3. Dettes repérées en chemin
 
+### 3.0 La saisie n'interdit pas les comptes de tête
+
+`postEntry` résout les comptes par code mais ne lit jamais `is_postable`. Or
+l'instanciation du plan le calcule correctement : un compte qui a des
+subdivisions n'est pas saisissable. On peut donc imputer sur `571` alors que
+`5711` existe — ce qui coupe le compte réel en deux et fabrique des soldes
+impossibles (caisse créditrice). C'est l'origine du déséquilibre constaté sur
+IKAFFANAN.
+
+Le contrôle de révision le signale désormais (`ecriture_sur_compte_de_tete`,
+niveau haute). **Le bloquer à la saisie demande une décision** : le jeu de
+démonstration et plusieurs tests imputent sur `521`, qui a `5211` pour
+subdivision. Interdire sans préparer casserait tout cela. À trancher : bloquer
+et corriger les appelants, ou rester au signalement.
+
+
 ### 3.1 Registre de la veille adapté au destinataire
 
 Nova est vendue aux cabinets **et** aux PME. Le même mail part à un comptable et
