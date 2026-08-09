@@ -55,6 +55,7 @@ import * as activityreport from './domain/activityreport.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
+import * as notes from './domain/notes-annexes.js';
 import * as budget from './domain/budget.js';
 import * as budgetcopilot from './domain/budgetcopilot.js';
 import * as clotureworks from './domain/clotureworks.js';
@@ -1674,6 +1675,19 @@ export function createApi() {
   app.get('/api/dossiers/:id/analytic/entry/:entryId', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => analytic.entryAxes(c, req.params.id, req.params.entryId)));
+  }));
+
+  // --- Notes annexes (DSF) ---------------------------------------------------
+  // Dérivées du grand livre : les mouvements de l'exercice sont lus, jamais
+  // déduits d'un écart de soldes.
+  app.get('/api/dossiers/:id/notes-annexes/immobilisations', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, async (c) => ({
+      note3A: await notes.note3A(c, req.params.id, fy),
+      note3C: await notes.note3C(c, req.params.id, fy),
+      registre: await notes.rapprochementRegistre(c, req.params.id, fy),
+    })));
   }));
 
   // --- Assistant comptable agentique (lecture seule) -------------------------

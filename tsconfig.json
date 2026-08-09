@@ -23,5 +23,8 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["server", "node_modules", "dist", "reference"]
+  "exclude": ["server", "node_modules", "dist", "reference", "liasse-fiscale-syscohada"]
+  // liasse-fiscale-syscohada/ : application tierce conservée comme RÉFÉRENCE
+  // (structure des notes annexes), jamais compilée avec Nova — elle a ses
+  // propres dépendances et son propre cycle de vie.
 }

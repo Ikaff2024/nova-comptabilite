@@ -191,6 +191,28 @@ export interface ImpactRedressement {
   total: number;
 }
 
+// Notes annexes du DSF. Les quatre colonnes sont LUES dans la comptabilité
+// (à-nouveaux / mouvements de l'exercice), jamais déduites d'un écart de soldes.
+export interface LigneNoteImmo {
+  ref: string; libelle: string;
+  ouverture: number; augmentations: number; diminutions: number; cloture: number;
+  comptes: { code: string; libelle: string; ouverture: number; augmentations: number; diminutions: number; cloture: number }[];
+}
+export interface NoteImmobilisations {
+  note: '3A' | '3C'; intitule: string; exercice: string | null;
+  lignes: LigneNoteImmo[];
+  totaux: { ouverture: number; augmentations: number; diminutions: number; cloture: number };
+  comptesNonAffectes: { code: string; libelle: string; solde: number }[];
+  articulation: { ref: string; note: number; bilan: number; ecart: number }[];
+  articulee: boolean;
+}
+export interface NotesImmobilisations {
+  note3A: NoteImmobilisations;
+  note3C: NoteImmobilisations;
+  registre: { registreBrut: number; comptaBrut: number; ecartBrut: number;
+              registreAmort: number; comptaAmort: number; ecartAmort: number; concordant: boolean };
+}
+
 export interface Brouillon {
   id: string; date: string; journal: string; description: string; exercice: string | null; montant: number;
   // Rattachement : modifiable tant que l'écriture est un brouillon. Les bornes
@@ -737,6 +759,8 @@ export const api = {
     req<ImpactRedressement>(`/api/dossiers/${dossierId}/reclassements/impact`, { method: 'POST', body: JSON.stringify({ choix }) }),
   redresserEnMasse: (dossierId: string, choix: ChoixRedressement[]) =>
     req<{ traitees: number; brouillons: string[]; extournes: string[] }>(`/api/dossiers/${dossierId}/reclassements/masse`, { method: 'POST', body: JSON.stringify({ choix }) }),
+  notesImmobilisations: (dossierId: string, fiscalYearId?: string) =>
+    req<NotesImmobilisations>(`/api/dossiers/${dossierId}/notes-annexes/immobilisations?${qs({ fiscalYearId })}`),
   brouillons: (dossierId: string) => req<Brouillon[]>(`/api/dossiers/${dossierId}/brouillons`),
   modifierBrouillon: (dossierId: string, entryId: string, modif: { fiscalYearId?: string; entryDate?: string }) =>
     req<{ date: string; exercice: string; couvreLaDate: boolean; exerciceAjuste: boolean }>(`/api/dossiers/${dossierId}/brouillons/${entryId}`, { method: 'PATCH', body: JSON.stringify(modif) }),

@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, FileText, CheckCircle2, AlertTriangle, Printer, Info } from 'lucide-react';
 import { api, downloadAuthed, fmtMoney, type FiscalYear, type FinancialStatements as FS, type ComparativeFS, type EtatsOfficiels, type LigneEtatOfficiel, currentFiscalYear } from '../lib/api';
 import { cn } from '../lib/utils';
+import NotesAnnexes from './NotesAnnexes';
 
-type Vue = 'synthese' | 'officiel';
+type Vue = 'synthese' | 'officiel' | 'notes';
 
 export default function FinancialStatements({
   dossierId, dossierName, fiscalYears, currency,
@@ -49,7 +50,7 @@ export default function FinancialStatements({
           {/* Deux lectures des mêmes chiffres : la synthèse (regroupements par
               nature) et la présentation officielle à postes référencés. */}
           <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-0.5 text-sm">
-            {([['synthese', 'Synthèse'], ['officiel', 'Format officiel']] as const).map(([v, label]) => (
+            {([['synthese', 'Synthèse'], ['officiel', 'Format officiel'], ['notes', 'Notes annexes']] as const).map(([v, label]) => (
               <button key={v} onClick={() => setVue(v)}
                 className={cn('rounded-md px-3 py-1 font-medium transition-colors', vue === v ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200')}>
                 {label}
@@ -62,7 +63,7 @@ export default function FinancialStatements({
             className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm outline-none focus:border-emerald-500/50">
             {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
           </select>
-          <button onClick={exportPdf} disabled={vue === 'officiel' ? !off : !data}
+          <button onClick={exportPdf} disabled={vue === 'notes' || (vue === 'officiel' ? !off : !data)}
             className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/10 disabled:opacity-40">
             <Printer className="h-4 w-4" /> Export PDF
           </button>
@@ -79,7 +80,9 @@ export default function FinancialStatements({
         </div>
       </div>
 
-      {vue === 'officiel' ? (
+      {vue === 'notes' ? (
+        <NotesAnnexes dossierId={dossierId} fiscalYearId={fy || undefined} currency={currency} />
+      ) : vue === 'officiel' ? (
         !off ? <div className="flex items-center gap-2 text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Calcul des états officiels…</div>
           : <EtatsOfficielsVue e={off} m={m} />
       ) : loading ? (

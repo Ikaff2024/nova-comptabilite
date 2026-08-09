@@ -17,3 +17,9 @@ scratchpad/
 # payant. Tant que son statut n'est pas arbitré (docs/RESTE-A-FAIRE.md § 1.3),
 # il reste hors dépôt — on ne redistribue pas une publication vendue.
 SYSCOHADA_revise_2017*
+
+# Application tierce conservée en local comme RÉFÉRENCE : la structure des
+# notes annexes du DSF (41 notes) qu'on reconstruit dans Nova, dérivée du grand
+# livre. Générée par Google AI Studio, ses dépendances et son cycle de vie lui
+# appartiennent — on en extrait la spécification, on ne fusionne pas le code.
+liasse-fiscale-syscohada/
