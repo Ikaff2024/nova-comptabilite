@@ -191,6 +191,34 @@ export interface ImpactRedressement {
   total: number;
 }
 
+// Compte de résultat mensualisé : mêmes postes et mêmes formules que l'état
+// officiel, appliqués mois par mois — le cumul retombe donc sur l'annuel.
+// Convention de signe héritée de l'état : les charges sont NÉGATIVES.
+export interface MoisPnl { cle: string; libelle: string }
+export interface LignePnl {
+  ref: string; libelle: string; nature: string;
+  mensuel: number[]; total: number; detaillable: boolean;
+}
+export interface PnlMensuel {
+  exercice: { id: string; label: string } | null;
+  mois: MoisPnl[];
+  lignes: LignePnl[];
+  controle: { cumulMensuel: number; resultatAnnuel: number; ecart: number; ok: boolean };
+  comptesNonAffectes: { compte: string; intitule: string; solde: number }[];
+}
+export interface LigneDetailPnl {
+  entryId: string; date: string; journal: string; pieceRef: string | null;
+  compte: string; intitule: string; libelle: string;
+  debit: number; credit: number; montant: number;
+}
+export interface DetailPnl {
+  poste: { ref: string; libelle: string };
+  mois: string | null;
+  parCompte: { compte: string; intitule: string; montant: number; nb: number }[];
+  lignes: LigneDetailPnl[];
+  total: number;
+}
+
 // Notes annexes du DSF. Les quatre colonnes sont LUES dans la comptabilité
 // (à-nouveaux / mouvements de l'exercice), jamais déduites d'un écart de soldes.
 export interface LigneNoteImmo {
@@ -759,6 +787,10 @@ export const api = {
     req<ImpactRedressement>(`/api/dossiers/${dossierId}/reclassements/impact`, { method: 'POST', body: JSON.stringify({ choix }) }),
   redresserEnMasse: (dossierId: string, choix: ChoixRedressement[]) =>
     req<{ traitees: number; brouillons: string[]; extournes: string[] }>(`/api/dossiers/${dossierId}/reclassements/masse`, { method: 'POST', body: JSON.stringify({ choix }) }),
+  pnlMensuel: (dossierId: string, fiscalYearId?: string) =>
+    req<PnlMensuel>(`/api/dossiers/${dossierId}/pnl-mensuel?${qs({ fiscalYearId })}`),
+  pnlDetail: (dossierId: string, ref: string, opts: { mois?: string; fiscalYearId?: string } = {}) =>
+    req<DetailPnl>(`/api/dossiers/${dossierId}/pnl-mensuel/${encodeURIComponent(ref)}?${qs(opts as any)}`),
   notesImmobilisations: (dossierId: string, fiscalYearId?: string) =>
     req<NotesImmobilisations>(`/api/dossiers/${dossierId}/notes-annexes/immobilisations?${qs({ fiscalYearId })}`),
   brouillons: (dossierId: string) => req<Brouillon[]>(`/api/dossiers/${dossierId}/brouillons`),

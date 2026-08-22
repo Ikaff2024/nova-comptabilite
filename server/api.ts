@@ -56,6 +56,7 @@ import { dossierDashboard } from './domain/dossierdashboard.js';
 import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
 import * as notes from './domain/notes-annexes.js';
+import * as pnl from './domain/pnl-mensuel.js';
 import * as budget from './domain/budget.js';
 import * as budgetcopilot from './domain/budgetcopilot.js';
 import * as clotureworks from './domain/clotureworks.js';
@@ -1675,6 +1676,21 @@ export function createApi() {
   app.get('/api/dossiers/:id/analytic/entry/:entryId', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => analytic.entryAxes(c, req.params.id, req.params.entryId)));
+  }));
+
+  // --- Compte de résultat mensualisé (revue d'arrêté) -------------------------
+  // Deux routes : la grille, puis la descente jusqu'aux écritures d'une case.
+  app.get('/api/dossiers/:id/pnl-mensuel', h(async (req, res) => {
+    const userId = requireUser(req);
+    const fy = (req.query.fiscalYearId as string) || undefined;
+    res.json(await withUser(userId, (c) => pnl.pnlMensuel(c, req.params.id, fy)));
+  }));
+  app.get('/api/dossiers/:id/pnl-mensuel/:ref', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => pnl.pnlDetail(c, req.params.id, req.params.ref, {
+      mois: (req.query.mois as string) || undefined,
+      fiscalYearId: (req.query.fiscalYearId as string) || undefined,
+    })));
   }));
 
   // --- Notes annexes (DSF) ---------------------------------------------------
