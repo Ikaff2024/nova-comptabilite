@@ -57,6 +57,7 @@ import { fecExport } from './domain/fec.js';
 import * as analytic from './domain/analytic.js';
 import * as notes from './domain/notes-annexes.js';
 import * as pnl from './domain/pnl-mensuel.js';
+import * as anaAssist from './domain/analytique-assistant.js';
 import * as budget from './domain/budget.js';
 import * as budgetcopilot from './domain/budgetcopilot.js';
 import * as clotureworks from './domain/clotureworks.js';
@@ -1676,6 +1677,36 @@ export function createApi() {
   app.get('/api/dossiers/:id/analytic/entry/:entryId', h(async (req, res) => {
     const userId = requireUser(req);
     res.json(await withUser(userId, (c) => analytic.entryAxes(c, req.params.id, req.params.entryId)));
+  }));
+
+  // --- Assistant de mise en place analytique ----------------------------------
+  app.get('/api/dossiers/:id/analytic/modeles', h(async (req, res) => {
+    requireUser(req);
+    res.json(anaAssist.modelesActivite());
+  }));
+  app.post('/api/dossiers/:id/analytic/modeles', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.status(201).json(await withUser(userId, (c) => anaAssist.appliquerModele(c, req.params.id, (req.body ?? {}).axes ?? [], userId)));
+  }));
+  app.get('/api/dossiers/:id/analytic/ventilation', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => anaAssist.etatVentilation(
+      c, req.params.id, (req.query.axis as string) || undefined, (req.query.fiscalYearId as string) || undefined)));
+  }));
+  app.post('/api/dossiers/:id/analytic/ventilation/apercu', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { regle, fiscalYearId } = req.body ?? {};
+    res.json(await withUser(userId, (c) => anaAssist.apercuVentilation(c, req.params.id, regle, fiscalYearId || undefined)));
+  }));
+  app.post('/api/dossiers/:id/analytic/ventilation', h(async (req, res) => {
+    const userId = requireUser(req);
+    const { regle, fiscalYearId } = req.body ?? {};
+    res.status(201).json(await withUser(userId, (c) => anaAssist.appliquerVentilation(c, req.params.id, regle, fiscalYearId || undefined)));
+  }));
+  app.get('/api/dossiers/:id/analytic/suggestions', h(async (req, res) => {
+    const userId = requireUser(req);
+    res.json(await withUser(userId, (c) => anaAssist.suggestionsVentilation(
+      c, req.params.id, (req.query.axis as string) || '', (req.query.fiscalYearId as string) || undefined)));
   }));
 
   // --- Compte de résultat mensualisé (revue d'arrêté) -------------------------

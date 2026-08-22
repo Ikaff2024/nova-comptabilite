@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, PieChart, Layers, ChevronRight, CalendarRange, Printer, TrendingUp, Grid3x3, Settings2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, PieChart, Layers, ChevronRight, CalendarRange, Printer, TrendingUp, Grid3x3, Settings2, Sparkles } from 'lucide-react';
 import { api, fmtMoney, type FiscalYear, type AnalyticSection, type AnalyticReport, type AnalyticDetail, type AnalyticMonthly, type AnalyticAxe, type AnalyticCross, currentFiscalYear } from '../lib/api';
 import { printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
 import Rentabilite from './Rentabilite';
 import AxesAnalytiques from './AxesAnalytiques';
+import AssistantAnalytique from './AssistantAnalytique';
 
 export default function Analytique({ dossierId, currency, fiscalYears }: { dossierId: string; currency: string; fiscalYears: FiscalYear[] }) {
   const [sections, setSections] = useState<AnalyticSection[]>([]);
@@ -20,6 +21,7 @@ export default function Analytique({ dossierId, currency, fiscalYears }: { dossi
   const [axes, setAxes] = useState<AnalyticAxe[]>([]);
   const [axe, setAxe] = useState('');
   const [showAxes, setShowAxes] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
   const [cross, setCross] = useState<AnalyticCross | null>(null);
   const [crossB, setCrossB] = useState('');
   const [crossLoading, setCrossLoading] = useState(false);
@@ -106,12 +108,20 @@ export default function Analytique({ dossierId, currency, fiscalYears }: { dossi
             <Layers className="h-4 w-4 text-emerald-400" />
             Sections {axeCourant ? <>de l'axe <span className="text-emerald-400">{axeCourant.label}</span></> : 'analytiques (centres de coût)'}
           </div>
-          <button onClick={() => setShowAxes((v) => !v)}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10">
-            <Settings2 className="h-3.5 w-3.5" /> {showAxes ? 'Masquer' : 'Gérer'} les axes{axes.length > 1 ? ` (${axes.length})` : ''}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setShowAssistant((v) => !v); setShowAxes(false); }}
+              className="flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-300 hover:bg-sky-500/20">
+              <Sparkles className="h-3.5 w-3.5" /> {showAssistant ? 'Fermer' : 'Mise en place guidée'}
+            </button>
+            <button onClick={() => { setShowAxes((v) => !v); setShowAssistant(false); }}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10">
+              <Settings2 className="h-3.5 w-3.5" /> {showAxes ? 'Masquer' : 'Gérer'} les axes{axes.length > 1 ? ` (${axes.length})` : ''}
+            </button>
+          </div>
         </div>
         {showAxes && <AxesAnalytiques dossierId={dossierId} axes={axes} onChanged={async () => { await loadAxes(); await load(); }} />}
+        {showAssistant && <AssistantAnalytique dossierId={dossierId} currency={currency} fiscalYearId={fy || undefined}
+          onDone={async () => { await loadAxes(); await load(); }} />}
         <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
           <div><label className="mb-1 block text-xs text-zinc-500">Code</label><input value={code} onChange={(e) => setCode(e.target.value)} placeholder="COCODY" className="w-32 rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500/50" /></div>
           <div className="flex-1 min-w-[12rem]"><label className="mb-1 block text-xs text-zinc-500">Intitulé</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Boutique Cocody" className="w-full rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-emerald-500/50" /></div>

@@ -191,6 +191,28 @@ export interface ImpactRedressement {
   total: number;
 }
 
+// Assistant de mise en place analytique. La contrainte qui gouverne tout : les
+// lignes d'une écriture comptabilisée sont immuables, donc l'axe PRINCIPAL ne
+// se ventile pas après coup — seuls les axes secondaires le peuvent.
+export interface ModeleSection { code: string; label: string }
+export interface ModeleAxe { code: string; label: string; sections: ModeleSection[]; aide: string }
+export interface ModeleActivite { cle: string; label: string; description: string; axes: ModeleAxe[] }
+export interface AxeAcreer { code: string; label: string; sections: ModeleSection[] }
+export interface EtatVentilation {
+  axe: { id: string; code: string; label: string; isPrimary: boolean };
+  ventilables: number; ventilees: number; nonVentilees: number; montantNonVentile: number;
+  retroactif: boolean; message: string;
+}
+export interface RegleVentilation { axe: string; section: string; comptes?: string[]; tiers?: string[]; journaux?: string[] }
+export interface ApercuVentilation {
+  nb: number; montant: number;
+  exemples: { date: string; compte: string; libelle: string; montant: number }[];
+}
+export interface SuggestionVentilation {
+  compte: string; intitule: string; section: string; sectionLabel: string;
+  precedents: number; concernees: number; confiance: number;
+}
+
 // Compte de résultat mensualisé : mêmes postes et mêmes formules que l'état
 // officiel, appliqués mois par mois — le cumul retombe donc sur l'annuel.
 // Convention de signe héritée de l'état : les charges sont NÉGATIVES.
@@ -787,6 +809,17 @@ export const api = {
     req<ImpactRedressement>(`/api/dossiers/${dossierId}/reclassements/impact`, { method: 'POST', body: JSON.stringify({ choix }) }),
   redresserEnMasse: (dossierId: string, choix: ChoixRedressement[]) =>
     req<{ traitees: number; brouillons: string[]; extournes: string[] }>(`/api/dossiers/${dossierId}/reclassements/masse`, { method: 'POST', body: JSON.stringify({ choix }) }),
+  modelesAnalytiques: (dossierId: string) => req<ModeleActivite[]>(`/api/dossiers/${dossierId}/analytic/modeles`),
+  appliquerModeleAnalytique: (dossierId: string, axes: AxeAcreer[]) =>
+    req<{ axesCrees: string[]; sectionsCreees: string[]; ignores: string[]; principalRenomme: string | null }>(`/api/dossiers/${dossierId}/analytic/modeles`, { method: 'POST', body: JSON.stringify({ axes }) }),
+  etatVentilation: (dossierId: string, axis?: string, fiscalYearId?: string) =>
+    req<EtatVentilation>(`/api/dossiers/${dossierId}/analytic/ventilation?${qs({ axis, fiscalYearId })}`),
+  apercuVentilation: (dossierId: string, regle: RegleVentilation, fiscalYearId?: string) =>
+    req<ApercuVentilation>(`/api/dossiers/${dossierId}/analytic/ventilation/apercu`, { method: 'POST', body: JSON.stringify({ regle, fiscalYearId }) }),
+  appliquerVentilation: (dossierId: string, regle: RegleVentilation, fiscalYearId?: string) =>
+    req<{ ventilees: number }>(`/api/dossiers/${dossierId}/analytic/ventilation`, { method: 'POST', body: JSON.stringify({ regle, fiscalYearId }) }),
+  suggestionsVentilation: (dossierId: string, axis: string, fiscalYearId?: string) =>
+    req<SuggestionVentilation[]>(`/api/dossiers/${dossierId}/analytic/suggestions?${qs({ axis, fiscalYearId })}`),
   pnlMensuel: (dossierId: string, fiscalYearId?: string) =>
     req<PnlMensuel>(`/api/dossiers/${dossierId}/pnl-mensuel?${qs({ fiscalYearId })}`),
   pnlDetail: (dossierId: string, ref: string, opts: { mois?: string; fiscalYearId?: string } = {}) =>
