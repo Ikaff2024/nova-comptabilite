@@ -1,6 +1,7 @@
 import type { Client } from '../db.js';
 import * as acc from './accounting.js';
 import { BILAN_ACTIF, matchExpression, type PosteEtat } from './etats-postes.js';
+import { etatsOfficiels } from './etats-officiels.js';
 
 // ============================================================================
 // NOTES ANNEXES — Note 3A (immobilisations brutes) et Note 3C (amortissements).
@@ -56,6 +57,13 @@ export interface NoteImmobilisations {
   totaux: { ouverture: number; augmentations: number; diminutions: number; cloture: number };
   /** Comptes de la classe visée qu'aucun poste du bilan ne capte — jamais silencieux. */
   comptesNonAffectes: { code: string; libelle: string; solde: number }[];
+  /**
+   * Comptes que l'ouvrage marque « pour partie » (2818p, 2949p…) : ils figurent
+   * dans DEUX postes sans que le partage se déduise du numéro. Imputés une
+   * seule fois — les compter deux fois gonflerait le cumul — et signalés pour
+   * reventilation, exactement comme dans l'état officiel.
+   */
+  aVentiler: { code: string; libelle: string; solde: number; impute: string; partageAvec: string[] }[];
   /** Contrôle d'articulation : la clôture de la note retombe-t-elle sur le bilan ? */
   articulation: { ref: string; note: number; bilan: number; ecart: number }[];
   articulee: boolean;
@@ -86,6 +94,11 @@ async function noteMouvements(
 
   const lignes: LigneNoteImmo[] = [];
   const pris = new Set<string>();
+  // Un compte « pour partie » appartient à deux postes. L'état officiel ne
+  // l'impute qu'une fois ; la note doit faire pareil, sinon son cumul dépasse
+  // celui du bilan sans que rien ne le signale.
+  const dejaImpute = new Set<string>();
+  const aVentiler: NoteImmobilisations['aVentiler'] = [];
 
   for (const p of postes) {
     const exprs = expressions(p);
@@ -95,7 +108,15 @@ async function noteMouvements(
 
     for (const r of tb) {
       if (!exprs.some((e) => matchExpression(r.account_code, e))) continue;
+      if (dejaImpute.has(r.account_code)) continue;
+      dejaImpute.add(r.account_code);
       pris.add(r.account_code);
+      const autres = postes
+        .filter((q) => q.ref !== p.ref && expressions(q).some((e) => matchExpression(r.account_code, e)))
+        .map((q) => q.ref);
+      if (autres.length && r.balance !== 0) {
+        aVentiler.push({ code: r.account_code, libelle: r.account_label ?? '', solde: r2(sens * r.balance), impute: p.ref, partageAvec: autres });
+      }
       const o = sens * (r.open_debit - r.open_credit);
       // « Augmentation » et « diminution » se lisent dans le sens du compte :
       // un amortissement AUGMENTE au crédit, une immobilisation au débit.
@@ -131,15 +152,15 @@ async function noteMouvements(
     cloture: r2(t.cloture + l.cloture),
   }), { ouverture: 0, augmentations: 0, diminutions: 0, cloture: 0 });
 
-  // Articulation avec le bilan : la clôture de chaque ligne doit être exactement
-  // la colonne correspondante de l'état. C'est le seul contrôle qui vaille —
-  // le bouclage interne, lui, est vrai par construction.
+  // Articulation avec le bilan. Point de méthode : on interroge l'ÉTAT OFFICIEL
+  // plutôt que de recalculer la même somme ici. Un contrôle qui refait le calcul
+  // avec le même code ne peut par construction rien détecter — il compare la
+  // note à elle-même. C'est précisément ce qui masquait la double imputation
+  // des comptes « pour partie ».
+  const etat = await etatsOfficiels(c, dossierId, fiscalYearId);
   const articulation = lignes.map((l) => {
-    const p = postes.find((x) => x.ref === l.ref)!;
-    const exprs = expressions(p);
-    const bilan = r2(sens * tb
-      .filter((r: any) => exprs.some((e) => matchExpression(r.account_code, e)))
-      .reduce((s: number, r: any) => s + r.balance, 0));
+    const ligneEtat = etat.bilanActif.find((x) => x.ref === l.ref);
+    const bilan = r2(Number(quoi === 'brut' ? ligneEtat?.brut ?? 0 : ligneEtat?.amort ?? 0));
     return { ref: l.ref, note: l.cloture, bilan, ecart: r2(l.cloture - bilan) };
   });
 
@@ -153,7 +174,7 @@ async function noteMouvements(
       ? 'Note 3A — Immobilisations brutes (mouvements de l\'exercice)'
       : 'Note 3C — Amortissements et dépréciations des immobilisations',
     exercice: fy[0]?.label ?? null,
-    lignes, totaux, comptesNonAffectes, articulation,
+    lignes, totaux, comptesNonAffectes, aVentiler, articulation,
     articulee: articulation.every((a) => Math.abs(a.ecart) < 0.01),
   };
 }
@@ -179,12 +200,26 @@ export async function rapprochementRegistre(
 ): Promise<{ registreBrut: number; comptaBrut: number; ecartBrut: number;
              registreAmort: number; comptaAmort: number; ecartAmort: number; concordant: boolean }> {
   const [a, d] = await Promise.all([note3A(c, dossierId, fiscalYearId), note3C(c, dossierId, fiscalYearId)]);
+
+  // Le registre doit être arrêté à la MÊME DATE que la note, sinon il compare
+  // un parc d'aujourd'hui à une comptabilité d'hier et annonce un écart qui
+  // n'existe pas. Un bien acquis en 2026 n'a rien à faire dans le
+  // rapprochement de l'exercice 2025.
+  const { rows: fy } = fiscalYearId
+    ? await c.query("select to_char(end_date,'YYYY-MM-DD') as fin from fiscal_years where dossier_id=$1 and id=$2", [dossierId, fiscalYearId])
+    : { rows: [] as any[] };
+  const fin: string | null = fy[0]?.fin ?? null;
+
   const { rows } = await c.query(
     `select coalesce(sum(fa.amount), 0) as brut,
             coalesce((select sum(dp.amount) from fixed_asset_depreciations dp
                        join fixed_assets f2 on f2.id = dp.fixed_asset_id
-                      where dp.dossier_id = $1 and f2.status <> 'disposed'), 0) as amort
-       from fixed_assets fa where fa.dossier_id=$1 and fa.status <> 'disposed'`, [dossierId]);
+                      where dp.dossier_id = $1 and f2.status <> 'disposed'
+                        and ($2::date is null or f2.acquisition_date <= $2::date)
+                        and ($2::date is null or dp.period_year <= extract(year from $2::date))), 0) as amort
+       from fixed_assets fa
+      where fa.dossier_id=$1 and fa.status <> 'disposed'
+        and ($2::date is null or fa.acquisition_date <= $2::date)`, [dossierId, fin]);
   const registreBrut = r2(Number(rows[0]?.brut ?? 0));
   const registreAmort = r2(Number(rows[0]?.amort ?? 0));
   const ecartBrut = r2(registreBrut - a.totaux.cloture);

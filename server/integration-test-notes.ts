@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { withUser, closePool } from './db.js';
 import * as acc from './domain/accounting.js';
 import * as notes from './domain/notes-annexes.js';
+import { etatsOfficiels } from './domain/etats-officiels.js';
 
 // ============================================================================
 // NOTES ANNEXES 3A / 3C — mouvements des immobilisations et des amortissements.
@@ -134,6 +135,72 @@ async function main() {
     rap.registreBrut === 0 && rap.comptaBrut > 0, `(registre ${rap.registreBrut} / compta ${rap.comptaBrut})`);
   check('et l\'écart est annoncé, pas tu', rap.concordant === false && rap.ecartBrut !== 0,
     `(écart ${rap.ecartBrut})`);
+
+
+  // ---------------- Comptes « pour partie » : imputés UNE fois ----------------
+  // L'ouvrage marque 2818 comme partagé entre deux postes du bilan. La note le
+  // lisait poste par poste et le comptait DEUX fois — et son contrôle
+  // d'articulation ne le voyait pas, parce qu'il recalculait la même somme avec
+  // le même code. Un contrôle auto-référentiel ne prouve rien.
+  const u4 = randomUUID();
+  const cab4 = await withUser(u4, (c) => acc.onboardCabinet(c, u4, 'Cab4', 'CI'));
+  const d4 = await withUser(u4, (c) => acc.openDossier(c, { cabinetId: cab4, raisonSociale: 'Partage', country: 'CI' }));
+  const fy4 = await withUser(u4, (c) => acc.createFiscalYear(c, d4.id, 'Exercice 2026', '2026-01-01', '2026-12-31'));
+  const jAN4 = await withUser(u4, (c) => acc.createJournal(c, d4.id, 'AN', 'A-nouveaux', 'a_nouveaux'));
+  await withUser(u4, (c) => acc.postEntry(c, {
+    dossierId: d4.id, fiscalYearId: fy4, journalId: jAN4, entryDate: '2026-01-01',
+    description: 'A-nouveaux', source: 'opening_balance',
+    lines: [
+      { accountCode: '2441', debit: 10000000 },
+      { accountCode: '2818', credit: 1000000 },
+      { accountCode: '2844', credit: 2000000 },
+      { accountCode: '101', credit: 7000000 },
+    ],
+  }));
+
+  const off4 = await withUser(u4, (c) => etatsOfficiels(c, d4.id, fy4));
+  const amortBilan = off4.bilanActif.filter((l: any) => l.nature === 'poste')
+    .reduce((s: number, l: any) => s + Number(l.amort ?? 0), 0);
+  const n3cP = await withUser(u4, (c) => notes.note3C(c, d4.id, fy4));
+
+  check("un compte « pour partie » n'est compté qu'une fois",
+    n3cP.totaux.cloture === amortBilan, `(note ${n3cP.totaux.cloture} / bilan ${amortBilan})`);
+  check("et il est signalé pour reventilation, comme dans l'état",
+    n3cP.aVentiler.some((x: any) => x.code === '2818'), `(${n3cP.aVentiler.map((x: any) => x.code).join(',')})`);
+  check('le partage nomme les postes concernés',
+    (n3cP.aVentiler.find((x: any) => x.code === '2818')?.partageAvec.length ?? 0) > 0);
+  check('la note reste articulée avec le bilan', n3cP.articulee,
+    `(${n3cP.articulation.filter((a: any) => a.ecart).map((a: any) => `${a.ref}:${a.ecart}`).join(',')})`);
+
+  // ---------------- Le rapprochement suit l'exercice demandé ----------------
+  // Le registre était lu SANS borne de date : sur un exercice antérieur, il
+  // comparait le parc d'aujourd'hui à la comptabilité d'hier et annonçait un
+  // écart qui n'existait pas.
+  const u5 = randomUUID();
+  const cab5 = await withUser(u5, (c) => acc.onboardCabinet(c, u5, 'Cab5', 'CI'));
+  const d5 = await withUser(u5, (c) => acc.openDossier(c, { cabinetId: cab5, raisonSociale: 'Registre', country: 'CI' }));
+  const fy5a = await withUser(u5, (c) => acc.createFiscalYear(c, d5.id, 'Exercice 2025', '2025-01-01', '2025-12-31'));
+  const fy5b = await withUser(u5, (c) => acc.createFiscalYear(c, d5.id, 'Exercice 2026', '2026-01-01', '2026-12-31'));
+  const j5 = await withUser(u5, (c) => acc.createJournal(c, d5.id, 'OD', 'OD', 'operations_diverses'));
+  await withUser(u5, (c) => acc.postEntry(c, {
+    dossierId: d5.id, fiscalYearId: fy5b, journalId: j5, entryDate: '2026-02-01',
+    description: 'Achat materiel', source: 'manual',
+    lines: [{ accountCode: '2441', debit: 5000000 }, { accountCode: '481', credit: 5000000 }],
+  }));
+  const { createAsset } = await import('./domain/assets.js');
+  await withUser(u5, (c) => createAsset(c, d5.id, {
+    label: 'Materiel', assetAccountCode: '2441', amortAccountCode: '2844',
+    acquisitionDate: '2026-02-01', commissioningDate: '2026-02-01',
+    amount: 5000000, durationYears: 5,
+  } as any));
+
+  const rap26 = await withUser(u5, (c) => notes.rapprochementRegistre(c, d5.id, fy5b));
+  const rap25 = await withUser(u5, (c) => notes.rapprochementRegistre(c, d5.id, fy5a));
+  check('sur son exercice, registre et comptabilite concordent', rap26.concordant,
+    `(registre ${rap26.registreBrut} / compta ${rap26.comptaBrut})`);
+  check("sur l'exercice PRECEDENT, le bien n'est pas encore la",
+    rap25.registreBrut === 0 && rap25.concordant,
+    `(registre ${rap25.registreBrut} / compta ${rap25.comptaBrut})`);
 
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;

@@ -184,6 +184,34 @@ async function main() {
   check('la vue mensuelle ventile sur le bon axe',
     ligneServices?.total === 1000000, `(${ligneServices?.total})`);
 
+
+  // ---------------- Supprimer une section ventilée ----------------
+  // La cascade de la base effacait silencieusement toutes les ventilations qui
+  // citaient la section : le resultat analytique perdait ces montants sans une
+  // ligne de journal, sans un message. On refuse, comme pour un axe utilise.
+  const secNegoce = (await withUser(u, (c) => analytic.listSections(c, d.id, 'ACTIVITE')))
+    .find((x: any) => x.code === 'NEGOCE');
+  const ventAvant = await withUser(u, (c) => c.query(
+    'select count(*)::int n from entry_line_analytics where dossier_id=$1', [d.id]));
+  let refusSectionUtilisee = false; let motifSection = '';
+  try { await withUser(u, (c) => analytic.deleteSection(c, d.id, secNegoce.id)); }
+  catch (e: any) { refusSectionUtilisee = true; motifSection = e.message; }
+  const ventApres = await withUser(u, (c) => c.query(
+    'select count(*)::int n from entry_line_analytics where dossier_id=$1', [d.id]));
+  check('une section ventilee ne se supprime pas', refusSectionUtilisee);
+  check('et le message dit combien de lignes seraient perdues',
+    /ligne\(s\) d'ecriture|ligne\(s\) d'écriture/.test(motifSection), `(${motifSection.slice(0, 70)})`);
+  check('aucune ventilation n a disparu',
+    ventAvant.rows[0].n === ventApres.rows[0].n, `(${ventAvant.rows[0].n} -> ${ventApres.rows[0].n})`);
+
+  // Une section vierge, elle, se supprime sans histoire.
+  await withUser(u, (c) => analytic.createSection(c, d.id, 'VIDE', 'Section vierge', 'ACTIVITE'));
+  const secVide = (await withUser(u, (c) => analytic.listSections(c, d.id, 'ACTIVITE')))
+    .find((x: any) => x.code === 'VIDE');
+  await withUser(u, (c) => analytic.deleteSection(c, d.id, secVide.id));
+  check('une section jamais utilisee se supprime',
+    !(await withUser(u, (c) => analytic.listSections(c, d.id, 'ACTIVITE'))).some((x: any) => x.code === 'VIDE'));
+
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;
   await closePool();

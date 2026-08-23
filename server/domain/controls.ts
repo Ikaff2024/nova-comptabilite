@@ -26,20 +26,33 @@ export async function coherenceChecks(c: Client, dossierId: string, fiscalYearId
   const anomalies: Anomalie[] = [];
 
   // Comptes de TÊTE : un compte qui a des subdivisions ne se saisit pas
-  // lui-même (`is_postable` est posé à false à l'instanciation du plan). Y
-  // imputer une écriture éclate le compte réel en deux — le solde part d'un
-  // côté, les mouvements de l'autre — et fabrique des soldes impossibles :
-  // une caisse créditrice, par exemple, alors que sa subdivision est
-  // débitrice. C'est une erreur d'imputation, pas une erreur de montant, donc
-  // rien dans les totaux ne la trahit.
+  // lui-même (`is_postable` est posé à false à l'instanciation du plan).
+  // C'est une erreur d'imputation, pas une erreur de montant : rien dans les
+  // totaux ne la trahit, la balance reste équilibrée au franc près.
+  //
+  // Précision qui change tout : on ne signale PAS un compte de tête utilisé de
+  // façon constante. Imputer toujours sur 701 sans jamais toucher 7011 est un
+  // choix de tenue, pas une erreur — le solde reste juste.
+  //
+  // Ce qui est fautif, c'est que le PARENT ET UNE DE SES SUBDIVISIONS portent
+  // tous deux des mouvements : le compte réel est alors coupé en deux, les
+  // entrées d'un côté, les sorties de l'autre, d'où des soldes impossibles.
+  // Sans cette nuance, le contrôle criait sur quinze comptes parfaitement
+  // tenus et noyait la seule anomalie réelle.
   const { rows: plan } = await c.query(
-    `select a.account_code, a.is_postable,
-            (select string_agg(s.account_code, ', ' order by s.account_code)
-               from accounts s
-              where s.dossier_id = a.dossier_id and s.is_active
-                and s.account_code <> a.account_code
-                and s.account_code like a.account_code || '%') as subdivisions
-       from accounts a where a.dossier_id = $1 and a.is_postable = false`, [dossierId]);
+    `with mouvementes as (
+       select a.account_code, a.is_postable
+         from entry_lines l
+         join entries e on e.id = l.entry_id and e.status = 'posted'
+         join accounts a on a.id = l.account_id
+        where l.dossier_id = $1
+        group by a.account_code, a.is_postable
+     )
+     select p.account_code,
+            (select string_agg(k.account_code, ', ' order by k.account_code) from mouvementes k
+              where k.account_code <> p.account_code
+                and k.account_code like p.account_code || '%') as subdivisions
+       from mouvementes p where p.is_postable = false`, [dossierId]);
   const teteAvecSubdivisions = new Map<string, string>(
     plan.filter((p: any) => p.subdivisions).map((p: any) => [p.account_code, p.subdivisions]));
   const push = (niveau: Niveau, regle: string, r: any, explication: string) =>
@@ -48,13 +61,13 @@ export async function coherenceChecks(c: Client, dossierId: string, fiscalYearId
   for (const r of rows) {
     const code = String(r.account_code); const bal = Number(r.balance);
 
-    // Imputation sur un compte de tête : signalée même quand le solde est
-    // faible, car c'est la CAUSE d'autres anomalies (caisse créditrice,
-    // trésorerie éclatée), et le montant n'a rien à voir avec la gravité.
+    // Compte tenu à deux endroits : signalé même quand le solde est faible,
+    // car c'est la CAUSE d'autres anomalies (caisse créditrice, trésorerie
+    // éclatée), et le montant n'a rien à voir avec la gravité.
     const subs = teteAvecSubdivisions.get(code);
     if (subs && (r.total_debit !== 0 || r.total_credit !== 0)) {
       push('haute', 'ecriture_sur_compte_de_tete', r,
-        `Le compte ${code} regroupe des subdivisions (${subs}) : on n'y impute pas d'écriture directement. Les mouvements passés ici sont séparés de ceux de la subdivision, ce qui coupe le compte réel en deux et peut produire un solde impossible. À réimputer sur la subdivision qui convient.`);
+        `Le compte ${code} porte des écritures ALORS QUE sa subdivision ${subs} en porte aussi : le même compte est tenu à deux endroits. Les entrées d'un côté et les sorties de l'autre produisent des soldes impossibles — une caisse créditrice, par exemple. À réunir sur la subdivision qui convient.`);
       continue;
     }
 

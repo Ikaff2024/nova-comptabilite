@@ -783,7 +783,7 @@ export async function seedDemoDossier(c: Client, cabinetId: string): Promise<{ d
   await post('AC', '2026-07-06', 'Achat marchandises', 'ocr', 'Grossiste Adjamé',
     [{ accountCode: '601', debit: 180000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }, { accountCode: '401', credit: 180000 }]);
   await post('AC', '2026-07-08', 'Facture Orange Internet', 'ocr', 'Orange CI',
-    [{ accountCode: '628', debit: 29661, analyticAxis: 'YOPOUGON', axes: { ACTIVITE: 'SERVICES' } }, { accountCode: '445', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
+    [{ accountCode: '628', debit: 29661, analyticAxis: 'YOPOUGON', axes: { ACTIVITE: 'SERVICES' } }, { accountCode: '4452', debit: 5339 }, { accountCode: '401', credit: 35000 }]);
   await post('AC', '2026-07-10', 'Loyer boutique', 'manual', 'Bailleur Cocody',
     [{ accountCode: '622', debit: 120000, analyticAxis: 'COCODY', axes: { ACTIVITE: 'NEGOCE' } }, { accountCode: '521', credit: 120000, paymentChannel: 'bank' }]);
   await post('AC', '2026-07-30', 'Frais Mobile Money', 'mobile_money', 'Wave',

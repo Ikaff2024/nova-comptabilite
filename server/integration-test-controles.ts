@@ -73,6 +73,54 @@ async function main() {
     !r2.anomalies.some((a) => a.regle === 'ecriture_sur_compte_de_tete' || a.regle === 'virement_fonds_non_solde'),
     `(${r2.anomalies.map((a) => a.regle).join(',')})`);
 
+
+  // ---------------- Ne pas crier sur une tenue parfaitement correcte --------
+  // Premiere version du controle : il signalait TOUT compte de tete mouvemente.
+  // Le jeu de demonstration en comptait quinze, tous parfaitement tenus — le
+  // bruit noyait la seule anomalie reelle. Imputer toujours sur 601 sans jamais
+  // toucher 6011 est un choix de tenue, pas une erreur : le solde reste juste.
+  const u3 = randomUUID();
+  const cab3 = await withUser(u3, (c) => acc.onboardCabinet(c, u3, 'Cab3', 'CI'));
+  const d3 = await withUser(u3, (c) => acc.openDossier(c, { cabinetId: cab3, raisonSociale: 'Tenue constante', country: 'CI' }));
+  const fy3 = await withUser(u3, (c) => acc.createFiscalYear(c, d3.id, 'Exercice 2026', '2026-01-01', '2026-12-31'));
+  const j3 = await withUser(u3, (c) => acc.createJournal(c, d3.id, 'OD', 'OD', 'operations_diverses'));
+  // Tout sur le compte de tete, jamais sur la subdivision : constant, donc sain.
+  for (const mo of ['01', '02', '03']) {
+    await withUser(u3, (c) => acc.postEntry(c, {
+      dossierId: d3.id, fiscalYearId: fy3, journalId: j3, entryDate: `2026-${mo}-10`,
+      description: 'Achat', source: 'manual',
+      lines: [{ accountCode: '601', debit: 500000 }, { accountCode: '4011', credit: 500000 }],
+    }));
+  }
+  const r3 = await withUser(u3, (c) => coherenceChecks(c, d3.id, fy3));
+  check('un compte de tete utilise SEUL ne declenche rien',
+    !r3.anomalies.some((a) => a.regle === 'ecriture_sur_compte_de_tete'),
+    `(${r3.anomalies.map((a) => `${a.regle}:${a.compte}`).join(',') || 'aucune'})`);
+
+  // Des qu une subdivision bouge AUSSI, le compte est tenu a deux endroits.
+  await withUser(u3, (c) => acc.postEntry(c, {
+    dossierId: d3.id, fiscalYearId: fy3, journalId: j3, entryDate: '2026-04-10',
+    description: 'Achat sur la subdivision', source: 'manual',
+    lines: [{ accountCode: '6011', debit: 200000 }, { accountCode: '4011', credit: 200000 }],
+  }));
+  const r3b = await withUser(u3, (c) => coherenceChecks(c, d3.id, fy3));
+  const t3 = r3b.anomalies.find((a) => a.regle === 'ecriture_sur_compte_de_tete');
+  check('mais parent ET subdivision mouvementes : la, on signale',
+    t3?.compte === '601', `(${t3?.compte})`);
+  check('et le message nomme la subdivision concurrente',
+    /6011/.test(t3?.explication ?? ''), `(${(t3?.explication ?? '').slice(0, 60)})`);
+
+  // ---------------- Le jeu de demonstration reste propre ----------------
+  const u4 = randomUUID();
+  const cab4 = await withUser(u4, (c) => acc.onboardCabinet(c, u4, 'CabDemo', 'CI'));
+  const { dossierId: dDemo } = await withUser(u4, (c) => acc.seedDemoDossier(c, cab4));
+  const fysD = await withUser(u4, (c) => acc.listFiscalYears(c, dDemo));
+  const fyD = fysD.find((f: any) => new Date(f.start_date).getFullYear() === 2026)?.id ?? fysD[0].id;
+  const rD = await withUser(u4, (c) => coherenceChecks(c, dDemo, fyD));
+  const teteDemo = rD.anomalies.filter((a) => a.regle === 'ecriture_sur_compte_de_tete');
+  check('le dossier de demonstration ne montre aucun compte tenu a deux endroits',
+    teteDemo.length === 0, `(${teteDemo.map((a) => a.compte).join(',')})`);
+
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;
   await closePool();

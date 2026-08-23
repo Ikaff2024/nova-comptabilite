@@ -127,6 +127,20 @@ export async function createSection(c: Client, dossierId: string, code: string, 
 }
 
 export async function deleteSection(c: Client, dossierId: string, id: string): Promise<void> {
+  // Une section supprimée emporte en cascade toutes les ventilations qui la
+  // citent : le résultat analytique perdrait ces montants sans une ligne de
+  // journal, sans un message, sans rien. On refuse, comme pour un axe utilisé.
+  const { rows } = await c.query(
+    `select s.code, s.label, a.is_primary,
+            (select count(*)::int from entry_line_analytics e
+              where e.dossier_id = s.dossier_id and e.section_id = s.id) as ventilations
+       from analytic_sections s join analytic_axes a on a.id = s.axis_id
+      where s.dossier_id=$1 and s.id=$2`, [dossierId, id]);
+  if (!rows[0]) throw new Error('Section introuvable.');
+  const n = Number(rows[0].ventilations);
+  if (n > 0) {
+    throw new Error(`${n} ligne(s) d'écriture sont ventilées sur « ${rows[0].code} ». Les supprimer effacerait cette ventilation du résultat analytique. Reventilez-les d'abord sur une autre section.`);
+  }
   await c.query('delete from analytic_sections where dossier_id=$1 and id=$2', [dossierId, id]);
 }
 

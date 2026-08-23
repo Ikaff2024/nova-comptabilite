@@ -171,8 +171,12 @@ export async function appliquerModele(
       try {
         await createSection(c, dossierId, sc, s.label.trim(), axeCode);
         sectionsCreees.push(sc);
-      } catch {
-        // Code déjà pris dans le dossier (ils sont uniques tous axes confondus).
+      } catch (e: any) {
+        // On n'avale QUE le doublon — c'est le cas normal quand on rejoue
+        // l'assistant. Toute autre erreur (axe introuvable, intitulé vide)
+        // doit remonter : la déguiser en « déjà présente » ferait croire à
+        // une structure complète alors qu'il y manque des sections.
+        if (!/existe déjà/i.test(String(e?.message ?? ''))) throw e;
         ignores.push(`section ${sc} (déjà présente)`);
       }
     }

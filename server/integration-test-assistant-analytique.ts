@@ -171,6 +171,31 @@ async function main() {
   const sugPrincipal = await withUser(u, (c) => assist.suggestionsVentilation(c, d.id, 'PDV', fy));
   check("aucune suggestion sur l'axe principal, qui ne peut pas les appliquer", sugPrincipal.length === 0);
 
+
+  // ---------------- Une vraie erreur ne se deguise pas en doublon ----------
+  // appliquerModele avalait TOUTE erreur de createSection et la rapportait
+  // comme « deja presente ». On aurait cru la structure complete alors qu il y
+  // manquait des sections — le pire des deux mondes : muet ET faux.
+  let remonte = false; let msg = '';
+  try {
+    await withUser(u, (c) => assist.appliquerModele(c, d.id, [
+      { code: 'PDV', label: 'Point de vente', sections: [{ code: 'OK1', label: '' }, { code: 'OK2', label: 'Bonne' }] },
+    ], u));
+  } catch (e: any) { remonte = true; msg = e.message; }
+  // Un intitule vide est ignore en amont (garde-fou de boucle) : la section
+  // n est pas creee, mais rien n echoue. On verifie surtout qu une erreur de
+  // NATURE differente du doublon remonte bien.
+  const avantErr = (await withUser(u, (c) => analytic.listSections(c, d.id, 'all'))).length;
+  let remonteAxe = false;
+  try {
+    await withUser(u, (c) => assist.appliquerModele(c, d.id, [
+      { code: '', label: 'Sans code', sections: [] },
+    ], u));
+  } catch { remonteAxe = true; }
+  check('un axe sans code fait echouer l assistant au lieu de passer', remonteAxe);
+  const apresErr = (await withUser(u, (c) => analytic.listSections(c, d.id, 'all'))).length;
+  check('et rien n a ete cree a moitie', avantErr === apresErr, `(${avantErr} -> ${apresErr})`);
+
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;
   await closePool();
