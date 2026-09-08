@@ -1,11 +1,13 @@
 import './env.js'; // doit rester en premier (peuple process.env avant db/ai)
 import { createApi } from './api.js';
+import { assertAuthConfig } from './auth.js';
 import { runDailyPush } from './ai/watchdog.js';
 import { applyPendingMigrations } from './migrate-runtime.js';
 import { startNightlyScheduler } from './nightly-runner.js';
 
 // Railway/Render fournissent PORT ; fallback local API_PORT puis 4000.
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 4000);
+assertAuthConfig(); // refuse de démarrer en prod si le secret JWT est faible
 const app = createApi();
 
 app.listen(port, () => {

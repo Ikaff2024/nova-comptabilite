@@ -28,6 +28,7 @@
     "test:capture": "tsx server/ai/provider.test.ts",
     "test:notes": "tsx server/integration-test-notes.ts",
     "test:controles": "tsx server/integration-test-controles.ts",
+    "test:securite": "tsx server/integration-test-securite.ts",
     "test:pnl": "tsx server/integration-test-pnl.ts",
     "test:assistant-analytique": "tsx server/integration-test-assistant-analytique.ts",
     "test:payroll": "tsx server/payroll/core/run-tests.ts"

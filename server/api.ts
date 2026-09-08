@@ -90,6 +90,42 @@ export function createApi() {
   // Conserve le corps brut (nécessaire à la vérif de signature du webhook WhatsApp).
   app.use(express.json({ limit: '15mb', verify: (req: any, _res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 
+  // En-têtes de sécurité (sans dépendance). L'API sert du JSON et des PDF ;
+  // elle n'a aucune raison d'être affichée dans une iframe ni de laisser un
+  // navigateur deviner le type d'une réponse.
+  app.use((_req, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  });
+
+  // Limiteur de débit sur l'authentification : sans lui, un mot de passe se
+  // force par essais illimités. Fenêtre glissante en mémoire, par IP + email.
+  // Simple par choix — une seule instance suffit à l'échelle actuelle ; à
+  // remonter vers un store partagé (Redis) le jour du multi-instances.
+  const tentatives = new Map<string, number[]>();
+  const LIMITE = 10, FENETRE_MS = 15 * 60 * 1000;
+  const limiteAuth = (req: Request, res: Response, next: NextFunction) => {
+    const ip = (req.headers['x-forwarded-for'] as string || req.ip || '').split(',')[0].trim();
+    const email = String((req.body ?? {}).email ?? '').toLowerCase().trim();
+    const cle = `${ip}|${email}`;
+    const maintenant = Date.now();
+    const recentes = (tentatives.get(cle) ?? []).filter((t) => maintenant - t < FENETRE_MS);
+    if (recentes.length >= LIMITE) {
+      return res.status(429).json({ error: 'Trop de tentatives. Réessayez dans quelques minutes.', code: 'RATE_LIMITED' });
+    }
+    recentes.push(maintenant);
+    tentatives.set(cle, recentes);
+    // Purge opportuniste pour borner la mémoire.
+    if (tentatives.size > 5000) for (const [k, v] of tentatives) if (v.every((t) => maintenant - t >= FENETRE_MS)) tentatives.delete(k);
+    next();
+  };
+
   // --- Auth : identité issue d'un JWT (Authorization: Bearer <token>).
   app.use((req: Request & { userId?: string }, _res, next: NextFunction) => {
     const auth = req.header('authorization') || '';
@@ -186,7 +222,7 @@ export function createApi() {
 
   // --- Authentification -------------------------------------------------------
 
-  app.post('/api/auth/register', h(async (req, res) => {
+  app.post('/api/auth/register', limiteAuth, h(async (req, res) => {
     const { email, password, name } = req.body ?? {};
     if (!email || !password) { const e: any = new Error('Email et mot de passe requis'); e.status = 400; throw e; }
     if (String(password).length < 8) { const e: any = new Error('Mot de passe : 8 caractères minimum'); e.status = 400; throw e; }
@@ -200,7 +236,7 @@ export function createApi() {
     }
   }));
 
-  app.post('/api/auth/login', h(async (req, res) => {
+  app.post('/api/auth/login', limiteAuth, h(async (req, res) => {
     const { email, password, code } = req.body ?? {};
     const row = await withUser(null, (c) => users.getUserForLogin(c, String(email ?? '')));
     if (!row || !verifyPassword(String(password ?? ''), row.password_hash)) {

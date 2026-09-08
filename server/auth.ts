@@ -5,8 +5,35 @@ import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 // Choix « own your core » : pas de lib externe pour la brique sécurité.
 // ============================================================================
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
+const DEFAUT_DEV = 'dev-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET ?? DEFAUT_DEV;
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 jours
+
+/**
+ * Garde de démarrage — appelée au boot (index.ts).
+ *
+ * Le secret JWT a un repli « dev-secret-change-me » pour que le développement
+ * local tourne sans configuration. Mais si ce repli sert EN PRODUCTION, tout
+ * jeton devient forgeable : n'importe qui signe un jeton pour n'importe quel
+ * compte et prend la main. Le serveur ne doit pas démarrer dans cet état.
+ *
+ * Fail-closed en production uniquement : en local, on se contente d'un
+ * avertissement pour ne pas gêner le développement.
+ */
+export function assertAuthConfig(): void {
+  const secret = process.env.JWT_SECRET;
+  const prod = process.env.NODE_ENV === 'production';
+  const faible = !secret || secret === DEFAUT_DEV || secret.length < 24;
+  if (faible && prod) {
+    throw new Error(
+      'JWT_SECRET absent ou trop faible en production : démarrage refusé. '
+      + 'Posez une variable JWT_SECRET d\'au moins 24 caractères aléatoires '
+      + '(sinon tout jeton d\'authentification est forgeable).');
+  }
+  if (faible) {
+    console.warn('[auth] ⚠ JWT_SECRET faible ou absent — toléré hors production, JAMAIS en prod.');
+  }
+}
 
 // --- Mot de passe (scrypt) ---------------------------------------------------
 
