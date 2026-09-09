@@ -31,7 +31,8 @@
     "test:securite": "tsx server/integration-test-securite.ts",
     "test:pnl": "tsx server/integration-test-pnl.ts",
     "test:assistant-analytique": "tsx server/integration-test-assistant-analytique.ts",
-    "test:payroll": "tsx server/payroll/core/run-tests.ts"
+    "test:payroll": "tsx server/payroll/core/run-tests.ts",
+    "test:dbguard": "tsx server/integration-test-dbguard.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
