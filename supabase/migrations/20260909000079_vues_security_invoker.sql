@@ -1,0 +1,66 @@
+-- =============================================================================
+-- Nova Comptabilité — 0079 : une vue contournait la RLS (fuite inter-cabinet)
+-- =============================================================================
+-- FAILLE D'ÉTANCHÉITÉ CORRIGÉE ICI (revue CTO 001, NOVA-P0-01).
+--
+-- v_account_balances (migration 0004) était créée sans option de sécurité :
+--
+--     create view v_account_balances as select ... from entry_lines l ...
+--
+-- En PostgreSQL, une vue s'exécute par défaut avec les droits de son
+-- PROPRIÉTAIRE, pas de l'appelant. Le propriétaire ici est le rôle qui a joué
+-- les migrations, c'est-à-dire le propriétaire des tables — et la RLS ne
+-- s'applique pas au propriétaire tant qu'elle n'est pas FORCÉE. La vue lisait
+-- donc l'intégralité des données, pour tout appelant ayant le droit SELECT
+-- dessus. Or nova_app l'avait, hérité du « grant select on all tables » de 0007.
+--
+-- Reproduction (rôle applicatif nova_app, contexte = un utilisateur du
+-- cabinet B, sur une base à deux cabinets) :
+--
+--     select count(*) from entry_lines
+--       where dossier_id = <dossier du cabinet A>   ->  0    ← RLS correcte
+--     select count(*) from v_account_balances
+--       where dossier_id = <dossier du cabinet A>   ->  2    ← FUITE
+--                                          montant  ->  777 777 XOF
+--
+-- Et sans aucune identité en session (app.current_user_id vide), la vue
+-- répondait encore : la garantie « fail-closed » des tables ne valait pas pour
+-- elle. Sur une base chargée, la revue a mesuré 102 lignes et 148 958 793 XOF
+-- appartenant à d'autres cabinets.
+--
+-- Aucune route HTTP n'interrogeait cette vue — ce qui explique qu'aucun client
+-- n'ait été exposé. Mais la fuite existait au niveau de la base, avec les
+-- droits du rôle applicatif : une injection SQL, un accès direct, ou une simple
+-- future route de tableau de bord la rendait exploitable.
+--
+-- ── Correction ──────────────────────────────────────────────────────────────
+--
+-- security_invoker = true : la vue s'exécute désormais avec les droits de
+-- l'APPELANT. Les policies de entry_lines, entries et accounts s'appliquent
+-- donc à travers elle, exactement comme si on interrogeait les tables.
+--
+-- C'est la bonne primitive plutôt qu'un filtre tenant écrit à la main dans le
+-- corps de la vue : un filtre serait une SECONDE expression de la règle
+-- d'étanchéité, à maintenir en parallèle des 57 policies. Deux sources de
+-- vérité pour une même règle finissent toujours par diverger — c'est le genre
+-- d'écart qui a produit cette faille. Ici, la vue hérite de la règle unique.
+--
+-- Disponible depuis PostgreSQL 15. La CI (postgres:16), l'image de
+-- développement (postgres:16-alpine) et la production sont en 16.
+--
+-- ── Portée : la classe, pas l'instance ──────────────────────────────────────
+--
+-- Le défaut n'était pas « cette vue-là » mais « les vues en général » : rien
+-- dans le projet n'imposait l'option. Le schéma n'en compte qu'une aujourd'hui,
+-- et elle est corrigée. Pour que la prochaine ne rouvre pas le trou,
+-- supabase/tests/p0_invariants.sql (§ P0-01.4) parcourt pg_class et échoue si
+-- UNE SEULE vue du schéma public n'est pas en security_invoker. Le contrôle
+-- porte sur la règle, pas sur le nom de l'objet.
+-- =============================================================================
+
+alter view v_account_balances set (security_invoker = true);
+
+-- Le droit SELECT reste nécessaire : security_invoker change QUI est évalué par
+-- la RLS, pas qui a le droit d'interroger la vue. nova_app doit aussi disposer
+-- du SELECT sur les tables sources — c'est déjà le cas (migration 0007).
+grant select on v_account_balances to nova_app;
