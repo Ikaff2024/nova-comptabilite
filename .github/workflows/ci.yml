@@ -29,6 +29,8 @@ jobs:
       PGPASSWORD: postgres
       PGDATABASE: nova
       DATABASE_URL: postgres://nova_app:nova_app@localhost:5432/nova
+      # test:dbguard cree des roles jetables : il lui faut une identite admin.
+      MIGRATION_DATABASE_URL: postgres://postgres:postgres@localhost:5432/nova
 
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +55,17 @@ jobs:
 
       - name: SQL smoke test (ledger, immuabilité, RLS)
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/smoke_test.sql
+
+      # Rejoue les trois attaques que la revue CTO 001 avait réussies. Chaque
+      # bloc lève à la première violation : une régression sur un invariant P0
+      # met la CI au rouge, elle ne passe pas inaperçue.
+      - name: Invariants P0 (immuabilité, isolation des vues, frontière locataire)
+        run: |
+          psql -v ON_ERROR_STOP=1 -q -f supabase/tests/fixture_two_tenants.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/tests/p0_invariants.sql
+
+      - name: Garde d'identité PostgreSQL au démarrage (NOVA-P0-02)
+        run: npm run test:dbguard
 
       - name: Domain integration test
         run: npm run test:domain
