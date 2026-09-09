@@ -33,7 +33,8 @@ L'URL que l'**application** utilisera est celle du rôle **`nova_app`** (pas le 
    | Variable | Valeur |
    |---|---|
    | `DATABASE_URL` | URL Neon du rôle **nova_app** (avec `?sslmode=require`) |
-   | `JWT_SECRET` | une longue chaîne aléatoire |
+   | `MIGRATION_DATABASE_URL` | URL Neon du rôle **propriétaire** — voir encadré ci-dessous |
+   | `JWT_SECRET` | une longue chaîne aléatoire (≥ 24 caractères) |
    | `AI_PROVIDER` | `claude`, `gemini` ou `openrouter` |
    | `ANTHROPIC_API_KEY` *ou* `GEMINI_API_KEY` | ta clé |
    | (optionnel) `CLAUDE_MODEL` / `GEMINI_MODEL` | sinon défauts |
@@ -43,6 +44,33 @@ L'URL que l'**application** utilisera est celle du rôle **`nova_app`** (pas le 
    > **Fallback IA** : si `OPENROUTER_API_KEY` est présent et que le fournisseur principal échoue, la Capture bascule automatiquement sur OpenRouter. ⚠️ OpenRouter est un intermédiaire — activer « no logging / no training » côté OpenRouter pour les pièces sensibles.
 
    `PORT` est fourni par Railway. `NODE_ENV=production` et `SERVE_STATIC=true` sont déjà dans le Dockerfile.
+
+   > ### Démarrage : `migrate → verify → start`, fail-closed
+   >
+   > Le conteneur exécute `npm run migrate && npm run start`. Le `&&` est
+   > délibéré : **si les migrations échouent, l'API ne démarre pas**. Auparavant
+   > elles étaient appliquées en « best-effort » (chaque erreur ignorée) et
+   > l'API servait un schéma potentiellement incomplet — défaut NOVA-P1-08 de la
+   > revue CTO 001. Sur une comptabilité, un service arrêté se voit et se
+   > répare ; un verrou d'intégrité absent, non.
+   >
+   > Puis, **avant d'ouvrir son port**, l'API vérifie quatre choses et refuse de
+   > démarrer si l'une échoue : connexion, schéma attendu (toutes les migrations
+   > livrées par le code sont en base), invariants de sécurité (verrous du
+   > ledger, `security_invoker` sur les vues, `FORCE ROW LEVEL SECURITY`), et
+   > rôle PostgreSQL du runtime (ni superutilisateur, ni `BYPASSRLS`, ni
+   > propriétaire des tables).
+   >
+   > **`MIGRATION_DATABASE_URL`** : le DDL exige des droits que `nova_app` n'a
+   > pas — et ne doit pas avoir, c'est ce qui fait tenir l'isolation RLS. Posez
+   > donc cette variable sur le rôle **propriétaire** Neon. Elle ne sert qu'aux
+   > migrations ; l'API, elle, se connecte toujours via `DATABASE_URL`.
+   >
+   > Si vous appliquez les migrations à la main depuis votre poste (étape 1.3),
+   > `MIGRATION_DATABASE_URL` reste facultative : quand le schéma est déjà à
+   > jour, `npm run migrate` le constate en lecture seule et rend la main sans
+   > tenter le moindre DDL. Elle devient indispensable dès qu'une migration est
+   > en attente.
 4. **Deploy** → Railway expose une URL publique (`https://…up.railway.app`). Ouvre-la : login → onboarding → dashboard.
 
 ## 3. Vérification
@@ -54,7 +82,9 @@ L'URL que l'**application** utilisera est celle du rôle **`nova_app`** (pas le 
 
 - [ ] Projet Neon créé (région EU/Frankfurt), migrations appliquées (`npm run migrate`) — inclut immobilisations (0014), piste d'audit (0015).
 - [ ] Rôle `nova_app` sécurisé (mot de passe fort) ; `DATABASE_URL` de l'app = rôle `nova_app` (RLS active).
-- [ ] Variables Railway posées (`DATABASE_URL`, `JWT_SECRET` long et aléatoire, `AI_PROVIDER` + clé).
+- [ ] Variables Railway posées (`DATABASE_URL` = rôle `nova_app`, `MIGRATION_DATABASE_URL` = rôle propriétaire,
+      `JWT_SECRET` long et aléatoire, `AI_PROVIDER` + clé).
+- [ ] Au démarrage, les journaux portent `[startup] MIGRATIONS_OK SCHEMA_VERSION_OK SECURITY_INVARIANTS_OK DATABASE_RUNTIME_ROLE_OK`.
 - [ ] Déploiement effectué ; `GET /api/health` → `{"ok":true,"db":true}`.
 - [ ] Login → onboarding → dashboard OK ; `/guide.html` accessible (servi par le même service).
 - [ ] Vérifier la piste d'audit (onglet **Audit** d'un dossier) après une première écriture.
@@ -64,6 +94,9 @@ L'URL que l'**application** utilisera est celle du rôle **`nova_app`** (pas le 
 ## Notes
 
 - **CI** : chaque push sur `main` rejoue migrations + tests (`.github/workflows/ci.yml`).
-- **Migrations futures** : ajoute un fichier dans `supabase/migrations/`, puis `npm run migrate` sur Neon (ou étape de release).
+- **Migrations futures** : ajoute un fichier dans `supabase/migrations/`. `scripts/migrate.mjs` est
+  l'**autorité unique** d'application (CI, conteneur, poste). Les deux voies parallèles d'avant —
+  `scripts/migrate-boot.mjs` et la migration in-process de `server/migrate-runtime.ts`, toutes deux
+  best-effort — ont été supprimées.
 - **Secrets** : ne jamais commiter `.env.local` (déjà ignoré). En prod, tout passe par les variables Railway.
 - **Coûts** : Neon et Railway ont des paliers gratuits/à faible coût adaptés à un pilote.

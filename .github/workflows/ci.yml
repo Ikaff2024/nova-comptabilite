@@ -46,12 +46,13 @@ jobs:
       - name: Typecheck (front + serveur)
         run: npm run typecheck
 
-      - name: Apply migrations
-        run: |
-          for f in supabase/migrations/2026*.sql; do
-            echo "-- $f"
-            psql -v ON_ERROR_STOP=1 -q -f "$f"
-          done
+      # Autorité UNIQUE d'application des migrations. La boucle psql qui vivait
+      # ici était une quatrième voie parallèle (avec migrate-boot.mjs, la
+      # migration in-process et migrate.mjs) et, surtout, ne renseignait pas la
+      # table _migrations — la CI validait donc un schéma dont la version
+      # n'était pas traçable. Un échec sort en code non nul et arrête le job.
+      - name: Apply migrations (fail-closed)
+        run: npm run migrate
 
       - name: SQL smoke test (ledger, immuabilité, RLS)
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/smoke_test.sql
@@ -66,6 +67,12 @@ jobs:
 
       - name: Garde d'identité PostgreSQL au démarrage (NOVA-P0-02)
         run: npm run test:dbguard
+
+      # Lance réellement l'API contre des bases manipulées : migration cassée,
+      # schéma en retard, invariant P0 retiré, rôle dangereux. Vérifie qu'aucune
+      # de ces situations n'ouvre le port (NOVA-P1-08).
+      - name: Démarrage fail-closed (NOVA-P1-08)
+        run: npm run test:startup
 
       - name: Domain integration test
         run: npm run test:domain
