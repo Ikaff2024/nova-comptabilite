@@ -74,5 +74,15 @@ jobs:
       - name: Démarrage fail-closed (NOVA-P1-08)
         run: npm run test:startup
 
+      # Suppression d'un dossier RÉELLEMENT peuplé (NOUVEAU-P1-A), et vérification
+      # que la porte de démontage reste infranchissable depuis une route normale.
+      - name: Cycle de vie des dossiers
+        run: npm run test:dossier-lifecycle
+
+      # Constats de l'audit externe du 21 septembre 2026 : compte de démonstration
+      # sans droits opérateur (N01) et exercice de travail de Lexa (N05).
+      - name: Constats de l'audit externe
+        run: npm run test:audit-externe
+
       - name: Domain integration test
         run: npm run test:domain
