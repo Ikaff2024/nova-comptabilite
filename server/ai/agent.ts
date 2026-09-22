@@ -173,16 +173,62 @@ export async function clearHistory(c: Client, dossierId: string, userId: string)
 
 const ROLE_FR: Record<string, string> = { owner: 'propriétaire', associe: 'associé(e)', collaborateur: 'collaborateur(trice)', comptable: 'comptable', client: 'client', lecture: 'accès lecture' };
 
-async function dossierContext(c: Client, dossierId: string): Promise<{ text: string; fyId: string | null; currency: string; mode: AgentMode }> {
+// Exporté pour être testable : c'est cette fonction qui choisit l'exercice sur
+// lequel TOUS les outils de Lexa travaillent. Le défaut N05 y vivait, et un
+// invariant qu'on ne peut pas exécuter dans un test n'est pas un invariant.
+export async function dossierContext(c: Client, dossierId: string): Promise<{ text: string; fyId: string | null; currency: string; mode: AgentMode }> {
   // to_jsonb : lit toutes les colonnes présentes sans coupler ce chemin critique
   // à une migration précise (les champs du profil fiscal absents = simplement
   // undefined tant que la migration 0044 n'est pas appliquée — aucune panne).
   const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
   const d: any = rows[0]?.j ?? {};
   const fys = await acc.listFiscalYears(c, dossierId);
-  const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1] ?? null;
   const today = new Date().toISOString().slice(0, 10);
-  const fyLine = openFy ? `Exercice courant : « ${openFy.label} » (${openFy.start_date} → ${openFy.end_date}), statut ${openFy.status}.` : 'Aucun exercice défini.';
+
+  // Choix de l'exercice de travail de Lexa.
+  //
+  // Il s'écrivait : `fys.find(f => f.status !== 'closed')`. Or listFiscalYears
+  // trie par start_date CROISSANTE : cette écriture retenait donc le PLUS ANCIEN
+  // exercice non clôturé. Un dossier dont 2025 n'a jamais été clôturé et qui
+  // travaille en 2026 voyait Lexa répondre sur 2025 — c'est le constat N01…N05
+  // de l'audit externe : le chiffre d'affaires et le résultat annoncés étaient
+  // ceux de 2025 alors que les états affichaient 2026.
+  //
+  // Un exercice ouvert n'est pas l'exercice courant : il l'est resté faute de
+  // clôture. L'exercice courant est celui qui COUVRE LA DATE DU JOUR. On ne
+  // retombe sur « le plus récent » que si aucun ne la couvre.
+  // acc.normaliseDate, et non String(...).slice(0, 10) : le pilote pg restitue
+  // une colonne `date` en objet Date, dont la forme texte est
+  // « Wed Jan 01 2025 … ». Découper les dix premiers caractères donnait donc
+  // « Wed Jan 01 », et le tri comparait des noms de jours — « Wed » après
+  // « Thu », soit 2025 avant 2026. C'est le piège déjà rencontré dans postEntry.
+  const jour = (v: unknown) => acc.normaliseDate(v);
+  const couvreAujourdhui = (f: any) => {
+    const d1 = jour(f.start_date), d2 = jour(f.end_date);
+    return !!d1 && !!d2 && d1 <= today && today <= d2;
+  };
+  const parDateDesc = [...fys].sort((a: any, b: any) =>
+    jour(b.start_date).localeCompare(jour(a.start_date)));
+
+  const openFy = parDateDesc.find(couvreAujourdhui)
+    ?? parDateDesc.find((f: any) => f.status && f.status !== 'closed')
+    ?? parDateDesc[0]
+    ?? null;
+
+  // Lexa doit pouvoir DIRE sur quel exercice elle répond, et constater qu'il en
+  // existe d'autres : c'est ce qui lui permet de refuser proprement une question
+  // portant sur une période qu'elle ne lit pas, au lieu de répondre à côté.
+  const autres = fys.filter((f: any) => f.id !== openFy?.id)
+    .map((f: any) => `« ${f.label} » (${jour(f.start_date)} → ${jour(f.end_date)}, ${f.status})`);
+  const fyLine = openFy
+    ? `Exercice de travail : « ${openFy.label} » (${jour(openFy.start_date)} → ${jour(openFy.end_date)}), statut ${openFy.status}.`
+      + ` TOUS tes outils comptables lisent CET exercice, et lui seul.`
+      + (autres.length
+        ? ` Le dossier en compte ${fys.length} au total ; les autres sont : ${autres.join(', ')}.`
+          + ` Si on t'interroge sur l'un d'eux, dis clairement que tes outils ne lisent que « ${openFy.label} »`
+          + ` et n'extrapole aucun chiffre — ne présente jamais un montant d'un exercice comme s'il était d'un autre.`
+        : '')
+    : 'Aucun exercice défini.';
 
   // Équipe du cabinet + personne avec qui Lexa échange (pour un comportement de collaboratrice).
   let team: any[] = []; let me: any = null;
@@ -702,7 +748,17 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
       const { rows } = await c.query('select to_jsonb(dd) as j from dossiers dd where id=$1', [dossierId]);
       const d: any = rows[0]?.j ?? {};
       let fyEnd: string | null = null;
-      try { const fys = await acc.listFiscalYears(c, dossierId); const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1]; fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
+      try { const fys = await acc.listFiscalYears(c, dossierId);
+        // Même piège qu'en tête de dossierContext : listFiscalYears trie par date
+        // CROISSANTE, donc `find(non clôturé)` retenait le plus ANCIEN exercice ouvert.
+        // Les échéances fiscales se calaient alors sur la clôture d'un exercice périmé.
+        const auj = new Date().toISOString().slice(0, 10);
+        const desc = [...fys].sort((a: any, b: any) =>
+          acc.normaliseDate(b.start_date).localeCompare(acc.normaliseDate(a.start_date)));
+        const openFy = desc.find((f: any) =>
+          acc.normaliseDate(f.start_date) <= auj && auj <= acc.normaliseDate(f.end_date))
+          ?? desc.find((f: any) => f.status && f.status !== 'closed') ?? desc[0];
+        fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
       return { echeances: upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd }) };
     }
     case 'analyse_mensuelle': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return await reporting.monthlyReport(c, dossierId, y, mo); }

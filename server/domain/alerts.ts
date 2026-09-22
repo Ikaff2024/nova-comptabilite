@@ -50,7 +50,17 @@ export async function dossierAlerts(c: Client, dossierId: string, fiscalYearId?:
   // --- Échéances fiscales/sociales proches ---
   try {
     let fyEnd: string | null = null;
-    try { const fys = await acc.listFiscalYears(c, dossierId); const openFy = fys.find((f: any) => f.status && f.status !== 'closed') ?? fys[fys.length - 1]; fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
+    try { const fys = await acc.listFiscalYears(c, dossierId);
+        // Même piège qu'en tête de dossierContext : listFiscalYears trie par date
+        // CROISSANTE, donc `find(non clôturé)` retenait le plus ANCIEN exercice ouvert.
+        // Les échéances fiscales se calaient alors sur la clôture d'un exercice périmé.
+        const auj = new Date().toISOString().slice(0, 10);
+        const desc = [...fys].sort((a: any, b: any) =>
+          acc.normaliseDate(b.start_date).localeCompare(acc.normaliseDate(a.start_date)));
+        const openFy = desc.find((f: any) =>
+          acc.normaliseDate(f.start_date) <= auj && auj <= acc.normaliseDate(f.end_date))
+          ?? desc.find((f: any) => f.status && f.status !== 'closed') ?? desc[0];
+        fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
     const deadlines = upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd, horizonDays: 20 });
     for (const dl of deadlines) {
       const j = daysUntil(dl.dueDate);
