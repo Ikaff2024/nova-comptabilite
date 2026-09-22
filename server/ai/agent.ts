@@ -299,6 +299,8 @@ RÈGLES ABSOLUES :
 11. CHOIX DES COMPTES — JAMAIS DE MÉMOIRE : n'écris jamais un code de compte sans l'avoir vu dans le plan du dossier. Dès que tu prépares une écriture, une facture ou que tu conseilles une imputation, appelle « plan_comptable » avec la nature de l'opération (ex. « carburant », « honoraires », « téléphone ») et prends le compte dont l'INTITULÉ colle le mieux. Les intitulés SYSCOHADA font foi et diffèrent du plan comptable français (ex. en SYSCOHADA les télécommunications ne sont PAS en 626). Si le compte adéquat n'existe pas au plan du dossier, dis-le et propose de le créer plutôt que d'en inventer un.
 12. « COMMENT FAIRE DANS NOVA » : pour toute question sur l'UTILISATION du logiciel (où trouver un écran, quelle est la marche à suivre, à quoi sert un module), appelle « guide_nova » et réponds À PARTIR DU TEXTE RENVOYÉ, en citant la fiche (ex. « voir la fiche 28 · Achats »). N'INVENTE JAMAIS un chemin de menu, un bouton ou une option : si l'outil ne renvoie rien d'utile, dis simplement que tu ne trouves pas la marche à suivre dans le guide et propose la piste la plus proche. C'est la même exigence que pour les chiffres : aucune affirmation sans source. N'appelle pas cet outil pour une question de DONNÉES (« quel est mon résultat ») — là, ce sont les outils comptables.
 
+13. ANNONCER UNE ACTION — JAMAIS SANS PREUVE D'EXÉCUTION : ne dis « j'ai comptabilisé », « j'ai émis », « j'ai envoyé », « j'ai certifié », « c'est fait » QUE si un outil vient de te renvoyer un résultat de succès dans CETTE conversation. Si tu n'as pas exécuté d'outil d'écriture, ou s'il a échoué, dis « je te PROPOSE », « ce n'est PAS encore fait », et indique où l'humain doit valider. Ne raconte jamais une opération comme accomplie parce qu'elle semblait logique : un statut inventé fait croire au dirigeant que sa comptabilité est à jour alors qu'elle ne l'est pas. En cas de doute sur ce que tu as réellement exécuté, dis-le franchement plutôt que d'affirmer.
+
 Utilise les outils pour obtenir les données réelles avant de conclure. Enchaîne plusieurs outils si nécessaire (ex. balance puis grand livre d'un compte). Ne montre pas le JSON brut des outils : synthétise.
 
 RÉPONDS D'ABORD À LA QUESTION POSÉE. Ne déballe jamais le point du jour quand on te demande autre chose.
@@ -587,6 +589,51 @@ const ACTION_TOOLS = [
 const ACTION_TOOL_NAMES = new Set(ACTION_TOOLS.map((t) => t.name));
 // Outils qui modifient/agissent : journalisés (qui a demandé quoi, quel résultat).
 const MUTATING_TOOL_NAMES = new Set<string>([...DRAFT_TOOL_NAMES, ...REVERSIBLE_TOOL_NAMES, ...ACTION_TOOL_NAMES]);
+
+// ============================================================================
+// GARDE D'ANNONCE — Lexa ne déclare jamais une action qu'elle n'a pas faite.
+//
+// Incident H01 relevé par l'audit externe du 21 septembre 2026 : l'historique
+// d'un dossier contenait une réponse annonçant cinq écritures « comptabilisées
+// au grand livre », puis, plus tard, une réponse expliquant que Lexa ne
+// disposait pas de l'outil de comptabilisation et reconnaissant l'affirmation
+// antérieure comme une erreur.
+//
+// Une consigne de prompt ne suffit pas à l'empêcher : l'incident s'est produit
+// alors que SYSTEM_GUARDRAILS interdisait déjà d'inventer. Le contrôle doit
+// donc être DÉTERMINISTE et posé APRÈS la génération : on sait exactement quels
+// outils mutants ont réussi dans le tour, et une annonce de succès qui n'est
+// adossée à aucun d'eux est fausse par construction.
+//
+// Portée volontairement étroite, pour ne pas corriger à tort :
+//   · uniquement la PREMIÈRE PERSONNE (« j'ai comptabilisé ») — une tournure
+//     passive comme « ces écritures sont comptabilisées » décrit l'état des
+//     données lues, ce qui est légitime ;
+//   · uniquement des verbes d'effet sans ambiguïté. « valider » est exclu :
+//     en français il signifie aussi bien « contrôler » que « comptabiliser »,
+//     et l'AQM est un contrôle, pas une mutation ;
+//   · et seulement si AUCUN outil mutant n'a réussi dans le tour.
+// ============================================================================
+
+const ANNONCE_EFFET = new RegExp(
+  "\\b(j'ai|j’ai|je viens de|nous avons|je l'ai|je l’ai)\\s+(?:bien\\s+|donc\\s+)?"
+  + '(comptabilis|enregistr|'
+  + "\u00e9mis|emis|\u00e9mise|envoy|certifi|pass\u00e9|post\u00e9|g\u00e9n\u00e9r|cr\u00e9\u00e9|creee|supprim|lettr|relanc|d\u00e9pos\u00e9)",
+  'i');
+const ANNONCE_BRUTE = /\b(c'est fait|c’est fait|opération effectuée|operation effectuee|envoi effectué|envoi effectue)\b/i;
+
+/** L'annonce de succès trouvée dans la réponse, ou null. */
+export function annonceUneMutation(reply: string): string | null {
+  const m = ANNONCE_EFFET.exec(reply) ?? ANNONCE_BRUTE.exec(reply);
+  return m ? m[0] : null;
+}
+
+const RECTIFICATIF =
+  '⚠️ **Rectification automatique — aucune opération n\'a été exécutée.**\n\n'
+  + 'Ma réponse ci-dessous annonce une action que je n\'ai pas réellement effectuée : '
+  + 'aucun outil d\'écriture n\'a abouti pendant cet échange. Considérez ce qui suit '
+  + 'comme une PROPOSITION, pas comme un travail fait. Rien n\'a été comptabilisé, '
+  + 'émis, envoyé ni certifié. Vérifiez dans l\'onglet concerné avant d\'agir.\n\n---\n\n';
 
 // Tronque une sortie volumineuse pour maîtriser les tokens.
 function cap<T>(rows: T[], n = 60): T[] { return Array.isArray(rows) && rows.length > n ? rows.slice(0, n) : rows; }
@@ -1129,7 +1176,25 @@ export async function runAgent(c: Client, dossierId: string, history: AgentMessa
     }
 
     // Réponse finale : concatène les blocs texte.
-    const reply = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    let reply = content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+
+    // Garde d'annonce (incident H01) : une déclaration de succès doit être
+    // adossée à un outil mutant qui a RÉELLEMENT abouti dans ce tour. Sinon on
+    // la rectifie avant de la montrer, et on trace l'incident — c'est ce qui
+    // permet de mesurer si le modèle dérive, au lieu de le découvrir dans un
+    // historique des mois plus tard.
+    const mutationsOk = decisionTools.filter((t) => MUTATING_TOOL_NAMES.has(t.name) && t.ok);
+    const annonce = mutationsOk.length === 0 ? annonceUneMutation(reply) : null;
+    if (annonce) {
+      reply = RECTIFICATIF + reply;
+      try {
+        await audit.recordAudit(c, {
+          dossierId, action: 'lexa.annonce_non_fondee', entity: 'lexa_action',
+          detail: { instruction: instruction.slice(0, 300), annonce, outils: decisionTools.map((t) => t.name) },
+        });
+      } catch { /* best-effort */ }
+    }
+
     await usage.recordUsage(c, dossierId, 'anthropic', model, { inputTokens: tokIn, outputTokens: tokOut });
     const aqm = summarizeAqm(validations);
     const conf = aqm ? aqm.score : null;
