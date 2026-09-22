@@ -21,6 +21,15 @@ const PROVIDER_LABEL: Record<MMProvider, string> = {
   wave: 'Wave', om: 'Orange Money', momo: 'MTN MoMo', moov: 'Moov Money',
 };
 
+/** En-tête minimal reconnu. Sert aussi d'exemple dans l'interface. */
+export const ENTETE_ATTENDU = 'date;type;montant;contrepartie;id';
+
+/** Levée quand le relevé est structuré mais qu'on ne sait pas lire ses colonnes. */
+export class ReleveAmbiguError extends Error {
+  readonly code = 'RELEVE_AMBIGU';
+  constructor(message: string) { super(message); this.name = 'ReleveAmbiguError'; }
+}
+
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
 const IN_KW = /(recu|recue|received|depot|deposit|encaiss|credit|entrant|recharge|transfert recu|paiement recu)/;
@@ -121,9 +130,30 @@ export function parseStatement(content: string, provider: MMProvider): MMTransac
       });
     }
   } else {
+    // Un relevé DÉLIMITÉ dont on ne reconnaît pas les colonnes n'est pas du
+    // texte libre : c'est un CSV auquel il manque sa ligne d'en-têtes. Le
+    // deviner, c'est précisément ce qui produisait des montants faux — et
+    // silencieusement, puisque la proposition s'affichait comme n'importe
+    // quelle autre. On refuse, en disant quoi corriger.
+    const colonnes = splitCsvLine(lines[0], delim).length;
+    if (colonnes > 1) {
+      throw new ReleveAmbiguError(
+        `Colonnes non reconnues : impossible de savoir laquelle porte le montant. `
+        + `Ajoutez une première ligne d'en-têtes, par exemple « ${ENTETE_ATTENDU} ». `
+        + `Sans elle, un montant risquerait d'être lu dans une date.`);
+    }
+
     // Repli texte libre : une transaction par ligne, on extrait montant + sens.
     lines.forEach((line, i) => {
-      const amount = parseAmount((line.match(/-?[\d .,]+\d/) || [''])[0]);
+      // On retire d'abord les dates : sans cela, la première suite de chiffres
+      // rencontrée est l'ANNÉE. C'est ainsi que « 2026-09-21;…;150000;… » était
+      // importé pour 2 026 F CFA au lieu de 150 000 (constat N02 de l'audit).
+      // Un montant ne se déduit jamais d'une date.
+      const sansDates = line
+        .replace(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/g, ' ')      // 2026-09-21
+        .replace(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/g, ' ')    // 21/09/2026
+        .replace(/\d{1,2}:\d{2}(:\d{2})?/g, ' ');          // 14:30:05
+      const amount = parseAmount((sansDates.match(/-?[\d .,]+\d/) || [''])[0]);
       if (!Number.isFinite(amount) || amount === 0) return;
       const n = norm(line);
       const direction: 'in' | 'out' = IN_KW.test(n) ? 'in' : OUT_KW.test(n) ? 'out' : 'in';

@@ -74,7 +74,7 @@ export default function MobileMoney({
           </div>
         </div>
         <textarea value={content} onChange={(e) => setContent(e.target.value)} rows={6}
-          placeholder={"Collez l'export CSV du relevé (date, type, montant, contrepartie, id)…\n2024-07-02;Paiement reçu;150000;Boutique Awa;TX1001"}
+          placeholder={"Collez l'export CSV du relevé, en gardant sa ligne d'en-têtes…\ndate;type;montant;contrepartie;id\n2024-07-02;Paiement reçu;150000;Boutique Awa;TX1001"}
           className="mt-3 w-full rounded-lg border border-white/10 bg-zinc-900/60 p-3 font-mono text-xs outline-none focus:border-emerald-500/50" />
         <div className="mt-3 flex justify-end">
           <button onClick={analyze} disabled={loading || !content.trim()}
