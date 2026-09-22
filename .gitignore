@@ -23,3 +23,9 @@ SYSCOHADA_revise_2017*
 # livre. Générée par Google AI Studio, ses dépendances et son cycle de vie lui
 # appartiennent — on en extrait la spécification, on ne fusionne pas le code.
 liasse-fiscale-syscohada/
+
+# Rapport d'audit externe et ses preuves : captures et exports de données de
+# PRODUCTION réelles (cabinets, dossiers, écritures, historique Lexa). Le
+# rapport le dit lui-même : « destinées à l'équipe autorisée, ne doivent pas
+# être publiées ». On ne les pousse donc pas sur GitHub.
+audit-nova/
