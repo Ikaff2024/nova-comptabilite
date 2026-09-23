@@ -2,6 +2,7 @@ import type { Client } from '../db.js';
 import { postEntry, resolveCounterparty } from './accounting.js';
 import { certifyInvoice, fneProvider } from '../fne/provider.js';
 import { recordAudit } from './audit.js';
+import { validateInvoice } from './aqm.js';
 
 // ============================================================================
 // Facturation de vente. L'émission génère l'écriture (411 / 70x / 443) et
@@ -112,6 +113,42 @@ export async function issueInvoice(c: Client, dossierId: string, id: string): Pr
   const docType: DocType = inv.doc_type ?? 'invoice';
   if (docType === 'quote') throw new Error("Un devis se convertit en facture, il ne s'émet pas.");
   if (inv.status !== 'draft') throw new Error(`${DOC_LABEL[docType]} déjà émis(e).`);
+
+  // CONTRÔLE QUALITÉ À L'ÉMISSION — recalculé ici, sur les données PERSISTÉES.
+  //
+  // Constats N03/N04 de l'audit externe. Le diagnostic affiché dans l'écran
+  // restait « Conforme 100/100 » après qu'on eut changé la quantité en −2 : il
+  // portait sur une version du document qui n'existait plus. Et la création du
+  // brouillon aboutissait malgré un verdict « Bloquant ».
+  //
+  // Corriger l'écran ne suffit pas : un diagnostic calculé côté client, sur des
+  // données que le client contrôle, ne garantit rien. On revalide donc au
+  // moment qui compte — celui où la facture devient une écriture comptable
+  // immuable — à partir de ce qui est réellement en base, et sans dépendre de
+  // ce que l'interface a pu calculer, ou pas.
+  //
+  // Un avoir échappe à la règle des quantités positives : il est négatif par
+  // nature. Sa cohérence est assurée par le sens inversé de l'écriture.
+  if (docType !== 'credit_note') {
+    const rapport = await validateInvoice(c, dossierId, {
+      type: 'vente',
+      date: inv.invoice_date,
+      dueDate: inv.due_date ?? undefined,
+      tiers: inv.client_name,
+      lines: (inv.lines ?? []).map((l: any) => ({
+        description: l.description, quantity: l.quantity, unitPrice: l.unit_price,
+        vatRate: l.vat_rate, accountCode: l.account_code,
+      })),
+    });
+    if (rapport.verdict === 'FAIL') {
+      const motifs = rapport.checks.filter((k) => k.level === 'fail')
+        .map((k) => k.detail ?? k.label).join(' ');
+      const e: any = new Error(
+        `${DOC_LABEL[docType]} non conforme : ${motifs} Corrigez le brouillon avant de l'émettre.`);
+      e.code = 'AQM_FAIL';
+      throw e;
+    }
+  }
 
   const year = inv.invoice_date.slice(0, 4);
   const number = await nextNumber(c, dossierId, docType, year);

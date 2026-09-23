@@ -16,10 +16,13 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 };
 
 type DocType = 'invoice' | 'quote' | 'credit_note';
-const DOCS: { type: DocType; label: string; one: string; icon: any; defAccount: string }[] = [
-  { type: 'invoice', label: 'Factures', one: 'facture', icon: ReceiptText, defAccount: '706' },
-  { type: 'quote', label: 'Devis', one: 'devis', icon: FileClock, defAccount: '706' },
-  { type: 'credit_note', label: 'Avoirs', one: 'avoir', icon: Undo2, defAccount: '706' },
+// `nouveau` et `ce` portent l'accord : « facture » est féminin et « avoir »
+// commence par une voyelle. Les composer à la volée donnait « Nouveau facture »
+// et « Créer le facture » (constat N12).
+const DOCS: { type: DocType; label: string; one: string; nouveau: string; ce: string; icon: any; defAccount: string }[] = [
+  { type: 'invoice', label: 'Factures', one: 'facture', nouveau: 'Nouvelle facture', ce: 'cette facture', icon: ReceiptText, defAccount: '706' },
+  { type: 'quote', label: 'Devis', one: 'devis', nouveau: 'Nouveau devis', ce: 'ce devis', icon: FileClock, defAccount: '706' },
+  { type: 'credit_note', label: 'Avoirs', one: 'avoir', nouveau: 'Nouvel avoir', ce: 'cet avoir', icon: Undo2, defAccount: '706' },
 ];
 
 let lk = 0;
@@ -60,8 +63,22 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   const [vendeurId, setVendeurId] = useState('');
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [report, setReport] = useState<ValidationReport | null>(null);
+  const [reportSignature, setReportSignature] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const setLine = (k: number, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l._k === k ? { ...l, ...p } : l)));
+  // Empreinte des champs SUR LESQUELS porte le contrôle qualité. Dès qu'elle
+  // change, le verdict affiché ne décrit plus le document à l'écran.
+  //
+  // Constat N03 : après un « Conforme 100/100 », il suffisait de passer la
+  // quantité à −2 pour que les montants deviennent négatifs — la carte verte,
+  // elle, continuait d'annoncer « prête à être établie ». Le diagnostic portait
+  // sur une version du document qui n'existait plus.
+  const signature = JSON.stringify([
+    client.trim(), date, due,
+    lines.map((l) => [l.quantity, l.unit_price, l.vat_rate, l.account_code]),
+  ]);
+  const rapportPerime = report !== null && reportSignature !== null && reportSignature !== signature;
+
   const totalHt = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unit_price), 0);
   const totalTva = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unit_price) * Number(l.vat_rate), 0);
 
@@ -71,17 +88,23 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
     setBusy('create');
     try {
       await api.createInvoice(dossierId, { clientName: client.trim(), invoiceDate: date, dueDate: due || undefined, docType, template, vendeurId: vendeurId || undefined, lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price), vat_rate: Number(l.vat_rate), account_code: l.account_code, analytic_axis: l.analytic_axis || undefined })) });
-      setCreating(false); setClient(''); setDue(''); setVendeurId(''); setLines([blankLine()]); setReport(null); await load();
+      setCreating(false); setClient(''); setDue(''); setVendeurId(''); setLines([blankLine()]); setReport(null); setReportSignature(null); await load();
     } catch (e: any) { setError(e.message); } finally { setBusy(null); }
   };
 
   const runCheck = async () => {
     setChecking(true); setError(null);
     try {
+      // L'empreinte est figée AVANT l'appel : si l'utilisateur modifie un champ
+      // pendant que le contrôle tourne, la réponse qui revient porte sur la
+      // version d'avant et doit être signalée comme périmée, pas affichée comme
+      // valide.
+      const sig = signature;
       setReport(await api.validateInvoice(dossierId, {
         type: 'vente', date, dueDate: due || undefined, tiers: client.trim() || undefined,
         lines: lines.map((l) => ({ description: l.description, quantity: Number(l.quantity), unitPrice: Number(l.unit_price), vatRate: Number(l.vat_rate), accountCode: l.account_code })),
       }));
+      setReportSignature(sig);
     } catch (e: any) { setError(e.message); } finally { setChecking(false); }
   };
 
@@ -112,7 +135,7 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
             </button>
           ))}
         </div>
-        <button onClick={() => { setLines([blankLine(doc.defAccount)]); setCreating((v) => !v); }} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> Nouveau {doc.one}</button>
+        <button onClick={() => { setLines([blankLine(doc.defAccount)]); setCreating((v) => !v); }} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"><Plus className="h-4 w-4" /> {doc.nouveau}</button>
       </div>
 
       {creating && (
@@ -186,12 +209,27 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
             <div className="flex items-center gap-6 font-mono text-sm text-zinc-400">HT <b className="text-zinc-100">{fmtMoney(totalHt, currency)}</b> · TVA <b className="text-zinc-100">{fmtMoney(totalTva, currency)}</b> · TTC <b className="text-emerald-400">{fmtMoney(totalHt + totalTva, currency)}</b></div>
           </div>
           {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
-          {report && <AqmReportCard report={report} />}
+          {report && !rapportPerime && <AqmReportCard report={report} />}
+          {rapportPerime && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+              Le document a été modifié depuis la dernière vérification : le diagnostic précédent ne
+              s'applique plus. Relancez « Vérifier (AQM) » pour un avis à jour.
+            </p>
+          )}
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setCreating(false)} className="rounded-lg px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">Annuler</button>
             <button type="button" onClick={runCheck} disabled={checking} className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50">{checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Vérifier (AQM)</button>
-            <button type="submit" disabled={busy === 'create'} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy === 'create' && <Loader2 className="h-4 w-4 animate-spin" />} Créer le {doc.one}</button>
+            <button type="submit" disabled={busy === 'create'} className="flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{busy === 'create' && <Loader2 className="h-4 w-4 animate-spin" />} Enregistrer le brouillon</button>
           </div>
+          {/* Constat N04 : « Bloquant » puis « Créer » aboutissait quand même, sans
+              que rien ne distingue ensuite ce brouillon d'un autre. On lève
+              l'ambiguïté en disant ce que fait le bouton — enregistrer un
+              brouillon, corrigeable — et où se joue le contrôle qui compte :
+              l'émission, revalidée côté serveur et refusée si un contrôle échoue. */}
+          <p className="text-right text-xs text-zinc-500">
+            Un brouillon peut être enregistré même incomplet : rien n'entre en comptabilité à ce stade.
+            Les contrôles sont revérifiés à l'émission, qui est refusée s'ils échouent.
+          </p>
         </motion.form>
       )}
 

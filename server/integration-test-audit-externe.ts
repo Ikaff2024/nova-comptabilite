@@ -5,6 +5,7 @@ import * as acc from './domain/accounting.js';
 import { financialRatios } from './domain/ratios.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { dossierContext, annonceUneMutation } from './ai/agent.js';
+import * as invoicing from './domain/invoicing.js';
 import { parseStatement, ReleveAmbiguError, ENTETE_ATTENDU } from './mobilemoney/parser.js';
 
 // ============================================================================
@@ -18,6 +19,8 @@ import { parseStatement, ReleveAmbiguError, ENTETE_ATTENDU } from './mobilemoney
 //            alors qu'elle ne disposait pas de l'outil pour le faire.
 // N06 (P1) — les écrans ne se recoupent pas : « Analyse & révision » cumulait
 //            tous les exercices pendant que la synthèse filtrait le courant.
+// N03/N04    — le diagnostic qualité restait « Conforme » après modification,
+//              et l'émission ne revérifiait rien côté serveur.
 // N05 (P1) — Lexa répond sur l'exercice 2025 quand on l'interroge sur 2026,
 //            alors que les états affichent bien 2026.
 //
@@ -129,6 +132,64 @@ async function main() {
       try { got = parseStatement(contenu, 'wave')[0]?.amount; } catch (e: any) { err = e.message; }
       check(`variante ${nom} : montant exact`, got === attendu, `(lu ${got ?? err.slice(0, 40)}, attendu ${attendu})`);
     }
+  }
+
+
+  console.log('\n=== N03/N04 — le contrôle qualité est refait à l\'émission ===');
+  {
+    const u3 = randomUUID();
+    const cab3 = await withUser(u3, (c) => acc.onboardCabinet(c, u3, 'Cabinet AQM', 'CI'));
+    const d3 = await withUser(u3, (c) => acc.openDossier(c, {
+      cabinetId: cab3, raisonSociale: 'AQM SARL', country: 'CI' }));
+    await withUser(u3, (c) => acc.createFiscalYear(c, d3.id, '2026', '2026-01-01', '2026-12-31'));
+    await withUser(u3, async (c) => {
+      await c.query(`insert into journals(dossier_id,code,label,type)
+                     values ($1,'VE','Ventes','ventes')`, [d3.id]);
+    });
+
+    // Le scénario de l'audit : un brouillon à quantité NÉGATIVE. Sa création
+    // reste permise — un brouillon n'a aucun effet comptable, et l'interdire
+    // ferait perdre la saisie en cours. C'est l'ÉMISSION qui doit refuser.
+    const brouillon = await withUser(u3, (c) => invoicing.createInvoice(c, d3.id, {
+      clientName: 'AUDIT QA', invoiceDate: '2026-09-21', docType: 'invoice',
+      lines: [{ description: 'Prestation', quantity: -2, unitPrice: 10000, vatRate: 0.18, accountCode: '7061' }],
+    }));
+    check('un brouillon incomplet reste enregistrable', !!brouillon.id);
+
+    let refus = '', code = '';
+    try { await withUser(u3, (c) => invoicing.issueInvoice(c, d3.id, brouillon.id)); }
+    catch (e: any) { refus = e.message; code = e.code ?? ''; }
+    check('l\'émission d\'une facture à quantité négative est REFUSÉE', refus !== '',
+      `(${refus.slice(0, 70)})`);
+    check('le refus vient du contrôle qualité, pas d\'une contrainte technique',
+      code === 'AQM_FAIL', `(code ${code || 'aucun'})`);
+    check('le message dit quoi corriger', /quantité nulle ou négative/i.test(refus));
+
+    const apres = await withUser(u3, (c) => invoicing.getInvoice(c, d3.id, brouillon.id));
+    check('le brouillon reste un brouillon, rien n\'est comptabilisé',
+      apres.status === 'draft' && !apres.entry_id, `(statut ${apres.status})`);
+
+    // Le contrôle ne doit pas bloquer ce qui est valide.
+    const bon = await withUser(u3, (c) => invoicing.createInvoice(c, d3.id, {
+      clientName: 'Client Normal', invoiceDate: '2026-09-21', docType: 'invoice',
+      lines: [{ description: 'Prestation', quantity: 2, unitPrice: 10000, vatRate: 0.18, accountCode: '7061' }],
+    }));
+    const emise = await withUser(u3, (c) => invoicing.issueInvoice(c, d3.id, bon.id));
+    check('une facture conforme s\'émet normalement', !!emise.number && !!emise.entryId,
+      `(n° ${emise.number})`);
+
+    // Compte introuvable : autre contrôle bloquant, qu'aucune contrainte de base
+    // n'aurait attrapé — l'écriture aurait simplement échoué plus loin, avec un
+    // message technique.
+    const mauvaisCompte = await withUser(u3, (c) => invoicing.createInvoice(c, d3.id, {
+      clientName: 'Client X', invoiceDate: '2026-09-21', docType: 'invoice',
+      lines: [{ description: 'X', quantity: 1, unitPrice: 1000, vatRate: 0.18, accountCode: '9999999' }],
+    }));
+    let refus2 = '';
+    try { await withUser(u3, (c) => invoicing.issueInvoice(c, d3.id, mauvaisCompte.id)); }
+    catch (e: any) { refus2 = e.message; }
+    check('un compte inexistant bloque l\'émission avec un message clair',
+      /introuvable/i.test(refus2), `(${refus2.slice(0, 60)})`);
   }
 
 
