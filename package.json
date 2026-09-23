@@ -14,6 +14,7 @@
     "api:dev": "tsx watch server/index.ts",
     "start": "tsx server/index.ts",
     "migrate": "node scripts/migrate.mjs",
+    "test:all": "node --no-deprecation scripts/run-all-tests.mjs",
     "test:domain": "tsx server/integration-test.ts",
     "test:exercices": "tsx server/integration-test-exercices.ts",
     "test:postes": "node server/domain/etats-postes.test.mjs",

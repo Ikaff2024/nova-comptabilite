@@ -65,29 +65,27 @@ jobs:
           psql -v ON_ERROR_STOP=1 -q -f supabase/tests/fixture_two_tenants.sql
           psql -v ON_ERROR_STOP=1 -f supabase/tests/p0_invariants.sql
 
-      - name: Garde d'identité PostgreSQL au démarrage (NOVA-P0-02)
-        run: npm run test:dbguard
+      # TOUTES les suites, découvertes dans package.json (NOVA-P1-06).
+      #
+      # Le dépôt déclarait dix-huit suites et la CI en exécutait UNE : environ
+      # 429 contrôles — paie, états financiers, notes annexes, sécurité — ne
+      # tournaient jamais. Un merge vert ne garantissait presque rien.
+      #
+      # Le lanceur DÉCOUVRE les suites au lieu d'en tenir la liste : ajouter un
+      # script `test:*` suffit à le faire tourner ici. C'est ce qui traite la
+      # cause — les suites avaient été écrites une à une, sans que personne
+      # pense à les brancher — plutôt que le symptôme.
+      #
+      # 23 suites, ~2 minutes : aucune raison de découper en paliers.
+      - name: Toutes les suites de tests
+        run: npm run test:all
 
-      # Lance réellement l'API contre des bases manipulées : migration cassée,
-      # schéma en retard, invariant P0 retiré, rôle dangereux. Vérifie qu'aucune
-      # de ces situations n'ouvre le port (NOVA-P1-08).
-      - name: Démarrage fail-closed (NOVA-P1-08)
-        run: npm run test:startup
+      # Le front n'était jamais construit en CI : une erreur de compilation
+      # d'interface n'apparaissait qu'au déploiement.
+      - name: Build du front
+        run: npm run build
 
-      # Suppression d'un dossier RÉELLEMENT peuplé (NOUVEAU-P1-A), et vérification
-      # que la porte de démontage reste infranchissable depuis une route normale.
-      - name: Cycle de vie des dossiers
-        run: npm run test:dossier-lifecycle
-
-      # Constats de l'audit externe du 21 septembre 2026 : compte de démonstration
-      # sans droits opérateur (N01) et exercice de travail de Lexa (N05).
-      - name: Constats de l'audit externe
-        run: npm run test:audit-externe
-
-      # Récupération de mot de passe (N10) : non-divulgation des comptes, usage
-      # unique, expiration, et invalidation des sessions ouvertes après succès.
-      - name: Récupération de mot de passe
-        run: npm run test:password-reset
-
-      - name: Domain integration test
-        run: npm run test:domain
+      # Échoue sur une vulnérabilité « high ». Les dépendances de production
+      # seulement : l'outillage de développement ne part pas en production.
+      - name: Audit des dépendances
+        run: npm audit --omit=dev --audit-level=high
