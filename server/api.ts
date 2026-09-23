@@ -98,6 +98,24 @@ export function createApi() {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    // Content-Security-Policy (NOVA-P2-06). Le jeton de session vit dans le
+    // localStorage : sans CSP, un seul script injecté suffit à le prendre.
+    // Le front est un bundle Vite servi depuis la même origine — il n'a besoin
+    // d'aucune source externe. 'unsafe-inline' n'est conservé que pour les
+    // styles, que Tailwind et les animations posent en ligne.
+    res.setHeader('Content-Security-Policy', [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "media-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; '));
     if (process.env.NODE_ENV === 'production') {
       res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
@@ -993,8 +1011,16 @@ export function createApi() {
   app.get('/api/dossiers/:id/documents/:docId', h(async (req, res) => {
     const userId = requireUser(req);
     const doc = await withUser(userId, (c) => documents.getDocument(c, req.params.id, req.params.docId));
-    res.setHeader('Content-Type', doc.mime);
-    res.setHeader('Content-Disposition', `inline; filename="${(doc.filename || 'piece').replace(/[^\w.\-]/g, '_')}"`);
+    // Seconde barrière (NOVA-P1-04). Le dépôt n'accepte plus que des photos et
+    // des PDF, vérifiés sur leurs octets ; on ne fait pas pour autant confiance
+    // au type stocké, car les pièces déposées AVANT ce contrôle portent encore
+    // le type que leur client avait déclaré. Tout ce qui n'est pas sur la liste
+    // est servi en téléchargement et en octets bruts : un navigateur ne
+    // l'exécute pas.
+    const sur = Object.prototype.hasOwnProperty.call(documents.EXT, doc.mime);
+    const nom = (doc.filename || 'piece').replace(/[^\w.\-]/g, '_');
+    res.setHeader('Content-Type', sur ? doc.mime : 'application/octet-stream');
+    res.setHeader('Content-Disposition', `${sur ? 'inline' : 'attachment'}; filename="${nom}"`);
     res.send(doc.buffer);
   }));
 
