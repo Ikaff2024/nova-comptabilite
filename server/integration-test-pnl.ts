@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 import { withUser, closePool } from './db.js';
 import * as acc from './domain/accounting.js';
 import { etatsOfficiels } from './domain/etats-officiels.js';
@@ -126,7 +127,24 @@ async function main() {
   }));
   await withUser(u, (c) => c.query(
     "update entries set entry_date='2027-01-15' where dossier_id=$1 and id=$2", [d.id, e2027.id]));
-  await withUser(u, (c) => c.query("update entries set status='posted' where dossier_id=$1 and id=$2", [d.id, e2027.id]));
+
+  // Depuis la migration 0084, une écriture ne se valide plus si sa date sort des
+  // bornes de son exercice — et c'est voulu. Cette situation ne peut donc plus
+  // NAÎTRE dans Nova ; elle ne subsiste que dans des données antérieures à la
+  // contrainte, ou reprises d'un autre logiciel. C'est précisément ce que ce
+  // test vérifie : que le résultat mensuel FAIT VOIR une telle écriture au lieu
+  // de la noyer dans une colonne voisine.
+  //
+  // On fabrique donc l'état hérité en désactivant le verrou le temps d'une
+  // instruction, sous identité propriétaire — ce que le rôle applicatif ne peut
+  // pas faire. Construire le cas autrement (poster puis redater) est impossible :
+  // une écriture validée est immuable.
+  const admin = new pg.Pool({
+    connectionString: process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL, max: 1 });
+  await admin.query('alter table entries disable trigger trg_period_open');
+  await admin.query("update entries set status='posted' where dossier_id=$1 and id=$2", [d.id, e2027.id]);
+  await admin.query('alter table entries enable trigger trg_period_open');
+  await admin.end();
 
   const g2 = await withUser(u, (c) => pnlMensuel(c, d.id, fy));
   check('le mois hors bornes apparaît en colonne', g2.mois.some((m) => m.cle === '2027-01'),

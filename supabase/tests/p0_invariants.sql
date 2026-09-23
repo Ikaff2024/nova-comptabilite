@@ -256,6 +256,104 @@ reset role;
 select set_config('app.current_user_id', '', false);
 
 \echo ''
+\echo '================ NOVA-P1-01/02/03 — INVARIANTS COMPTABLES EN BASE ================'
+
+set role nova_app;
+select set_config('app.current_user_id', '11111111-1111-1111-1111-111111111111', false);
+
+-- --- P1-01 : VOLONTAIREMENT ABSENT ------------------------------------------
+-- La revue recommandait d'interdire l'imputation sur un compte « non
+-- mouvementable ». Mise à l'épreuve, la règle refusait 411 CLIENTS, 401
+-- FOURNISSEURS, 521 BANQUES — les comptes sur lesquels Nova lui-même écrit.
+-- C'est un point de qualité, détecté par la révision, pas une erreur.
+
+-- --- P1-03 : un compte d'un autre dossier est refusé -------------------------
+-- Entre cabinets la RLS suffit. Le cas qui compte est celui de DEUX CLIENTS
+-- D'UN MÊME CABINET : les deux dossiers sont dans app_dossier_ids(), et seule
+-- une contrainte explicite les sépare.
+do $$
+declare v_fy uuid; v_j uuid; v_e uuid; v_a uuid; v_ok boolean := false;
+begin
+  select id into v_fy from fiscal_years where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a';
+  select id into v_j  from journals     where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a';
+  select id into v_a  from accounts     where dossier_id = 'cccccccc-0000-0000-0000-00000000000c' and account_code = '6011';
+  if v_a is null then raise exception 'FIXTURE : dossier A2 sans plan comptable'; end if;
+
+  insert into entries(dossier_id, fiscal_year_id, journal_id, entry_date, description, status)
+    values ('aaaaaaaa-0000-0000-0000-00000000000a', v_fy, v_j, '2026-06-01', 'TEST-AUTRE-DOSSIER', 'draft')
+    returning id into v_e;
+  begin
+    insert into entry_lines(entry_id, dossier_id, account_id, amount_debit, amount_credit)
+      values (v_e, 'aaaaaaaa-0000-0000-0000-00000000000a', v_a, 5000, 0);
+  exception when others then v_ok := true;
+  end;
+  if not v_ok then
+    raise exception 'FAIL P1-03 : une ligne s''impute sur le plan comptable d''un autre dossier';
+  end if;
+  raise notice 'PASS P1-03 : compte d''un autre dossier refusé';
+end $$;
+
+-- --- P1-02 : la date doit tomber dans l'exercice -----------------------------
+do $$
+declare v_fy uuid; v_j uuid; v_e uuid; v_d uuid; v_c uuid; v_ok boolean := false;
+begin
+  select id into v_fy from fiscal_years where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a';
+  select id into v_j  from journals     where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a';
+  select id into v_d  from accounts     where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a' and account_code = '6011';
+  select id into v_c  from accounts     where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a' and account_code = '4011';
+
+  insert into entries(dossier_id, fiscal_year_id, journal_id, entry_date, description, status)
+    values ('aaaaaaaa-0000-0000-0000-00000000000a', v_fy, v_j, '2019-07-04', 'TEST-HORS-BORNES', 'draft')
+    returning id into v_e;
+  insert into entry_lines(entry_id, dossier_id, account_id, amount_debit, amount_credit)
+    values (v_e, 'aaaaaaaa-0000-0000-0000-00000000000a', v_d, 10, 0),
+           (v_e, 'aaaaaaaa-0000-0000-0000-00000000000a', v_c, 0, 10);
+  begin
+    update entries set status = 'posted' where id = v_e;
+  exception when others then v_ok := true;
+  end;
+  if not v_ok then
+    raise exception 'FAIL P1-02 : une écriture datée 2019 a été validée dans l''exercice 2026';
+  end if;
+  raise notice 'PASS P1-02 : date hors bornes refusée à la validation';
+end $$;
+
+-- --- Ce qui doit RESTER possible ---------------------------------------------
+-- Le contrôle de date ne vaut qu'au passage à « validé ». Sans cette nuance,
+-- reverse_entry ne pourrait plus poser reversed_by_entry_id sur une écriture
+-- déjà validée et déjà hors bornes — or c'est précisément le geste par lequel
+-- on RÉPARE une écriture mal datée (outil « réaffecter l'exercice »).
+do $$
+declare v_fy uuid; v_j uuid; v_e uuid; v_d uuid; v_c uuid; v_rev uuid;
+begin
+  select id into v_fy from fiscal_years where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a';
+  select id into v_j  from journals     where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a';
+  select id into v_d  from accounts     where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a' and account_code = '6011';
+  select id into v_c  from accounts     where dossier_id = 'aaaaaaaa-0000-0000-0000-00000000000a' and account_code = '4011';
+
+  -- Écriture conforme : elle se valide normalement.
+  insert into entries(dossier_id, fiscal_year_id, journal_id, entry_date, description, status)
+    values ('aaaaaaaa-0000-0000-0000-00000000000a', v_fy, v_j, '2026-04-15', 'TEST-CONFORME', 'draft')
+    returning id into v_e;
+  insert into entry_lines(entry_id, dossier_id, account_id, amount_debit, amount_credit)
+    values (v_e, 'aaaaaaaa-0000-0000-0000-00000000000a', v_d, 1234, 0),
+           (v_e, 'aaaaaaaa-0000-0000-0000-00000000000a', v_c, 0, 1234);
+  update entries set status = 'posted' where id = v_e;
+  raise notice 'PASS P1 — une écriture conforme se valide toujours';
+
+  -- Et elle se contre-passe toujours : reverse_entry copie les lignes et met à
+  -- jour l'origine déjà validée.
+  v_rev := reverse_entry(v_e, '2026-04-20');
+  if (select status from entries where id = v_rev) <> 'posted' then
+    raise exception 'FAIL P1 — la contre-passation ne produit plus une extourne validée';
+  end if;
+  raise notice 'PASS P1 — la contre-passation fonctionne toujours';
+end $$;
+
+reset role;
+select set_config('app.current_user_id', '', false);
+
+\echo ''
 \echo '================ NOVA-P0-01 — ISOLATION DES VUES ================'
 
 -- --- P0-01.1 : Bob (cabinet B) ne voit rien de A, ni en table ni en vue -----

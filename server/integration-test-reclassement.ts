@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 import { withUser, closePool } from './db.js';
 import * as acc from './domain/accounting.js';
 import * as tiers from './domain/tiers.js';
@@ -182,6 +183,11 @@ async function main() {
   // pas. On reproduit donc l'état par le seul chemin resté ouvert : un
   // BROUILLON se modifie, puis se valide. L'écriture posée est identique à
   // celle qu'on trouve en production.
+  // Identité propriétaire : le rôle applicatif ne peut pas désactiver un trigger,
+  // et c'est bien ce qui garantit qu'une route normale ne le peut pas non plus.
+  const admin = new pg.Pool({
+    connectionString: process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL, max: 1 });
+
   const poserHorsBornes = async (
     fyPose: string, date: string, dateFinale: string, description: string,
     source: any, lines: any[], fyFinal?: string, saisieLe?: string,
@@ -194,7 +200,18 @@ async function main() {
       `update entries set entry_date=$3, fiscal_year_id=$4, created_at=$5::timestamptz
         where dossier_id=$1 and id=$2`,
       [d2.id, e.id, dateFinale, fyFinal ?? fyPose, saisieLe ?? `${dateFinale} 10:00`]));
-    await withUser(u2, (c) => c.query("update entries set status='posted' where dossier_id=$1 and id=$2", [d2.id, e.id]));
+    // Depuis la migration 0084, une écriture dont la date sort des bornes de son
+    // exercice ne se valide plus. C'est justement l'anomalie que le module de
+    // réaffectation sert à RÉPARER : elle ne peut plus naître dans Nova, mais
+    // elle existe dans les dossiers repris d'un autre logiciel, et c'est le cas
+    // réel qui a donné son nom au scénario (a) ci-dessous.
+    //
+    // On fabrique donc l'état hérité en désactivant le verrou le temps d'une
+    // instruction, sous identité propriétaire. Le poser autrement est
+    // impossible : une écriture validée est immuable (migration 0078).
+    await admin.query('alter table entries disable trigger trg_period_open');
+    await admin.query("update entries set status='posted' where dossier_id=$1 and id=$2", [d2.id, e.id]);
+    await admin.query('alter table entries enable trigger trg_period_open');
     return e;
   };
 
@@ -320,6 +337,7 @@ async function main() {
   check('un lot vide est refusé', refusVide);
 
   console.log(`\n${ok} PASS / ${ko} FAIL`);
+  await admin.end().catch(() => {});
   if (ko) process.exitCode = 1;
   await closePool();
 }
