@@ -84,5 +84,10 @@ jobs:
       - name: Constats de l'audit externe
         run: npm run test:audit-externe
 
+      # Récupération de mot de passe (N10) : non-divulgation des comptes, usage
+      # unique, expiration, et invalidation des sessions ouvertes après succès.
+      - name: Récupération de mot de passe
+        run: npm run test:password-reset
+
       - name: Domain integration test
         run: npm run test:domain

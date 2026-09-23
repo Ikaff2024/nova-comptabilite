@@ -9,14 +9,14 @@ export async function registerUser(c: Client, email: string, passwordHash: strin
 
 export async function getUserForLogin(
   c: Client, email: string,
-): Promise<{ id: string; password_hash: string; name: string | null; email: string; totp_secret: string | null; totp_enabled: boolean; is_platform_admin: boolean } | null> {
+): Promise<{ id: string; password_hash: string; name: string | null; email: string; totp_secret: string | null; totp_enabled: boolean; is_platform_admin: boolean; token_version: number } | null> {
   const { rows } = await c.query('select * from get_user_for_login($1)', [email]);
   return rows[0] ?? null;
 }
 
 export async function getUser(
   c: Client, id: string,
-): Promise<{ id: string; email: string; name: string | null; totp_enabled: boolean; is_platform_admin: boolean } | null> {
+): Promise<{ id: string; email: string; name: string | null; totp_enabled: boolean; is_platform_admin: boolean; token_version: number } | null> {
   const { rows } = await c.query('select * from get_user($1)', [id]);
   return rows[0] ?? null;
 }
@@ -71,4 +71,34 @@ export async function renameCabinet(c: Client, cabinetId: string, name: string):
 // Nom d'affichage de l'utilisateur courant.
 export async function setMyName(c: Client, name: string): Promise<void> {
   await c.query('select user_set_name($1)', [name]);
+}
+
+// --- Récupération de mot de passe (constat N10) ------------------------------
+
+/**
+ * Enregistre une demande. Renvoie le compte s'il existe, `null` sinon —
+ * l'appelant doit répondre LA MÊME CHOSE dans les deux cas, sans quoi l'écran
+ * de récupération devient un moyen de savoir qui est client de Nova.
+ */
+export async function demanderReinitialisation(
+  c: Client, email: string, tokenHash: string, ip: string | null,
+): Promise<{ user_id: string; email: string; name: string | null } | null> {
+  const { rows } = await c.query(
+    'select * from password_reset_demander($1,$2,$3)', [email, tokenHash, ip]);
+  return rows[0] ?? null;
+}
+
+/** Applique le nouveau mot de passe et invalide les sessions ouvertes. */
+export async function appliquerReinitialisation(
+  c: Client, tokenHash: string, passwordHash: string,
+): Promise<{ user_id: string; email: string }> {
+  const { rows } = await c.query(
+    'select * from password_reset_appliquer($1,$2)', [tokenHash, passwordHash]);
+  return rows[0];
+}
+
+/** Version de session en base — comparée à celle portée par le jeton. */
+export async function tokenVersion(c: Client, userId: string): Promise<number> {
+  const { rows } = await c.query('select user_token_version($1) as v', [userId]);
+  return Number(rows[0]?.v ?? 0);
 }

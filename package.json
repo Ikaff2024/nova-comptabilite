@@ -35,7 +35,8 @@
     "test:dbguard": "tsx server/integration-test-dbguard.ts",
     "test:startup": "tsx server/integration-test-startup.ts",
     "test:dossier-lifecycle": "tsx server/integration-test-dossier-lifecycle.ts",
-    "test:audit-externe": "tsx server/integration-test-audit-externe.ts"
+    "test:audit-externe": "tsx server/integration-test-audit-externe.ts",
+    "test:password-reset": "tsx server/integration-test-password-reset.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

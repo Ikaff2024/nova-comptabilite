@@ -5,7 +5,12 @@ import { api, type AuthUser } from '../lib/api';
 import { setToken } from '../lib/session';
 
 export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  // 'oubli'    : saisie de l'adresse pour recevoir un lien
+  // 'nouveau'  : saisie du nouveau mot de passe, après clic sur le lien reçu
+  const [mode, setMode] = useState<'login' | 'register' | 'oubli' | 'nouveau'>(
+    () => (new URLSearchParams(window.location.search).get('reset') ? 'nouveau' : 'login'));
+  const [resetToken] = useState(() => new URLSearchParams(window.location.search).get('reset') ?? '');
+  const [info, setInfo] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -16,8 +21,25 @@ export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setInfo(null);
     try {
+      if (mode === 'oubli') {
+        // La réponse est volontairement la même que le compte existe ou non :
+        // l'écran de récupération ne doit pas renseigner sur qui est client.
+        const r = await api.forgotPassword(email.trim());
+        setInfo(r.message);
+        return;
+      }
+      if (mode === 'nouveau') {
+        await api.resetPassword(resetToken, password);
+        // Pas de connexion automatique : on redemande le mot de passe, ce qui
+        // vérifie qu'il a bien été mémorisé et évite d'ouvrir une session
+        // depuis un lien reçu par courriel.
+        window.history.replaceState({}, '', window.location.pathname);
+        setMode('login'); setPassword('');
+        setInfo('Mot de passe modifié. Connectez-vous avec le nouveau — vos autres sessions ont été déconnectées.');
+        return;
+      }
       const res = mode === 'login'
         ? await api.login(email.trim(), password, needCode ? code.trim() : undefined)
         : await api.register(email.trim(), password, name.trim());
@@ -43,7 +65,11 @@ export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
           </div>
           <div>
             <h1 className="font-display text-xl font-bold tracking-tight">Nova Comptabilité</h1>
-            <p className="text-sm text-zinc-400">{mode === 'login' ? 'Connexion à votre espace' : 'Créer un compte'}</p>
+            <p className="text-sm text-zinc-400">{
+              mode === 'login' ? 'Connexion à votre espace'
+              : mode === 'register' ? 'Créer un compte'
+              : mode === 'oubli' ? 'Récupérer votre accès'
+              : 'Choisir un nouveau mot de passe'}</p>
           </div>
         </div>
 
@@ -54,14 +80,22 @@ export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
                 className="w-full bg-transparent text-sm outline-none placeholder-zinc-500" />
             </Field>
           )}
+          {mode !== 'nouveau' && (
           <Field icon={Mail} label="Email">
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@cabinet.ci" autoComplete="email"
               className="w-full bg-transparent text-sm outline-none placeholder-zinc-500" />
           </Field>
-          <Field icon={Lock} label="Mot de passe">
+          )}
+          {mode !== 'oubli' && (
+          <Field icon={Lock} label={mode === 'nouveau' ? 'Nouveau mot de passe' : 'Mot de passe'}>
             <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              minLength={mode === 'login' ? undefined : 8}
               className="w-full bg-transparent text-sm outline-none placeholder-zinc-500" />
           </Field>
+          )}
+          {(mode === 'register' || mode === 'nouveau') && (
+            <p className="text-xs text-zinc-500">8 caractères minimum.</p>
+          )}
 
           {needCode && mode === 'login' && (
             <Field icon={ShieldCheck} label="Code de vérification (2FA)">
@@ -72,17 +106,34 @@ export default function Auth({ onAuth }: { onAuth: (user: AuthUser) => void }) {
 
           {needCode && <p className="text-xs text-zinc-500">Saisissez le code à 6 chiffres de votre application d'authentification.</p>}
           {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-400">{error}</p>}
+          {info && <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{info}</p>}
 
           <button type="submit" disabled={loading}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:opacity-50">
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {mode === 'login' ? (needCode ? 'Vérifier & se connecter' : 'Se connecter') : 'Créer mon compte'}
+            {mode === 'login' ? (needCode ? 'Vérifier & se connecter' : 'Se connecter')
+              : mode === 'register' ? 'Créer mon compte'
+              : mode === 'oubli' ? 'Recevoir un lien de réinitialisation'
+              : 'Changer mon mot de passe'}
           </button>
         </form>
 
+        {/* Le recours doit être VISIBLE depuis l'écran de connexion : c'est
+            précisément son absence que relevait l'audit (constat N10). */}
+        {mode === 'login' && (
+          <p className="mt-4 text-center text-sm">
+            <button onClick={() => { setMode('oubli'); setError(null); setInfo(null); }}
+              className="text-zinc-400 underline-offset-2 hover:text-emerald-300 hover:underline">
+              Mot de passe oublié ?
+            </button>
+          </p>
+        )}
+
         <p className="mt-6 text-center text-sm text-zinc-400">
-          {mode === 'login' ? "Pas encore de compte ?" : 'Déjà inscrit ?'}{' '}
-          <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}
+          {mode === 'login' ? "Pas encore de compte ?"
+            : mode === 'register' ? 'Déjà inscrit ?'
+            : 'Vous vous en souvenez ?'}{' '}
+          <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); setInfo(null); }}
             className="font-medium text-emerald-400 hover:text-emerald-300">
             {mode === 'login' ? "S'inscrire" : 'Se connecter'}
           </button>

@@ -700,6 +700,10 @@ export const api = {
   setMemberRole: (cabinetId: string, uid: string, role: string) => req<void>(`/api/cabinets/${cabinetId}/members/${uid}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
   removeMember: (cabinetId: string, uid: string) => req<void>(`/api/cabinets/${cabinetId}/members/${uid}`, { method: 'DELETE' }),
   cabinets: () => req<Cabinet[]>('/api/cabinets'),
+  forgotPassword: (email: string) =>
+    req<{ ok: boolean; message: string }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, password: string) =>
+    req<{ ok: boolean; email: string }>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
   dashboard: () => req<DashboardData>('/api/dashboard'),
   usage: (days = 30) => req<UsageSummary>(`/api/usage?days=${days}`),
   platformOverview: () => req<PlatformOverview>('/api/platform/overview'),

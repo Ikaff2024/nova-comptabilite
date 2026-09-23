@@ -3,7 +3,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { withUser, pool } from './db.js';
 import * as acc from './domain/accounting.js';
 import * as users from './domain/users.js';
-import { hashPassword, verifyPassword, issueToken, verifyToken, generateTotpSecret, totpUri, verifyTotp } from './auth.js';
+import { hashPassword, verifyPassword, issueToken, verifyToken, generateTotpSecret, totpUri, verifyTotp, generateResetToken, hashResetToken } from './auth.js';
 import { extractDocument, aiProvider } from './ai/provider.js';
 import * as agent from './ai/agent.js';
 import * as whatsapp from './whatsapp/provider.js';
@@ -127,12 +127,41 @@ export function createApi() {
   };
 
   // --- Auth : identité issue d'un JWT (Authorization: Bearer <token>).
+  //
+  // La signature ne suffit plus : on compare aussi la VERSION DE SESSION portée
+  // par le jeton à celle du compte. Une réinitialisation de mot de passe
+  // incrémente ce compteur, ce qui invalide d'un coup tous les jetons émis
+  // avant — sans quoi reprendre la main sur son compte ne chasserait pas celui
+  // qui a volé une session (migration 0083, constat N10).
+  //
+  // Un cache de 30 secondes évite une lecture par requête. Le délai est le prix
+  // à payer : une session révoquée peut survivre une demi-minute. C'est un
+  // compromis assumé, très en deçà des 7 jours actuels.
+  const versionsCache = new Map<string, { v: number; jusqua: number }>();
+  const versionCompte = async (userId: string): Promise<number> => {
+    const hit = versionsCache.get(userId);
+    const maintenant = Date.now();
+    if (hit && hit.jusqua > maintenant) return hit.v;
+    const v = await withUser(null, (c) => users.tokenVersion(c, userId));
+    versionsCache.set(userId, { v, jusqua: maintenant + 30_000 });
+    if (versionsCache.size > 5000) for (const [k, e] of versionsCache) if (e.jusqua <= maintenant) versionsCache.delete(k);
+    return v;
+  };
+
   app.use((req: Request & { userId?: string }, _res, next: NextFunction) => {
     const auth = req.header('authorization') || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     const payload = token ? verifyToken(token) : null;
-    req.userId = payload?.sub;
-    next();
+    if (!payload) { next(); return; }
+    versionCompte(payload.sub)
+      .then((v) => {
+        // Jeton antérieur à la migration 0083 : pas de `tv`, traité comme 0.
+        if ((payload.tv ?? 0) === v) req.userId = payload.sub;
+        next();
+      })
+      // Base momentanément injoignable : on ne laisse pas passer une identité
+      // qu'on n'a pas pu vérifier. requireUser renverra 401.
+      .catch(() => next());
   });
 
   const h = (fn: (req: any, res: Response) => Promise<any>) =>
@@ -246,8 +275,69 @@ export function createApi() {
       if (!code) { const e: any = new Error('Code de vérification requis'); e.status = 401; e.code = '2FA_REQUIRED'; throw e; }
       if (!verifyTotp(row.totp_secret ?? '', String(code))) { const e: any = new Error('Code de vérification invalide'); e.status = 401; e.code = '2FA_INVALID'; throw e; }
     }
-    const token = issueToken({ id: row.id, email: row.email, name: row.name ?? undefined });
+    const token = issueToken({ id: row.id, email: row.email, name: row.name ?? undefined, tokenVersion: row.token_version ?? 0 });
     res.json({ token, user: { id: row.id, email: row.email, name: row.name, twoFactorEnabled: row.totp_enabled, platformAdmin: !!row.is_platform_admin } });
+  }));
+
+  // --- Récupération de mot de passe (constat N10) -----------------------------
+  //
+  // Réponse TOUJOURS identique, que le compte existe ou non. Sans cela, l'écran
+  // de récupération devient un moyen de savoir qui est client de Nova : on
+  // saisit une adresse, et la différence de réponse le dit.
+  app.post('/api/auth/forgot-password', limiteAuth, h(async (req: any, res) => {
+    const email = String(req.body?.email ?? '').trim();
+    const reponse = {
+      ok: true,
+      message: "Si un compte existe pour cette adresse, un lien de réinitialisation vient d'être envoyé. Il est valable une heure.",
+    };
+    if (!email.includes('@')) return res.json(reponse);
+
+    const token = generateResetToken();
+    const ip = (req.headers['x-forwarded-for'] as string || req.ip || '').split(',')[0].trim() || null;
+    const compte = await withUser(null, (c) => users.demanderReinitialisation(c, email, hashResetToken(token), ip));
+
+    if (compte && mail.emailEnabled()) {
+      const base = (process.env.APP_URL ?? 'https://app.nova-comptabilite.africa').replace(/\/$/, '');
+      const lien = `${base}/?reset=${encodeURIComponent(token)}`;
+      try {
+        await mail.sendEmail({
+          to: compte.email,
+          subject: 'Réinitialiser votre mot de passe — Nova Comptabilité',
+          html: `<p>Bonjour${compte.name ? ' ' + compte.name : ''},</p>
+                 <p>Vous avez demandé à réinitialiser le mot de passe de votre espace Nova Comptabilité.</p>
+                 <p><a href="${lien}">Choisir un nouveau mot de passe</a></p>
+                 <p style="color:#555;font-size:13px">Ce lien est valable <strong>une heure</strong> et ne peut servir qu'une fois.
+                 Une fois le mot de passe changé, toutes vos sessions ouvertes seront déconnectées.</p>
+                 <p style="color:#888;font-size:12px">Si vous n'êtes pas à l'origine de cette demande, ignorez ce message :
+                 votre mot de passe actuel reste valable et personne n'a accès à votre compte.</p>`,
+        });
+      } catch { /* l'échec d'envoi ne doit pas révéler l'existence du compte */ }
+    }
+    res.json(reponse);
+  }));
+
+  app.post('/api/auth/reset-password', limiteAuth, h(async (req, res) => {
+    const { token, password } = req.body ?? {};
+    if (!token) { const e: any = new Error('Lien de réinitialisation manquant.'); e.status = 400; throw e; }
+    if (String(password ?? '').length < 8) {
+      const e: any = new Error('Mot de passe : 8 caractères minimum'); e.status = 400; throw e;
+    }
+    try {
+      const out = await withUser(null, (c) =>
+        users.appliquerReinitialisation(c, hashResetToken(String(token)), hashPassword(String(password))));
+      // Pas de connexion automatique : l'utilisateur ressaisit son nouveau mot
+      // de passe. C'est une vérification de plus qu'il l'a bien mémorisé, et
+      // cela évite d'ouvrir une session depuis un lien reçu par courriel.
+      res.json({ ok: true, email: out.email });
+    } catch (err: any) {
+      const m = String(err?.message ?? '');
+      const clair = m.includes('RESET_EXPIRE') ? 'Ce lien a expiré. Demandez-en un nouveau.'
+        : m.includes('RESET_DEJA_UTILISE') ? 'Ce lien a déjà servi. Demandez-en un nouveau.'
+        : m.includes('RESET_INCONNU') ? 'Lien de réinitialisation invalide.'
+        : null;
+      if (clair) { const e: any = new Error(clair); e.status = 400; throw e; }
+      throw err;
+    }
   }));
 
   app.get('/api/auth/me', h(async (req, res) => {

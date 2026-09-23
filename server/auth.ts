@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 // ============================================================================
 // Auth maison, sans dépendance : hachage scrypt + JWT HS256.
@@ -62,12 +62,19 @@ function sign(data: string): string {
   return b64url(createHmac('sha256', JWT_SECRET).update(data).digest());
 }
 
-export interface TokenPayload { sub: string; email: string; name?: string; iat: number; exp: number; }
+export interface TokenPayload {
+  sub: string; email: string; name?: string;
+  /** Version de session au moment de l'émission (cf. migration 0083). Absente
+   *  sur les jetons émis avant : traités comme la version 0. */
+  tv?: number;
+  iat: number; exp: number;
+}
 
-export function issueToken(user: { id: string; email: string; name?: string }): string {
+export function issueToken(user: { id: string; email: string; name?: string; tokenVersion?: number }): string {
   const now = Math.floor(Date.now() / 1000);
   const payload: TokenPayload = {
     sub: user.id, email: user.email, name: user.name,
+    tv: user.tokenVersion ?? 0,
     iat: now, exp: now + TOKEN_TTL_SECONDS,
   };
   const head = b64urlJson({ alg: 'HS256', typ: 'JWT' });
@@ -141,4 +148,17 @@ export function verifyTotp(secret: string, code: string, window = 1): boolean {
     if (timingSafeEqual(Buffer.from(hotp(key, counter + i)), Buffer.from(clean))) return true;
   }
   return false;
+}
+
+// --- Jeton de réinitialisation de mot de passe -------------------------------
+// Le lien envoyé par email porte le secret en clair ; la base n'en garde que
+// l'empreinte. Une lecture de la table `password_resets` ne permet donc de
+// prendre aucun compte — même raisonnement que pour les mots de passe.
+
+export function generateResetToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export function hashResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
