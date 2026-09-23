@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import fs from 'node:fs';
 import { withUser, closePool } from './db.js';
 import * as acc from './domain/accounting.js';
 import { financialRatios } from './domain/ratios.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
-import { dossierContext, annonceUneMutation } from './ai/agent.js';
+import { dossierContext, annonceUneMutation, exigencesOutil } from './ai/agent.js';
+import { typeReel, EXT } from './domain/documents.js';
 import * as invoicing from './domain/invoicing.js';
 import { parseStatement, ReleveAmbiguError, ENTETE_ATTENDU } from './mobilemoney/parser.js';
 
@@ -356,6 +358,71 @@ async function main() {
       ctx3.fyId === vieux ? '(le plus ancien a été repris — défaut N05)' : `(fyId=${ctx3.fyId})`);
   }
 
+
+  // ==========================================================================
+  // N04 (P1-04) — une pièce jointe est acceptée sur ce qu'elle EST,
+  // pas sur ce que le navigateur en dit.
+  // ==========================================================================
+  // Reproduction du défaut : le type déclaré par le poste de l'utilisateur était
+  // stocké tel quel, puis RENVOYÉ tel quel en en-tête, en affichage direct. Un
+  // fichier HTML ou SVG déposé comme justificatif s'exécutait donc dans le
+  // navigateur d'un collègue, sur le domaine de Nova, avec sa session ouverte.
+  console.log('\n=== P1-04 — un justificatif est jugé sur son contenu réel ===');
+  {
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32)]);
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(32)]);
+    const html = Buffer.from('<html><script>alert(document.cookie)</script></html>');
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+
+    check('un vrai JPEG est reconnu', typeReel(jpeg) === 'image/jpeg', `(${typeReel(jpeg)})`);
+    check('un vrai PNG est reconnu', typeReel(png) === 'image/png', `(${typeReel(png)})`);
+    check('un vrai PDF est reconnu', typeReel(pdf) === 'application/pdf', `(${typeReel(pdf)})`);
+    check('une page HTML est refusée', typeReel(html) === null,
+      'elle s\'exécuterait dans le navigateur du comptable');
+    check('un SVG est refusé', typeReel(svg) === null,
+      'le SVG porte du script : c\'est une image pour l\'oeil, pas pour le navigateur');
+    check('un HTML déclaré « image/jpeg » est démasqué', typeReel(html) === null,
+      'le type annoncé au dépôt n\'est plus jamais cru sur parole');
+    check('un JPEG mal déclaré reste un JPEG', typeReel(jpeg) === 'image/jpeg');
+
+    // Tout type retenu doit avoir une extension connue, sinon un justificatif
+    // parfaitement légitime repartirait en téléchargement forcé.
+    const acceptes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
+    const sansExt = acceptes.filter((m) => !Object.prototype.hasOwnProperty.call(EXT, m));
+    check('tous les types acceptés ont une extension connue', sansExt.length === 0, sansExt.join(', '));
+  }
+
+  // ==========================================================================
+  // P1-05 — un outil qui COMPTABILISE ne peut pas être classé « brouillon ».
+  // ==========================================================================
+  // « réaffecter l'exercice » vivait parmi les outils de préparation : ouvert dès
+  // le palier assisté, sans exigence de rôle. Or il contre-passe — il pose une
+  // écriture validée, irréversible, au grand livre.
+  console.log('\n=== P1-05 — les outils de Lexa sont classés sur leur effet réel ===');
+  {
+    for (const nom of ['reaffecter_exercice']) {
+      const e = exigencesOutil(nom);
+      check(`« ${nom} » exige le palier « assisté + actions »`,
+        e?.palier === 'assist_plus', `(palier=${e?.palier})`);
+      check(`« ${nom} » exige en plus un rôle d'administrateur`, e?.adminRequis === true,
+        'il écrit au grand livre : le mode du dossier ne suffit pas');
+    }
+    // Symétrie : un outil réellement sans effet comptable ne doit PAS être
+    // remonté au palier administrateur, sinon Lexa devient inutilisable.
+    const brouillon = exigencesOutil('preparer_reclassement');
+    check('un outil de préparation reste au palier « assisté »',
+      brouillon?.palier === 'assist', `(palier=${brouillon?.palier})`);
+    check('un outil de préparation n\'exige pas d\'être administrateur',
+      brouillon?.adminRequis === false);
+
+    // Et la consigne donnée à Lexa ne doit plus affirmer le contraire de ce que
+    // font ses propres outils.
+    const src = fs.readFileSync('server/ai/agent.ts', 'utf8');
+    check('la consigne n\'affirme plus « JAMAIS » sans nuance',
+      !/Ces actions restent 100 % humaines\./.test(src),
+      'Lexa annonçait une règle que ses propres outils enfreignaient');
+  }
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;
   await admin.end().catch(() => {});

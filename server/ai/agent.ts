@@ -276,7 +276,7 @@ Date du jour : ${today}.${memText}`;
 const SYSTEM_GUARDRAILS = `Tu es **Lexa**, la comptable IA de Nova — une véritable collaboratrice de l'entreprise du dossier, experte du référentiel OHADA (SYSCOHADA révisé, AUDCIF). Tu n'es pas un chatbot générique : tu connais l'entreprise, son équipe et la personne avec qui tu échanges (voir le contexte). REGISTRE (identique sur TOUS les canaux — application, email, Telegram, WhatsApp) : appelle toujours la personne par son PRÉNOM (voir contexte), TUTOIE-la (« tu », jamais « vous »), ton de collègue de confiance : chaleureuse, directe, concise. Ne bascule jamais vers un registre distant/formel selon le canal.
 
 RÈGLES ABSOLUES :
-1. Tu es en LECTURE SEULE. Tu ne crées, ne modifies et ne postes JAMAIS d'écriture. Si on te le demande, explique que la saisie se fait dans les onglets dédiés (l'utilisateur valide toujours).
+1. Par défaut tu es en LECTURE SEULE : tu ne crées, ne modifies et ne postes aucune écriture, et tu expliques que la saisie se fait dans les onglets dédiés. Certains outils d'un palier supérieur écrivent RÉELLEMENT au grand livre (comptabilisation de TVA, de dotations, réaffectation d'exercice) : ils ne te sont proposés que si le dossier et ton interlocuteur y donnent droit. Ne prétends jamais avoir passé une écriture avec un autre outil que ceux-là, et relis la règle 13.
 2. Tu n'inventes AUCUN chiffre. Chaque montant, solde ou statut que tu cites DOIT provenir d'un appel d'outil dans cette conversation. Si tu n'as pas la donnée, appelle l'outil approprié ; si aucun outil ne convient, dis-le franchement.
 3. Cite tes sources : mentionne le compte (code + intitulé), le tiers, l'écriture ou la période d'où vient chaque chiffre.
 4. Réponds en français, de façon concise et actionnable. Formate les montants avec la devise du dossier, **en entier** (ex. « 650 000 XOF ») ou en toutes lettres (« 650 mille », « 2,3 millions ») — jamais d'abréviation « k » ou « M », qui se lit mal à voix haute. Pour une synthèse, va droit au but (résultat d'abord, détail ensuite).
@@ -306,7 +306,7 @@ MODE ASSISTÉ ACTIVÉ : tu peux PRÉPARER des BROUILLONS via les outils "prepare
 - Un brouillon n'a AUCUN effet comptable tant que l'humain ne l'émet/comptabilise pas dans l'onglet correspondant. Tu ne fais JAMAIS cette validation toi-même.
 - Après avoir créé un brouillon, annonce-le clairement comme un BROUILLON À VALIDER (dans « Facturation » pour une vente, « Achats » pour un achat), et récapitule ce que tu as saisi (tiers, lignes, montants) pour que l'humain vérifie.
 - Ne prépare un brouillon que si la demande est explicite et suffisamment précise. Si un élément manque (montant, tiers, compte), demande-le avant de créer.
-- Tu ne postes/émets/règles/clôtures JAMAIS. Ces actions restent 100 % humaines.`;
+- À ce palier tu ne postes, n'émets, ne règles ni ne clôtures RIEN : tes outils ne produisent que des brouillons, sans effet comptable. Les outils qui écrivent au grand livre appartiennent au palier supérieur et exigent en plus un rôle d'administrateur.`;
 
 // Note supplémentaire pour le palier 'assist_plus' (actions réversibles hors ledger).
 const PLUS_NOTE = `
@@ -471,15 +471,6 @@ const DRAFT_TOOLS = [
       required: ['compte_source', 'compte_cible', 'montant', 'motif'],
     },
   },
-  {
-    name: 'reaffecter_exercice',
-    description: "Prépare le redressement d'une écriture rattachée à un exercice qui ne couvre pas sa date : contre-passation dans l'exercice erroné (obligatoire, il est immuable) puis réécriture à l'identique EN BROUILLON dans le bon exercice. Deux exercices sont touchés, donc deux résultats : annonce-le avant de le faire. N'utilise cet outil que sur un candidat « exercice_errone » marqué automatisable — sinon l'exercice cible n'existe pas et il faut d'abord le créer.",
-    input_schema: {
-      type: 'object',
-      properties: { ecriture_id: { type: 'string', description: "Identifiant de l'écriture à réaffecter" } },
-      required: ['ecriture_id'],
-    },
-  },
 ];
 
 const DRAFT_TOOL_NAMES = new Set(DRAFT_TOOLS.map((t) => t.name));
@@ -505,6 +496,21 @@ const REVERSIBLE_TOOL_NAMES = new Set(REVERSIBLE_TOOLS.map((t) => t.name));
 // Actions à effet réel/externe : exécuter la paie (bulletins brouillons) et
 // envoyer un email. Toujours gatés assist_plus. L'envoi d'email est irréversible.
 const ACTION_TOOLS = [
+  // reaffecter_exercice vivait dans DRAFT_TOOLS — donc accessible dès le palier
+  // « assisté », sans exigence de rôle. Or il CONTRE-PASSE : reverse_entry pose
+  // une écriture validée au grand livre, irréversible. Le nom de l'outil disait
+  // « préparer », son effet était de comptabiliser (constat NOVA-P1-05).
+  //
+  // Il rejoint donc les actions à effet réel : assist_plus ET rôle owner/associé.
+  {
+    name: 'reaffecter_exercice',
+    description: "Prépare le redressement d'une écriture rattachée à un exercice qui ne couvre pas sa date : contre-passation dans l'exercice erroné (obligatoire, il est immuable) puis réécriture à l'identique EN BROUILLON dans le bon exercice. Deux exercices sont touchés, donc deux résultats : annonce-le avant de le faire. N'utilise cet outil que sur un candidat « exercice_errone » marqué automatisable — sinon l'exercice cible n'existe pas et il faut d'abord le créer.",
+    input_schema: {
+      type: 'object',
+      properties: { ecriture_id: { type: 'string', description: "Identifiant de l'écriture à réaffecter" } },
+      required: ['ecriture_id'],
+    },
+  },
   {
     name: 'comptabiliser_dotations_dues',
     description: "Comptabilise (poste au grand livre) toutes les dotations aux amortissements DUES à ce jour : écritures 681 → 28x, dont les montants sont DÉTERMINISTES (issus du plan d'amortissement, jamais inventés). À n'appeler qu'APRÈS accord explicite de l'utilisateur, dans le cadre des travaux de clôture. Annonce le nombre de dotations comptabilisées et le total. Réversibilité : comme toute écriture, elle se contre-passe si besoin.",
@@ -627,6 +633,17 @@ const RECTIFICATIF =
 
 // Tronque une sortie volumineuse pour maîtriser les tokens.
 function cap<T>(rows: T[], n = 60): T[] { return Array.isArray(rows) && rows.length > n ? rows.slice(0, n) : rows; }
+
+// Palier et rôle exigés par un outil. Extrait ici pour être vérifiable par les
+// tests : le classement d'un outil (brouillon / réversible / action) est ce qui
+// décide s'il peut écrire au grand livre, et un outil mal rangé est passé
+// inaperçu une fois (constat NOVA-P1-05).
+export function exigencesOutil(name: string): { palier: AgentMode; adminRequis: boolean } | null {
+  if (ACTION_TOOL_NAMES.has(name)) return { palier: 'assist_plus', adminRequis: true };
+  if (REVERSIBLE_TOOL_NAMES.has(name)) return { palier: 'assist_plus', adminRequis: false };
+  if (DRAFT_TOOL_NAMES.has(name)) return { palier: 'assist', adminRequis: false };
+  return null;
+}
 
 async function executeTool(c: Client, dossierId: string, fyId: string | null, name: string, input: any, mode: AgentMode): Promise<any> {
   const fy = fyId ?? undefined;
