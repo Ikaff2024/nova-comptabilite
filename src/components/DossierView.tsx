@@ -276,7 +276,7 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
             {tab === 'catalogue' && <Catalogue dossierId={dossier.id} currency={dossier.base_currency} />}
             {tab === 'paie' && <Paie dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
             {tab === 'assistant' && <Assistant dossierId={dossier.id} dossierName={dossier.raison_sociale} currency={dossier.base_currency} />}
-            {tab === 'analyse' && <AnalyseFinanciere dossierId={dossier.id} currency={dossier.base_currency} />}
+            {tab === 'analyse' && <AnalyseFinanciere dossierId={dossier.id} currency={dossier.base_currency} fiscalYears={fiscalYears} />}
             {tab === 'capture' && (
               <Capture dossierId={dossier.id} fiscalYears={fiscalYears} journals={journals}
                 currency={dossier.base_currency} onPosted={() => { /* la balance se recharge à l'ouverture de l'onglet */ }} />

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, AlertTriangle, Gauge, ClipboardCheck, CheckCircle2, TrendingUp } from 'lucide-react';
-import { api, fmtMoney, type DossierAlerts, type FinancialRatios, type CoherenceReport } from '../lib/api';
+import { api, fmtMoney, currentFiscalYear, type FiscalYear, type DossierAlerts, type FinancialRatios, type CoherenceReport } from '../lib/api';
 import { cn } from '../lib/utils';
 
 // Analyse & révision : alertes, ratios financiers et contrôles de cohérence.
@@ -14,18 +14,27 @@ const NIV_BADGE: Record<string, string> = {
 const NIV_DOT: Record<string, string> = { haute: 'bg-rose-400', moyenne: 'bg-amber-400', info: 'bg-sky-400' };
 const RATIO_COLOR: Record<string, string> = { bon: 'text-emerald-400', moyen: 'text-amber-400', faible: 'text-rose-400' };
 
-export default function AnalyseFinanciere({ dossierId, currency }: { dossierId: string; currency: string }) {
+export default function AnalyseFinanciere({ dossierId, currency, fiscalYears = [] }: { dossierId: string; currency: string; fiscalYears?: FiscalYear[] }) {
   const [alerts, setAlerts] = useState<DossierAlerts | null>(null);
   const [ratios, setRatios] = useState<FinancialRatios | null>(null);
   const [controls, setControls] = useState<CoherenceReport | null>(null);
   const [loading, setLoading] = useState(true);
+  // Cet écran n'envoyait AUCUN exercice à ses trois moteurs. Côté serveur, cela
+  // voulait dire « tous les exercices cumulés » : sur un dossier à deux ans, il
+  // affichait donc un chiffre d'affaires additionnant 2025 et 2026 à côté d'un
+  // résultat qui, lui, était bien celui de l'exercice courant (constat N06).
+  const [fy, setFy] = useState(currentFiscalYear(fiscalYears)?.id ?? '');
+  useEffect(() => { setFy((f) => f || currentFiscalYear(fiscalYears)?.id || ''); }, [fiscalYears]);
 
   useEffect(() => {
     let on = true; setLoading(true);
-    Promise.allSettled([api.dossierAlerts(dossierId), api.dossierRatios(dossierId), api.dossierControls(dossierId)])
+    const y = fy || undefined;
+    Promise.allSettled([api.dossierAlerts(dossierId, y), api.dossierRatios(dossierId, y), api.dossierControls(dossierId, y)])
       .then(([a, r, c]) => { if (!on) return; if (a.status === 'fulfilled') setAlerts(a.value); if (r.status === 'fulfilled') setRatios(r.value); if (c.status === 'fulfilled') setControls(c.value); setLoading(false); });
     return () => { on = false; };
-  }, [dossierId]);
+  }, [dossierId, fy]);
+
+  const libelleExercice = fiscalYears.find((f) => f.id === fy)?.label ?? null;
 
   const m = (n: number) => fmtMoney(n, currency);
   const fmtRatio = (v: number | null, unite: string) => v == null ? '—' : unite === 'pourcent' ? `${v} %` : unite === 'jours' ? `${v} j` : unite === 'montant' ? m(v) : String(v);
@@ -34,9 +43,22 @@ export default function AnalyseFinanciere({ dossierId, currency }: { dossierId: 
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="font-display text-2xl font-bold tracking-tight">Analyse & révision</h2>
-        <p className="mt-1 text-sm text-zinc-400">Points d'attention, ratios financiers et contrôles de cohérence — les mêmes analyses que Lexa peut restituer.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold tracking-tight">Analyse & révision</h2>
+          <p className="mt-1 text-sm text-zinc-400">Points d'attention, ratios financiers et contrôles de cohérence — les mêmes analyses que Lexa peut restituer.</p>
+        </div>
+        {/* La période est affichée à côté des chiffres : sans elle, rien ne
+            permet de rapprocher cet écran de la synthèse ou des états. */}
+        {fiscalYears.length > 0 ? (
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            Exercice
+            <select value={fy} onChange={(e) => setFy(e.target.value)}
+              className="rounded-lg border border-white/10 bg-zinc-900/60 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-emerald-500/50">
+              {fiscalYears.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          </label>
+        ) : libelleExercice ? <span className="text-sm text-zinc-400">Exercice {libelleExercice}</span> : null}
       </div>
 
       {/* Alertes */}

@@ -55,12 +55,10 @@ export async function dossierAlerts(c: Client, dossierId: string, fiscalYearId?:
         // CROISSANTE, donc `find(non clôturé)` retenait le plus ANCIEN exercice ouvert.
         // Les échéances fiscales se calaient alors sur la clôture d'un exercice périmé.
         const auj = new Date().toISOString().slice(0, 10);
-        const desc = [...fys].sort((a: any, b: any) =>
-          acc.normaliseDate(b.start_date).localeCompare(acc.normaliseDate(a.start_date)));
-        const openFy = desc.find((f: any) =>
-          acc.normaliseDate(f.start_date) <= auj && auj <= acc.normaliseDate(f.end_date))
-          ?? desc.find((f: any) => f.status && f.status !== 'closed') ?? desc[0];
-        fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
+        const openFy = acc.exerciceCourant(fys as any, auj);
+        // normaliseDate : end_date arrive en objet Date, et les échéances se
+        // calculent sur une chaîne AAAA-MM-JJ.
+        fyEnd = acc.normaliseDate(openFy?.end_date) || null; } catch { /* ignore */ }
     const deadlines = upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd, horizonDays: 20 });
     for (const dl of deadlines) {
       const j = daysUntil(dl.dueDate);

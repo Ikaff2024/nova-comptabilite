@@ -1,4 +1,5 @@
 import type { Client } from '../db.js';
+import * as acc from './accounting.js';
 import { vatDeclaration } from './tax.js';
 import { agedBalance } from './lettrage.js';
 import { listAssets } from './assets.js';
@@ -23,7 +24,11 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
   // Exercice de référence : celui fourni, sinon l'exercice ouvert le plus récent.
   const { rows: fys } = await c.query(
     'select id, label, start_date, end_date, status from fiscal_years where dossier_id=$1 order by start_date desc', [dossierId]);
-  const fy = (fiscalYearId && fys.find((f: any) => f.id === fiscalYearId)) || fys.find((f: any) => f.status !== 'closed') || fys[0] || null;
+  // Même règle que partout ailleurs (acc.exerciceCourant) : l'exercice courant
+  // est celui qui couvre la date du jour, pas le premier « non clôturé » venu.
+  const fy = (fiscalYearId && fys.find((f: any) => f.id === fiscalYearId))
+    || acc.exerciceCourant(fys as any)
+    || null;
 
   // --- Soldes cumulés par compte (position bilancielle : trésorerie, tiers) ---
   // Position à la clôture de l'exercice affiché : on cumule les écritures
@@ -39,7 +44,29 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
       where l.dossier_id = $1 and ${NOT_CARRY_FORWARD(2)}
         and ($3::date is null or e.entry_date <= $3::date)
       group by a.account_code, a.class_no`, [dossierId, cf, fy?.end_date ?? null]);
-  const tresorerie = bal.filter((r: any) => r.class_no === 5).reduce((s: number, r: any) => s + Number(r.balance), 0);
+  // TRÉSORERIE — toute la classe 5, virements internes COMPRIS.
+  //
+  // J'avais d'abord exclu les comptes 58x « virements de fonds », en les prenant
+  // pour du transit sans valeur. C'est faux, et l'arithmétique le montre : sur un
+  // virement banque → caisse dont seule la première étape est passée, l'argent
+  // EST dans le 585. Sur un dossier à 3 000 000 :
+  //
+  //     avec le 585 : 3 000 000   ← l'argent existe toujours
+  //     sans le 585 : 1 000 000   ← 2 000 000 volatilisés
+  //
+  // Exclure le 58 ferait donc plonger la trésorerie affichée pendant tout
+  // virement en cours. On garde la classe 5 entière.
+  //
+  // Ce que demandait l'audit (constat N06) n'était pas d'exclure des comptes,
+  // mais que « la définition de trésorerie précise les comptes retenus ». On
+  // expose donc la définition ET le solde des virements internes : à une date
+  // d'arrêté, un 58 non nul est une anomalie — un virement parti sans arriver —
+  // et le contrôle de révision « virements non soldés » le signale déjà.
+  const tresorerie = bal.filter((r: any) => r.class_no === 5)
+    .reduce((s: number, r: any) => s + Number(r.balance), 0);
+  const virementsNonSoldes = bal
+    .filter((r: any) => /^58/.test(String(r.account_code ?? '')))
+    .reduce((s: number, r: any) => s + Number(r.balance), 0);
   const creances = bal.filter((r: any) => r.account_code.startsWith('41') && Number(r.balance) > 0).reduce((s: number, r: any) => s + Number(r.balance), 0);
   const dettesFrs = -bal.filter((r: any) => r.account_code.startsWith('40') && Number(r.balance) < 0).reduce((s: number, r: any) => s + Number(r.balance), 0);
 
@@ -136,6 +163,12 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
   return {
     fiscalYear: fy ? { id: fy.id, label: fy.label } : null,
     kpis: { resultat, chiffreAffaires, tresorerie, creances, dettesFrs, vncTotal },
+    // Périmètre explicite des chiffres affichés : sans lui, un dirigeant ne
+    // peut pas rapprocher cette carte de sa balance (constat N06).
+    tresorerieDefinition: {
+      libelle: 'Comptes de classe 5 : banques, caisses, Mobile Money et virements internes',
+      virementsNonSoldes,
+    },
     activity: { posted, drafts, thisMonth: Number(act[0].this_month), autoPct },
     vat: { collectee: vat.collectee, deductible: vat.deductible, netDue: vat.netDue, creditReportable: vat.creditReportable, period: mr.ym },
     monthly,

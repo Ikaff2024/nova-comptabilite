@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { withUser, closePool } from './db.js';
 import * as acc from './domain/accounting.js';
+import { financialRatios } from './domain/ratios.js';
+import { dossierDashboard } from './domain/dossierdashboard.js';
 import { dossierContext, annonceUneMutation } from './ai/agent.js';
 import { parseStatement, ReleveAmbiguError, ENTETE_ATTENDU } from './mobilemoney/parser.js';
 
@@ -14,6 +16,8 @@ import { parseStatement, ReleveAmbiguError, ENTETE_ATTENDU } from './mobilemoney
 //            2 026 F : le montant était pris dans l'année de la date.
 // H01 (P1) — Lexa a annoncé cinq écritures « comptabilisées au grand livre »
 //            alors qu'elle ne disposait pas de l'outil pour le faire.
+// N06 (P1) — les écrans ne se recoupent pas : « Analyse & révision » cumulait
+//            tous les exercices pendant que la synthèse filtrait le courant.
 // N05 (P1) — Lexa répond sur l'exercice 2025 quand on l'interroge sur 2026,
 //            alors que les états affichent bien 2026.
 //
@@ -125,6 +129,82 @@ async function main() {
       try { got = parseStatement(contenu, 'wave')[0]?.amount; } catch (e: any) { err = e.message; }
       check(`variante ${nom} : montant exact`, got === attendu, `(lu ${got ?? err.slice(0, 40)}, attendu ${attendu})`);
     }
+  }
+
+
+  console.log('\n=== N06 — tous les écrans lisent le MÊME exercice ===');
+  {
+    const u2 = randomUUID();
+    const cab2 = await withUser(u2, (c) => acc.onboardCabinet(c, u2, 'Cabinet Périmètres', 'CI'));
+    const d2 = await withUser(u2, (c) => acc.openDossier(c, {
+      cabinetId: cab2, raisonSociale: 'Deux Ans SARL', country: 'CI' }));
+
+    // 2025 = 4 000 000 de ventes, 2026 = 1 000 000. Le cumul des deux ferait
+    // 5 000 000 : c'est ce chiffre, sans signification comptable, que l'écran
+    // « Analyse & révision » affichait à côté du résultat de l'exercice courant.
+    const fy25 = await withUser(u2, (c) => acc.createFiscalYear(c, d2.id, '2025', '2025-01-01', '2025-12-31'));
+    const fy26 = await withUser(u2, (c) => acc.createFiscalYear(c, d2.id, '2026', '2026-01-01', '2026-12-31'));
+    const jv = await withUser(u2, async (c) => (await c.query(
+      `insert into journals(dossier_id,code,label,type) values ($1,'VE','Ventes','ventes') returning id`,
+      [d2.id])).rows[0].id);
+    const vendre = (fy: string, date: string, m: number) => withUser(u2, (c) => acc.postEntry(c, {
+      dossierId: d2.id, fiscalYearId: fy, journalId: jv, entryDate: date, description: `Vente ${date}`,
+      lines: [{ accountCode: '4111', debit: m, credit: 0 }, { accountCode: '7011', debit: 0, credit: m }] }));
+    await vendre(fy25, '2025-06-15', 4000000);
+    await vendre(fy26, '2026-06-15', 1000000);
+
+    const fsDefaut: any = await withUser(u2, (c) => acc.financialStatements(c, d2.id, undefined));
+    check('états financiers sans exercice : plus de cumul silencieux',
+      fsDefaut.incomeStatement.totalProduits === 1000000,
+      `(${fsDefaut.incomeStatement.totalProduits} — 5 000 000 serait le cumul des deux exercices)`);
+
+    const rDefaut: any = await withUser(u2, (c) => financialRatios(c, d2.id, undefined));
+    check('ratios sans exercice : exercice courant, pas le cumul',
+      rDefaut.chiffreAffaires === 1000000, `(${rDefaut.chiffreAffaires})`);
+
+    const dash: any = await withUser(u2, (c) => dossierDashboard(c, d2.id, undefined));
+    check('synthèse : même exercice que les autres écrans', dash?.fiscalYear?.label === '2026',
+      `(${dash?.fiscalYear?.label})`);
+    check('synthèse et ratios donnent le MÊME chiffre d\'affaires',
+      dash?.kpis?.chiffreAffaires === rDefaut.chiffreAffaires,
+      `(synthèse ${dash?.kpis?.chiffreAffaires} vs ratios ${rDefaut.chiffreAffaires})`);
+
+    // Et l'exercice explicite reste évidemment respecté.
+    const fs25: any = await withUser(u2, (c) => acc.financialStatements(c, d2.id, fy25));
+    check('exercice explicitement demandé : 2025 rend bien 4 000 000',
+      fs25.incomeStatement.totalProduits === 4000000, `(${fs25.incomeStatement.totalProduits})`);
+
+    // TRÉSORERIE — la définition doit être explicite, et un virement en cours
+    // ne doit pas faire disparaître d'argent.
+    //
+    // J'avais d'abord exclu les 58x, en les prenant pour du transit sans valeur.
+    // Ce test vérifie l'inverse, parce que l'arithmétique l'impose : quand seule
+    // la première étape d'un virement est passée, l'argent EST dans le 585.
+    const jt = await withUser(u2, async (c) => (await c.query(
+      `insert into journals(dossier_id,code,label,type) values ($1,'OD','OD','operations_diverses') returning id`,
+      [d2.id])).rows[0].id);
+    await withUser(u2, (c) => acc.postEntry(c, {
+      dossierId: d2.id, fiscalYearId: fy26, journalId: jt, entryDate: '2026-07-01',
+      description: 'Apport en banque',
+      lines: [{ accountCode: '5211', debit: 3000000, credit: 0 }, { accountCode: '1011', debit: 0, credit: 3000000 }] }));
+    const avant = (await withUser(u2, (c) => dossierDashboard(c, d2.id, fy26)) as any).kpis.tresorerie;
+
+    // Étape 1 seulement : l'argent quitte la banque pour le transit.
+    await withUser(u2, (c) => acc.postEntry(c, {
+      dossierId: d2.id, fiscalYearId: fy26, journalId: jt, entryDate: '2026-07-02',
+      description: 'Virement banque vers caisse, étape 1',
+      lines: [{ accountCode: '585', debit: 2000000, credit: 0 }, { accountCode: '5211', debit: 0, credit: 2000000 }] }));
+    const pendant: any = await withUser(u2, (c) => dossierDashboard(c, d2.id, fy26));
+
+    check("un virement EN COURS ne fait pas disparaître d'argent",
+      pendant.kpis.tresorerie === avant,
+      `(avant ${avant}, pendant ${pendant.kpis.tresorerie} — exclure le 585 donnerait ${avant - 2000000})`);
+    check('la définition de la trésorerie est exposée',
+      /classe 5/.test(pendant.tresorerieDefinition?.libelle ?? ''),
+      `(${pendant.tresorerieDefinition?.libelle ?? 'absente'})`);
+    check('le solde des virements non soldés est signalé',
+      pendant.tresorerieDefinition?.virementsNonSoldes === 2000000,
+      `(${pendant.tresorerieDefinition?.virementsNonSoldes})`);
   }
 
 

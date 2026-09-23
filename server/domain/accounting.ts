@@ -390,6 +390,56 @@ export function normaliseDate(v: unknown): string {
   return '';
 }
 
+// ============================================================================
+// QUEL EXERCICE ? — une seule réponse, partagée par tous les écrans.
+//
+// Constat N06 de l'audit externe : la synthèse affichait 0 de chiffre
+// d'affaires pendant que l'écran « Analyse & révision » en affichait 4 232 267,
+// à côté d'un résultat qui, lui, était bien celui de l'exercice courant. Un
+// dirigeant ne pouvait pas réconcilier ses propres écrans.
+//
+// La cause n'était pas un calcul faux : c'est que TROIS modules répondaient
+// différemment à la question « quel exercice ? ».
+//
+//   tableau de bord          le plus récent non clôturé        (juste)
+//   contexte de Lexa         le plus ANCIEN non clôturé        (constat N05)
+//   états financiers         aucun filtre — tous cumulés       (constat N06)
+//
+// Personne n'avait décidé cela : c'est le résultat de trois valeurs par défaut
+// écrites à trois moments différents. On en pose donc UNE, ici, et tout le
+// monde l'appelle.
+//
+// Règle : l'exercice courant est celui qui COUVRE LA DATE DU JOUR. Un exercice
+// « ouvert » ne l'est pas forcément — il peut l'être resté faute de clôture,
+// ce qui est précisément le cas qui a produit N05. À défaut, on prend le plus
+// récent non clôturé, puis le plus récent tout court.
+// ============================================================================
+
+export interface ExerciceRef { id: string; label?: string; start_date?: unknown; end_date?: unknown; status?: string }
+
+export function exerciceCourant<T extends ExerciceRef>(exercices: T[], aujourdhui?: string): T | null {
+  if (!exercices?.length) return null;
+  const today = aujourdhui ?? new Date().toISOString().slice(0, 10);
+  // normaliseDate, et non String(...).slice(0, 10) : le pilote pg restitue une
+  // colonne `date` en objet Date, dont la forme texte commence par le nom du
+  // jour (« Wed Jan 01 2025 »). Comparer ces chaînes trie des jours de semaine.
+  const desc = [...exercices].sort((a, b) =>
+    normaliseDate(b.start_date).localeCompare(normaliseDate(a.start_date)));
+  return desc.find((f) => {
+    const d1 = normaliseDate(f.start_date), d2 = normaliseDate(f.end_date);
+    return !!d1 && !!d2 && d1 <= today && today <= d2;
+  })
+    ?? desc.find((f) => f.status && f.status !== 'closed')
+    ?? desc[0]
+    ?? null;
+}
+
+/** Exercice courant du dossier, lu en base. */
+export async function exerciceCourantDuDossier(c: Client, dossierId: string): Promise<string | null> {
+  const fys = await listFiscalYears(c, dossierId);
+  return exerciceCourant(fys)?.id ?? null;
+}
+
 // --- Le cœur : passer une écriture (atomique, équilibrée) --------------------
 
 export async function postEntry(c: Client, input: PostEntryInput): Promise<{ id: string }> {
@@ -967,9 +1017,15 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 export async function financialStatements(c: Client, dossierId: string, fiscalYearId?: string) {
+  // Sans exercice précisé, cette fonction n'en filtrait AUCUN : elle additionnait
+  // tous les exercices du dossier. Un « chiffre d'affaires » qui cumule 2025 et
+  // 2026 n'a pas de sens comptable, et personne ne l'avait demandé — il est né
+  // d'un paramètre oublié par un appelant (constat N06). On retombe désormais
+  // sur l'exercice courant, comme partout ailleurs.
+  const fyId = fiscalYearId ?? await exerciceCourantDuDossier(c, dossierId);
   const params: any[] = [dossierId];
   let where = 'l.dossier_id=$1';
-  if (fiscalYearId) { params.push(fiscalYearId); where += ` and e.fiscal_year_id=$${params.length}`; }
+  if (fyId) { params.push(fyId); where += ` and e.fiscal_year_id=$${params.length}`; }
   const { rows } = await c.query(
     `select a.account_code, a.label, a.class_no,
             sum(l.amount_debit - l.amount_credit) as balance

@@ -203,17 +203,7 @@ export async function dossierContext(c: Client, dossierId: string): Promise<{ te
   // « Wed Jan 01 », et le tri comparait des noms de jours — « Wed » après
   // « Thu », soit 2025 avant 2026. C'est le piège déjà rencontré dans postEntry.
   const jour = (v: unknown) => acc.normaliseDate(v);
-  const couvreAujourdhui = (f: any) => {
-    const d1 = jour(f.start_date), d2 = jour(f.end_date);
-    return !!d1 && !!d2 && d1 <= today && today <= d2;
-  };
-  const parDateDesc = [...fys].sort((a: any, b: any) =>
-    jour(b.start_date).localeCompare(jour(a.start_date)));
-
-  const openFy = parDateDesc.find(couvreAujourdhui)
-    ?? parDateDesc.find((f: any) => f.status && f.status !== 'closed')
-    ?? parDateDesc[0]
-    ?? null;
+  const openFy = acc.exerciceCourant(fys as any, today);
 
   // Lexa doit pouvoir DIRE sur quel exercice elle répond, et constater qu'il en
   // existe d'autres : c'est ce qui lui permet de refuser proprement une question
@@ -268,7 +258,7 @@ export async function dossierContext(c: Client, dossierId: string): Promise<{ te
   // Veille : échéances fiscales/sociales imminentes (≤ 15 jours).
   let echeanceLine = '';
   try {
-    const dls = upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: openFy?.end_date ?? null, horizonDays: 15 });
+    const dls = upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: acc.normaliseDate(openFy?.end_date) || null, horizonDays: 15 });
     if (dls.length) echeanceLine = `ÉCHÉANCES PROCHES (≤ 15 j) : ${dls.slice(0, 3).map((x) => `${x.label} — ${x.dueDate}`).join(' ; ')}. Signale-les à propos si utile.`;
   } catch { /* ignore */ }
 
@@ -800,12 +790,10 @@ async function executeTool(c: Client, dossierId: string, fyId: string | null, na
         // CROISSANTE, donc `find(non clôturé)` retenait le plus ANCIEN exercice ouvert.
         // Les échéances fiscales se calaient alors sur la clôture d'un exercice périmé.
         const auj = new Date().toISOString().slice(0, 10);
-        const desc = [...fys].sort((a: any, b: any) =>
-          acc.normaliseDate(b.start_date).localeCompare(acc.normaliseDate(a.start_date)));
-        const openFy = desc.find((f: any) =>
-          acc.normaliseDate(f.start_date) <= auj && auj <= acc.normaliseDate(f.end_date))
-          ?? desc.find((f: any) => f.status && f.status !== 'closed') ?? desc[0];
-        fyEnd = openFy?.end_date ?? null; } catch { /* ignore */ }
+        const openFy = acc.exerciceCourant(fys as any, auj);
+        // normaliseDate : end_date arrive en objet Date, et les échéances se
+        // calculent sur une chaîne AAAA-MM-JJ.
+        fyEnd = acc.normaliseDate(openFy?.end_date) || null; } catch { /* ignore */ }
       return { echeances: upcomingDeadlines({ regimeFiscal: d.regime_fiscal, accountingSystem: d.accounting_system, fiscalYearEnd: fyEnd }) };
     }
     case 'analyse_mensuelle': { const y = Number(input?.annee) || new Date().getUTCFullYear(); const mo = clampMonth(input?.mois); return await reporting.monthlyReport(c, dossierId, y, mo); }
