@@ -5,6 +5,7 @@ import { api, fmtMoney, type Invoice, type InvoiceLine, type InvoiceTemplate, ty
 import { printDocument, printHtml, nowStamp } from '../lib/export';
 import { invoiceDocumentHtml } from '../lib/invoiceDoc';
 import { cn } from '../lib/utils';
+import { useSaisieNonEnregistree } from '../lib/unsaved';
 import AqmReportCard from './AqmReportCard';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -66,6 +67,17 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
   const [reportSignature, setReportSignature] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const setLine = (k: number, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l._k === k ? { ...l, ...p } : l)));
+  // Une saisie « en cours » = le formulaire est ouvert ET l'utilisateur y a mis
+  // quelque chose. Un formulaire vierge n'a rien à perdre : avertir dans ce cas
+  // rendrait l'alerte pénible, et une alerte pénible finit par être cliquée
+  // sans être lue (constat N09).
+  const saisieCommencee = creating && (
+    client.trim() !== '' || due !== '' || vendeurId !== ''
+    || lines.some((l) => l.description.trim() !== '' || Number(l.quantity) !== 1 || Number(l.unit_price) !== 0)
+  );
+  useSaisieNonEnregistree('facturation', saisieCommencee,
+    `Vous êtes en train de saisir ${doc.ce}${client.trim() ? ` pour « ${client.trim()} »` : ''}.`);
+
   // Empreinte des champs SUR LESQUELS porte le contrôle qualité. Dès qu'elle
   // change, le verdict affiché ne décrit plus le document à l'écran.
   //
@@ -177,7 +189,7 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase text-zinc-500"><tr><th className="pb-1 pr-2">Désignation</th><th className="pb-1 px-2">Compte</th>{sections.length > 0 && <th className="pb-1 px-2">Analytique</th>}<th className="pb-1 px-2 text-right">Qté</th><th className="pb-1 px-2 text-right">P.U. HT</th><th className="pb-1 px-2 text-right">TVA</th><th className="pb-1 px-2 text-right">HT</th><th></th></tr></thead>
             <tbody>
-              {lines.map((l) => (
+              {lines.map((l, i) => (
                 <tr key={l._k}>
                   <td className="py-1 pr-2">
                     <div className="flex items-center gap-1.5">
@@ -188,18 +200,18 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
                           {catalog.map((it) => <option key={it.id} value={it.id}>{it.reference ? `[${it.reference}] ` : ''}{it.label} — {fmtMoney(it.unit_price, currency)}</option>)}
                         </select>
                       )}
-                      <input value={l.description} onChange={(e) => setLine(l._k, { description: e.target.value })} placeholder="Prestation…" className="w-full min-w-[8rem] rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50" />
+                      <input value={l.description} onChange={(e) => setLine(l._k, { description: e.target.value })} placeholder="Prestation…" aria-label={`Désignation, ligne ${i + 1}`} className="w-full min-w-[8rem] rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50" />
                     </div>
                   </td>
-                  <td className="py-1 px-2"><input value={l.account_code} onChange={(e) => setLine(l._k, { account_code: e.target.value })} className="w-16 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
+                  <td className="py-1 px-2"><input value={l.account_code} onChange={(e) => setLine(l._k, { account_code: e.target.value })} aria-label={`Compte de produit, ligne ${i + 1}`} className="w-16 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
                   {sections.length > 0 && (
-                    <td className="py-1 px-2"><select value={l.analytic_axis ?? ''} onChange={(e) => setLine(l._k, { analytic_axis: e.target.value || null })} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"><option value="">—</option>{sections.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}</select></td>
+                    <td className="py-1 px-2"><select value={l.analytic_axis ?? ''} onChange={(e) => setLine(l._k, { analytic_axis: e.target.value || null })} aria-label={`Section analytique, ligne ${i + 1}`} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"><option value="">—</option>{sections.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}</select></td>
                   )}
-                  <td className="py-1 px-2"><input type="number" value={l.quantity} onChange={(e) => setLine(l._k, { quantity: Number(e.target.value) })} className="w-16 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-right font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
-                  <td className="py-1 px-2"><input type="number" value={l.unit_price} onChange={(e) => setLine(l._k, { unit_price: Number(e.target.value) })} className="w-24 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-right font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
-                  <td className="py-1 px-2"><select value={l.vat_rate} onChange={(e) => setLine(l._k, { vat_rate: Number(e.target.value) })} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"><option value={0.18}>18%</option><option value={0.09}>9%</option><option value={0}>0%</option></select></td>
+                  <td className="py-1 px-2"><input type="number" value={l.quantity} onChange={(e) => setLine(l._k, { quantity: Number(e.target.value) })} aria-label={`Quantité, ligne ${i + 1}`} className="w-16 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-right font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
+                  <td className="py-1 px-2"><input type="number" value={l.unit_price} onChange={(e) => setLine(l._k, { unit_price: Number(e.target.value) })} aria-label={`Prix unitaire HT, ligne ${i + 1}`} className="w-24 rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-right font-mono text-sm outline-none focus:border-emerald-500/50" /></td>
+                  <td className="py-1 px-2"><select value={l.vat_rate} onChange={(e) => setLine(l._k, { vat_rate: Number(e.target.value) })} aria-label={`Taux de TVA, ligne ${i + 1}`} className="rounded-md border border-white/10 bg-zinc-900/60 px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"><option value={0.18}>18%</option><option value={0.09}>9%</option><option value={0}>0%</option></select></td>
                   <td className="py-1 px-2 text-right font-mono text-zinc-300">{fmtMoney(Number(l.quantity) * Number(l.unit_price), currency)}</td>
-                  <td className="py-1 pl-2">{lines.length > 1 && <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x._k !== l._k))} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>}</td>
+                  <td className="py-1 pl-2">{lines.length > 1 && <button type="button" aria-label={`Supprimer la ligne ${i + 1}`} title={`Supprimer la ligne ${i + 1}`} onClick={() => setLines((ls) => ls.filter((x) => x._k !== l._k))} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -261,8 +273,8 @@ export default function Facturation({ dossierId, dossierName, currency }: { doss
                       {docType === 'invoice' && inv.status !== 'draft' && <button onClick={() => act(() => api.creditNoteFromInvoice(dossierId, inv.id), 'a' + inv.id, 'credit_note')} className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300">{busy === 'a' + inv.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Undo2 className="h-3.5 w-3.5" />} Avoir</button>}
                       {/* Émis, non certifié : FNE (facture & avoir) */}
                       {docType !== 'quote' && inv.status !== 'draft' && inv.fne_status !== 'certified' && <button onClick={() => act(() => api.certifyInvoice(dossierId, inv.id), 'c' + inv.id)} className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300">{busy === 'c' + inv.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />} Certifier FNE</button>}
-                      <button onClick={() => printDoc(inv.id)} className="text-zinc-500 hover:text-zinc-300"><Printer className="h-4 w-4" /></button>
-                      {inv.status === 'draft' && <button onClick={() => act(() => api.deleteInvoice(dossierId, inv.id), 'd' + inv.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>}
+                      <button onClick={() => printDoc(inv.id)} aria-label={`Imprimer ${doc.one} ${inv.number ?? 'brouillon'} — ${inv.client_name}`} title="Imprimer" className="text-zinc-500 hover:text-zinc-300"><Printer className="h-4 w-4" /></button>
+                      {inv.status === 'draft' && <button onClick={() => act(() => api.deleteInvoice(dossierId, inv.id), 'd' + inv.id)} aria-label={`Supprimer le brouillon — ${inv.client_name}`} title="Supprimer le brouillon" className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-4 w-4" /></button>}
                     </div>
                   </td>
                 </tr>

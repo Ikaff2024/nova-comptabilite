@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, CalendarRange, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown, Lock, ScrollText } from 'lucide-react';
+import { ArrowLeft, Scale, PencilLine, BookOpen, Loader2, Settings2, Search, ScanLine, ShieldCheck, Smartphone, FileText, Library, FileSpreadsheet, Printer, Users, Landmark, BookMarked, ReceiptText, Receipt, Upload, Building2, History, LayoutDashboard, Repeat, Plus, Power, Trash2, PieChart, Target, ClipboardCheck, CalendarRange, TrendingUp, Gauge, ShoppingCart, UserRound, Sparkles, Wallet, Package, ChevronDown, Lock, ScrollText, Menu } from 'lucide-react';
 import { api, fmtMoney, downloadAuthed, currentFiscalYear, type Dossier, type FiscalYear, type Journal, type BalanceRow, type Account } from '../lib/api';
 import { downloadCsv, printDocument, nowStamp } from '../lib/export';
 import { cn } from '../lib/utils';
+import { confirmerAbandon } from '../lib/unsaved';
 import EntryForm, { type EntryFormInitial } from './EntryForm';
 import Capture from './Capture';
 import RulesTab from './RulesTab';
@@ -41,7 +42,18 @@ import Scoring from './Scoring';
 type Tab = 'synthese' | 'assistant' | 'analyse' | 'facturation' | 'achats' | 'catalogue' | 'paie' | 'capture' | 'mobilemoney' | 'banque' | 'previsionnel' | 'scoring' | 'balance' | 'grandlivre' | 'pnl' | 'journaux' | 'tiers' | 'immos' | 'etats' | 'fiscalite' | 'analytique' | 'budget' | 'revision' | 'clotures' | 'saisie' | 'recurrences' | 'abonnements' | 'plan' | 'regles' | 'import' | 'audit' | 'decisions' | 'portail' | 'identite';
 
 export default function DossierView({ dossier, onBack, hideBack }: { dossier: Dossier; onBack: () => void; hideBack?: boolean }) {
-  const [tab, setTab] = useState<Tab>('synthese');
+  const [tab, setTabBrut] = useState<Tab>('synthese');
+  // Toute navigation interne passe par ici. C'est ce qui manquait : un
+  // changement d'onglet ne déclenche aucun événement navigateur, donc rien ne
+  // prévenait avant de perdre une facture à moitié saisie (constat N09).
+  const [navOuverte, setNavOuverte] = useState(false);
+  const setTab = (t: Tab) => {
+    if (t !== tab && !confirmerAbandon()) return;
+    setTabBrut(t);
+    // Sur petit écran, on referme le tiroir : sans cela on resterait devant la
+    // liste des modules au lieu de voir l'écran qu'on vient de demander.
+    setNavOuverte(false);
+  };
   const [fiscalYears, setFiscalYears] = useState<FiscalYear[]>([]);
   const [journals, setJournals] = useState<Journal[]>([]);
   const [ready, setReady] = useState(false);
@@ -195,7 +207,19 @@ export default function DossierView({ dossier, onBack, hideBack }: { dossier: Do
         </div>
       ) : (
         <div className="flex flex-col gap-6 lg:flex-row">
-          <nav className="space-y-5 lg:sticky lg:top-4 lg:w-56 lg:shrink-0 lg:self-start">
+          {/* Sur petit écran, la navigation métier précédait tout le contenu :
+              il fallait défiler sur toute la liste des modules avant d'atteindre
+              la facture (constat N08). Elle devient un tiroir replié par défaut,
+              et reste la colonne fixe habituelle à partir de « lg ». */}
+          <button type="button" onClick={() => setNavOuverte((v) => !v)}
+            aria-expanded={navOuverte} aria-controls="nav-modules"
+            className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-zinc-200 lg:hidden">
+            <span className="flex items-center gap-2"><Menu className="h-4 w-4" /> {meta[tab]?.label ?? 'Modules'}</span>
+            <span className="text-xs text-zinc-500">{navOuverte ? 'Masquer' : 'Changer de module'}</span>
+          </button>
+          <nav id="nav-modules"
+            className={cn('space-y-5 lg:sticky lg:top-4 lg:w-56 lg:shrink-0 lg:self-start lg:block',
+              navOuverte ? 'block' : 'hidden')}>
             {sideGroups.map((g) => (
               <div key={g.label}>
                 <div className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{g.label}</div>
