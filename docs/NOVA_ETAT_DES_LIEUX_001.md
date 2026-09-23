@@ -33,7 +33,7 @@ différentes — c'est normal, et c'est la raison d'avoir fait les deux.
 | **P0 — bloquant** | 3 | **3** | 0 |
 | **P1 — grave** | 9 (+1 déjà résolu en cours de revue) | **9** | 0 |
 | **N — audit externe, P1** | 6 | **6** | 0 |
-| P2 — à traiter | 10 (revue) + 5 (audit externe) | 7 | 8 |
+| P2 — à traiter | 10 (revue) + 5 (audit externe) | 9 | 6 |
 | P3 — confort | 6 (revue) + 1 (audit externe) | 1 | 6 |
 
 **Tout ce qui pouvait faire perdre de l'argent, fausser une comptabilité ou
@@ -164,6 +164,24 @@ moyen légitime de corriger le passé.
   L'outil exige maintenant le mode « assisté + actions » **et** un profil
   propriétaire ou associé.
 
+**Et deux points de gravité moyenne, fermés dans la foulée :**
+
+- **P2-01 — Un montant pouvait se dégrader en silence.** Les montants vivent en
+  base dans un type exact, mais transitent côté serveur en nombre à virgule
+  flottante. Au-delà d'environ 900 milliards (avec quatre décimales), la
+  dernière décimale se perdait sans que rien ne le signale. Mesuré :
+  123 456 789 012,3456 revient intact, 1 234 567 890 123,4567 revient en
+  ...456**8**. En revanche, aucun écart sur une TVA à 18 % ni sur une somme de
+  100 000 montants — le risque était borné, pas diffus. Plutôt que de réécrire
+  les 634 conversions du produit, la base **refuse** désormais un montant
+  au-delà de la borne (c'est en pratique toujours une erreur de virgule), et sa
+  lecture lève une erreur franche au lieu de rendre un chiffre faux.
+- **N07 — « Top clients » rangeait des fournisseurs parmi les clients.** Le
+  classement suivait le sens du solde, pas la nature du tiers : un fournisseur
+  à qui l'on a versé une avance a un solde débiteur, il apparaissait donc en
+  client. La nature du tiers décide maintenant de la liste, et les tiers au
+  solde inhabituel sont signalés à part, avec la raison probable.
+
 ---
 
 ## 5. Deux recommandations que j'ai retirées après vérification
@@ -206,8 +224,6 @@ entre deux cabinets. Par ordre d'intérêt :
 
 | Réf | Sujet | Ce que ça change |
 |---|---|---|
-| **P2-01** | Les montants transitent en nombre à virgule flottante | Risque d'arrondi au centime sur de très gros volumes. Non observé à ce jour, mais c'est une dette de fond sur un produit comptable. **Le plus important des restants.** |
-| **N07** | « Top clients » classe par solde, pas par nature du tiers | Un fournisseur à qui l'on a versé une avance apparaît parmi les clients. Cosmétique, mais visible sur le tableau de bord. |
 | **P2-03** | Les webhooks accusent réception puis traitent en mémoire | Un redémarrage au mauvais moment perd un paiement Mobile Money entrant, sans reprise possible. |
 | **P2-04** | Le limiteur de débit est en mémoire | Sans effet réel dès qu'il y aura plus d'une instance en service. |
 | **P2-05** | Toutes les erreurs non typées deviennent des « 400 » | Une panne interne s'affiche comme une erreur de saisie. Gêne le diagnostic. |
@@ -241,16 +257,14 @@ construction du site au vert.
 
 ## 8. Ce que je propose ensuite
 
-Dans cet ordre :
-
-1. **P2-01 — la politique monétaire.** C'est le seul restant qui touche à
-   l'exactitude des montants. Il mérite d'être traité avant que les volumes
-   n'augmentent, parce que le corriger plus tard supposera de vérifier
-   l'existant.
-2. **N07 — le classement clients/fournisseurs.** Court, visible, et il entame
-   la confiance dans le tableau de bord chaque fois qu'un cabinet le remarque.
-3. **P2-03 — la reprise des webhooks.** À faire avant toute montée en charge
-   sur le Mobile Money.
+1. **P2-03 — la reprise des webhooks.** À faire avant toute montée en charge sur
+   le Mobile Money : c'est le seul restant qui peut faire perdre une
+   information, en l'occurrence un encaissement entrant.
+2. **P2-05 — les erreurs mal qualifiées.** Une panne interne s'affiche
+   aujourd'hui comme une erreur de saisie : cela envoie le comptable corriger
+   une saisie correcte, et retarde le diagnostic.
+3. **P2-04 — le limiteur de débit**, le jour où Nova tournera sur plus d'une
+   instance.
 
 Le reste peut suivre le rythme des chantiers produits déjà prévus dans
 `docs/RESTE-A-FAIRE.md`.
