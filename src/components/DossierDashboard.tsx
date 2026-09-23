@@ -118,6 +118,32 @@ export default function DossierDashboard({ dossierId, currency, fiscalYears = []
         </div>
       </div>
 
+
+      {/* Constat N07 : les tiers dont le solde va à l'inverse de leur nature ne
+          sont plus rangés dans le mauvais palmarès — ils sont nommés à part,
+          avec la raison probable. */}
+      {d.tiersAContreSens?.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+          <div className="mb-1 flex items-center gap-2 text-sm text-amber-200">
+            <ArrowUpRight className="h-4 w-4" /> Tiers au solde inhabituel
+          </div>
+          <p className="mb-2 text-xs text-zinc-400">
+            Ces tiers ont un solde de sens contraire à leur nature. Ce n'est pas
+            nécessairement une erreur, mais cela mérite un coup d'œil.
+          </p>
+          <ul className="space-y-1.5 text-sm">
+            {d.tiersAContreSens.map((r: any, i: number) => (
+              <li key={i} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-zinc-300">
+                  {r.name} <span className="text-xs text-zinc-500">— {r.motif}</span>
+                </span>
+                <span className="whitespace-nowrap font-mono text-xs text-amber-200/80">{m(r.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Top tiers + activité récente */}
       <div className="grid gap-4 lg:grid-cols-3">
         <TopList title="Top clients (créances)" icon={ArrowUpRight} rows={d.topClients} empty="Aucun client débiteur." m={m} />

@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import fs from 'node:fs';
-import { withUser, closePool } from './db.js';
+import { withUser, closePool, pool as appPool } from './db.js';
 import * as acc from './domain/accounting.js';
+import * as tiers from './domain/tiers.js';
 import { financialRatios } from './domain/ratios.js';
 import { dossierDashboard } from './domain/dossierdashboard.js';
 import { dossierContext, annonceUneMutation, exigencesOutil } from './ai/agent.js';
 import { typeReel, EXT } from './domain/documents.js';
+import { MONTANT_MAX_SUR, estMontantSur, arrondirMontant } from './domain/monnaie.js';
 import * as invoicing from './domain/invoicing.js';
 import { parseStatement, ReleveAmbiguError, ENTETE_ATTENDU } from './mobilemoney/parser.js';
 
@@ -422,6 +424,143 @@ async function main() {
     check('la consigne n\'affirme plus « JAMAIS » sans nuance',
       !/Ces actions restent 100 % humaines\./.test(src),
       'Lexa annonçait une règle que ses propres outils enfreignaient');
+  }
+
+  // ==========================================================================
+  // P2-01 — un montant que Nova ne sait pas relire n'entre pas, et ne sort pas
+  // ==========================================================================
+  // Les montants vivent en base dans un type EXACT, mais transitent côté serveur
+  // en flottant. Au-delà d'environ 900 milliards (avec quatre décimales), la
+  // dernière décimale se perd — silencieusement, jusque dans une balance.
+  console.log('\n=== P2-01 — les montants ne se dégradent plus en silence ===');
+  {
+    check('la borne sûre vaut bien 2^53 / 10^4',
+      MONTANT_MAX_SUR === Math.floor(Number.MAX_SAFE_INTEGER / 10 ** 4),
+      `(${MONTANT_MAX_SUR.toLocaleString('fr-FR')})`);
+    check('un montant de PME est dans les bornes', estMontantSur(250_000_000));
+    check('un montant de 900 milliards est encore dans les bornes',
+      estMontantSur(900_000_000_000));
+    check('un montant de 10 000 milliards est hors bornes',
+      !estMontantSur(10_000_000_000_000),
+      'c\'est presque toujours une erreur de virgule ou d\'unité');
+
+    // L'arrondi à la précision réellement stockée.
+    check('un calcul serveur s\'arrondit au dix-millième',
+      arrondirMontant(1 / 3) === 0.3333, `(${arrondirMontant(1 / 3)})`);
+    check('0,1 + 0,2 redevient 0,3', arrondirMontant(0.1 + 0.2) === 0.3,
+      `(${arrondirMontant(0.1 + 0.2)})`);
+
+    // La base REFUSE d'enregistrer un montant hors bornes. On passe par un
+    // dossier réel : une ligne d'écriture est rattachée à un dossier, à une
+    // écriture et à un compte, et c'est ce chemin-là qu'il faut fermer — pas
+    // une insertion de laboratoire qui buterait d'abord sur autre chose.
+    const uM = randomUUID();
+    const cabM = await withUser(uM, (c) => acc.onboardCabinet(c, uM, 'Cabinet Montants', 'CI'));
+    const dM = await withUser(uM, (c) => acc.openDossier(c, {
+      cabinetId: cabM, raisonSociale: 'Bornes SARL', country: 'CI' }));
+    const fyM = await withUser(uM, (c) =>
+      acc.createFiscalYear(c, dM.id, 'Exercice 2026', '2026-01-01', '2026-12-31'));
+    const jM = await withUser(uM, (c) => acc.createJournal(c, dM.id, 'OD', 'Opérations diverses', 'operations_diverses'));
+
+    // Une écriture valide d'abord : on veut que le refus qui suit vienne de la
+    // borne, et de rien d'autre.
+    const eM = await withUser(uM, (c) => acc.postEntry(c, {
+      dossierId: dM.id, fiscalYearId: fyM, journalId: jM, entryDate: '2026-02-01',
+      description: 'Amorçage', status: 'draft',
+      lines: [{ accountCode: '521', debit: 1000 }, { accountCode: '571', credit: 1000 }] }));
+    check("une écriture d'un montant courant passe normalement", !!eM.id);
+
+    const { rows: cpt } = await admin.query(
+      "select id from accounts where dossier_id=$1 and account_code='521'", [dM.id]);
+    let refuse = false, motif = '';
+    try {
+      await admin.query(
+        `insert into entry_lines (dossier_id, entry_id, account_id, amount_debit, amount_credit)
+         values ($1, $2, $3, 9999999999999, 0)`,
+        [dM.id, eM.id, cpt[0].id]);
+    } catch (x: any) { refuse = true; motif = String(x.message); }
+    check('la base refuse un montant au-delà de la borne', refuse,
+      refuse ? `(${motif.slice(0, 70)})` : 'il serait entré, et serait ressorti faux');
+    check("le refus vient bien de la borne, pas d'autre chose",
+      /_borne/.test(motif), `(${motif.slice(0, 90)})`);
+    // Et la LECTURE refuse de rendre un chiffre faux : on force le pilote sur
+    // une valeur qu'il ne peut pas restituer.
+    let litFaux = false, lu: any = null;
+    try {
+      const { rows } = await appPool.query(
+        "select 1234567890123456.7891::numeric(20,4) as m");
+      lu = rows[0].m;
+    } catch { litFaux = true; }
+    check('la lecture refuse plutôt que de rendre un montant approximatif',
+      litFaux, litFaux ? '' : `(elle a rendu ${lu})`);
+
+    // Symétrie indispensable : un RATIO calculé en base rend un numeric à vingt
+    // décimales. Le rejeter serait une panne, pas un garde-fou.
+    const { rows: rr } = await appPool.query('select (1::numeric/3) as r');
+    check('un ratio à vingt décimales se lit normalement',
+      Math.abs(Number(rr[0].r) - 1 / 3) < 1e-12, `(${rr[0].r})`);
+    const { rows: gr } = await appPool.query('select 250000000.4567::numeric(20,4) as m');
+    check('un montant courant se lit à l\'identique', Number(gr[0].m) === 250000000.4567,
+      `(${gr[0].m})`);
+  }
+
+  // ==========================================================================
+  // N07 — le palmarès des tiers suit la NATURE du tiers, pas le sens du solde
+  // ==========================================================================
+  // Le classement se faisait sur le signe du solde. Un fournisseur à qui l'on a
+  // versé une avance présente un solde débiteur : il apparaissait donc dans
+  // « Top clients ». Le tableau de bord affichait un nom manifestement faux — le
+  // genre de détail qui fait douter de tout le reste.
+  console.log('\n=== N07 — clients et fournisseurs ne sont plus confondus ===');
+  {
+    const u7 = randomUUID();
+    const cab7 = await withUser(u7, (c) => acc.onboardCabinet(c, u7, 'Cabinet Tiers', 'CI'));
+    const d7 = await withUser(u7, (c) => acc.openDossier(c, {
+      cabinetId: cab7, raisonSociale: 'Tiers SARL', country: 'CI' }));
+    const fy7 = await withUser(u7, (c) =>
+      acc.createFiscalYear(c, d7.id, 'Exercice 2026', '2026-01-01', '2026-12-31'));
+    const j7 = await withUser(u7, (c) => acc.createJournal(c, d7.id, 'OD', 'Opérations diverses', 'operations_diverses'));
+    const cli = await withUser(u7, (c) =>
+      tiers.createCounterparty(c, d7.id, { type: 'client', name: 'Client Debiteur SA' }));
+    const frs = await withUser(u7, (c) =>
+      tiers.createCounterparty(c, d7.id, { type: 'fournisseur', name: 'Fournisseur Avance SA' }));
+
+    // Un client qui nous doit : créance, solde débiteur. Situation normale.
+    await withUser(u7, (c) => acc.postEntry(c, {
+      dossierId: d7.id, fiscalYearId: fy7, journalId: j7, entryDate: '2026-02-01',
+      description: 'Facture client',
+      lines: [{ accountCode: '411', debit: 5000000, counterpartyId: cli.id },
+              { accountCode: '701', credit: 5000000 }] }));
+
+    // Une avance VERSÉE à un fournisseur : solde débiteur sur un FOURNISSEUR.
+    // C'est exactement le cas qui basculait dans « Top clients ».
+    await withUser(u7, (c) => acc.postEntry(c, {
+      dossierId: d7.id, fiscalYearId: fy7, journalId: j7, entryDate: '2026-02-02',
+      description: 'Avance versée au fournisseur',
+      lines: [{ accountCode: '401', debit: 9000000, counterpartyId: frs.id },
+              { accountCode: '521', credit: 9000000 }] }));
+
+    const db: any = await withUser(u7, (c) => dossierDashboard(c, d7.id, fy7));
+    const nomsClients = (db.topClients ?? []).map((r: any) => r.name);
+    const nomsFourn = (db.topFournisseurs ?? []).map((r: any) => r.name);
+
+    check("le fournisseur en avance n'est PLUS classé parmi les clients",
+      !nomsClients.includes('Fournisseur Avance SA'),
+      `(top clients : ${nomsClients.join(', ') || 'aucun'})`);
+    check('le client débiteur reste bien dans les clients',
+      nomsClients.includes('Client Debiteur SA'),
+      `(top clients : ${nomsClients.join(', ') || 'aucun'})`);
+    check("il n'est pas non plus déplacé chez les fournisseurs (son solde est débiteur)",
+      !nomsFourn.includes('Fournisseur Avance SA'),
+      `(top fournisseurs : ${nomsFourn.join(', ') || 'aucun'})`);
+
+    // Il n'est pas perdu pour autant : il est signalé, avec le motif.
+    const contre = (db.tiersAContreSens ?? []).map((r: any) => r.name);
+    check('le fournisseur en avance est signalé comme solde inhabituel',
+      contre.includes('Fournisseur Avance SA'),
+      `(signalés : ${contre.join(', ') || 'aucun'})`);
+    const mot = (db.tiersAContreSens ?? []).find((r: any) => r.name === 'Fournisseur Avance SA')?.motif ?? '';
+    check('le motif est exprimé en langage comptable', /avance versée/.test(mot), `(${mot})`);
   }
   console.log(`\n${ok} PASS / ${ko} FAIL`);
   if (ko) process.exitCode = 1;

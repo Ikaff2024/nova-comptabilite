@@ -123,10 +123,41 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
         and ($3::date is null or e.entry_date <= $3::date)
       group by cp.name, cp.type having coalesce(sum(l.amount_debit - l.amount_credit),0) <> 0`,
     [dossierId, cf, fy?.end_date ?? null]);
-  const topClients = cps.filter((r: any) => Number(r.balance) > 0).map((r: any) => ({ name: r.name, amount: Number(r.balance) }))
-    .sort((a: any, b: any) => b.amount - a.amount).slice(0, 5);
-  const topFournisseurs = cps.filter((r: any) => Number(r.balance) < 0).map((r: any) => ({ name: r.name, amount: -Number(r.balance) }))
-    .sort((a: any, b: any) => b.amount - a.amount).slice(0, 5);
+  // Constat N07 de l'audit externe : le classement se faisait sur le SENS du
+  // solde, pas sur la NATURE du tiers. Un fournisseur à qui l'on a versé une
+  // avance présente un solde débiteur — il apparaissait donc dans « Top
+  // clients », et un client en trop-perçu (avoir, acompte) dans « Top
+  // fournisseurs ». Le tableau de bord affichait des noms manifestement faux,
+  // ce qui est le genre de détail qui fait douter de tout le reste.
+  //
+  // On croise désormais les deux : la nature du tiers décide de la liste, le
+  // sens du solde décide de la présence. Un client débiteur est une créance ;
+  // un client créditeur (il nous doit d'être remboursé) n'est pas une créance
+  // et n'a rien à faire dans un palmarès de créances — il relève du contrôle
+  // de révision, pas du tableau de bord.
+  const palmares = (nature: string, sens: 1 | -1) => cps
+    .filter((r: any) => r.type === nature && Number(r.balance) * sens > 0)
+    .map((r: any) => ({ name: r.name, amount: Math.abs(Number(r.balance)) }))
+    .sort((a, b) => b.amount - a.amount).slice(0, 5);
+
+  const topClients = palmares('client', 1);
+  const topFournisseurs = palmares('fournisseur', -1);
+
+  // Les tiers à solde « à contre-sens » : un client créditeur ou un fournisseur
+  // débiteur. Ce n'est pas une anomalie en soi (avance versée, avoir à établir),
+  // mais cela se signale au lieu de se cacher dans le mauvais palmarès.
+  const tiersAContreSens = cps
+    .filter((r: any) => (r.type === 'client' && Number(r.balance) < 0)
+                     || (r.type === 'fournisseur' && Number(r.balance) > 0))
+    .map((r: any) => ({
+      name: r.name,
+      type: r.type,
+      amount: Math.abs(Number(r.balance)),
+      motif: r.type === 'client'
+        ? 'client à solde créditeur (acompte reçu ou avoir à établir)'
+        : 'fournisseur à solde débiteur (avance versée ou avoir à recevoir)',
+    }))
+    .sort((a, b) => b.amount - a.amount).slice(0, 5);
 
   // --- TVA du mois courant ---
   const mr = monthRange(new Date());
@@ -172,7 +203,7 @@ export async function dossierDashboard(c: Client, dossierId: string, fiscalYearI
     activity: { posted, drafts, thisMonth: Number(act[0].this_month), autoPct },
     vat: { collectee: vat.collectee, deductible: vat.deductible, netDue: vat.netDue, creditReportable: vat.creditReportable, period: mr.ym },
     monthly,
-    topClients, topFournisseurs,
+    topClients, topFournisseurs, tiersAContreSens,
     aged: { overdue90 },
     recent: recent.map((r: any) => ({ ...r, amount: Number(r.amount) })),
     alerts,
